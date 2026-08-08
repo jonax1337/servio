@@ -4,9 +4,18 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { getSessionUser } from "@/lib/session";
+import { getSessionUser, isAgent, hasRole, type Role } from "@/lib/session";
 import { writeAudit } from "@/lib/audit";
 import { SERVICE_STATUSES, CRITICALITIES } from "@/lib/constants";
+
+async function requireAgent() {
+  const me = await getSessionUser();
+  return me && isAgent(me.role as Role) ? me : null;
+}
+async function requireManager() {
+  const me = await getSessionUser();
+  return me && hasRole(me.role as Role, "MANAGER") ? me : null;
+}
 
 const optionalId = z
   .string()
@@ -35,8 +44,8 @@ export async function createService(
   _prev: ActionState,
   formData: FormData,
 ): Promise<ActionState> {
-  const me = await getSessionUser();
-  if (!me) return { error: "Not authenticated" };
+  const me = await requireAgent();
+  if (!me) return { error: "Not authorised" };
 
   const parsed = createSchema.safeParse(Object.fromEntries(formData));
   if (!parsed.success) {
@@ -68,7 +77,7 @@ const updateSchema = z.object({
 });
 
 export async function updateServiceField(formData: FormData) {
-  const me = await getSessionUser();
+  const me = await requireAgent();
   if (!me) return;
   const parsed = updateSchema.safeParse(Object.fromEntries(formData));
   if (!parsed.success) return;
@@ -90,7 +99,8 @@ export async function updateServiceField(formData: FormData) {
 }
 
 export async function updateServiceForm(formData: FormData) {
-  const me = await getSessionUser();
+  // Managing the request form (approver, schema, approval gate) is privileged.
+  const me = await requireManager();
   if (!me) return;
   const id = String(formData.get("id") ?? "");
   if (!id) return;
@@ -105,14 +115,20 @@ export async function updateServiceForm(formData: FormData) {
   }
   const requiresApproval = formData.get("requiresApproval") === "true";
   const isRequestable = formData.get("isRequestable") === "true";
-  const approverId = String(formData.get("approverId") ?? "");
+  const approverIdRaw = String(formData.get("approverId") ?? "");
+  // Only an agent/manager/admin may be set as an approver.
+  let approverId: string | null = null;
+  if (approverIdRaw && approverIdRaw !== "none") {
+    const candidate = await db.user.findUnique({ where: { id: approverIdRaw }, select: { role: true } });
+    if (candidate && isAgent(candidate.role as Role)) approverId = approverIdRaw;
+  }
   await db.service.update({
     where: { id },
     data: {
       formSchema: normalized,
       requiresApproval,
       isRequestable,
-      approverId: approverId && approverId !== "none" ? approverId : null,
+      approverId,
     },
   });
   await writeAudit({ userId: me.id, action: "UPDATE", entity: "Service", entityId: id, summary: "Updated request form" });

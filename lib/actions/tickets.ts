@@ -4,8 +4,15 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { getSessionUser } from "@/lib/session";
+import { getSessionUser, isAgent, type Role } from "@/lib/session";
 import { writeAudit, notify } from "@/lib/audit";
+
+/** Only agents/managers/admins may act on the agent console. */
+async function requireAgent() {
+  const me = await getSessionUser();
+  if (!me || !isAgent(me.role as Role)) return null;
+  return me;
+}
 import {
   sendMail, tplTicketReceived, tplTicketAssigned, tplTicketReply, tplTicketResolved,
 } from "@/lib/mail";
@@ -43,8 +50,8 @@ const createSchema = z.object({
 export type ActionState = { error?: string; fieldErrors?: Record<string, string[]> } | undefined;
 
 export async function createTicket(_prev: ActionState, formData: FormData): Promise<ActionState> {
-  const me = await getSessionUser();
-  if (!me) return { error: "Not authenticated" };
+  const me = await requireAgent();
+  if (!me) return { error: "Not authorised" };
 
   const parsed = createSchema.safeParse(Object.fromEntries(formData));
   if (!parsed.success) {
@@ -91,7 +98,7 @@ const updateSchema = z.object({
 });
 
 export async function updateTicketField(formData: FormData) {
-  const me = await getSessionUser();
+  const me = await requireAgent();
   if (!me) return;
   const parsed = updateSchema.safeParse(Object.fromEntries(formData));
   if (!parsed.success) return;
@@ -127,7 +134,7 @@ export async function updateTicketField(formData: FormData) {
 }
 
 export async function addTicketComment(formData: FormData) {
-  const me = await getSessionUser();
+  const me = await requireAgent();
   if (!me) return;
   const id = Number(formData.get("ticketId"));
   const body = String(formData.get("body") ?? "").trim();
@@ -194,7 +201,7 @@ async function resolveMentions(body: string) {
 // ── Ticket actions ─────────────────────────────────────────────────────────
 
 export async function escalateTicket(formData: FormData) {
-  const me = await getSessionUser();
+  const me = await requireAgent();
   if (!me) return;
   const id = Number(formData.get("id"));
   if (!id) return;
@@ -210,7 +217,7 @@ export async function escalateTicket(formData: FormData) {
 }
 
 export async function toggleMajorIncident(formData: FormData) {
-  const me = await getSessionUser();
+  const me = await requireAgent();
   if (!me) return;
   const id = Number(formData.get("id"));
   if (!id) return;
@@ -231,7 +238,7 @@ export async function toggleMajorIncident(formData: FormData) {
 }
 
 export async function toggleWatch(formData: FormData) {
-  const me = await getSessionUser();
+  const me = await requireAgent();
   if (!me) return;
   const id = Number(formData.get("id"));
   if (!id) return;
@@ -242,7 +249,7 @@ export async function toggleWatch(formData: FormData) {
 }
 
 export async function linkTicket(formData: FormData) {
-  const me = await getSessionUser();
+  const me = await requireAgent();
   if (!me) return;
   const id = Number(formData.get("id"));
   const targetId = Number(formData.get("targetId"));
@@ -258,7 +265,7 @@ export async function linkTicket(formData: FormData) {
 }
 
 export async function unlinkTicket(formData: FormData) {
-  const me = await getSessionUser();
+  const me = await requireAgent();
   if (!me) return;
   const linkId = String(formData.get("linkId"));
   const ticketId = Number(formData.get("ticketId"));
@@ -268,7 +275,7 @@ export async function unlinkTicket(formData: FormData) {
 }
 
 export async function mergeTicket(formData: FormData) {
-  const me = await getSessionUser();
+  const me = await requireAgent();
   if (!me) return;
   const id = Number(formData.get("id"));
   const targetId = Number(formData.get("targetId"));
@@ -285,7 +292,7 @@ export async function mergeTicket(formData: FormData) {
 // ── Tasks ──────────────────────────────────────────────────────────────────
 
 export async function addTask(formData: FormData) {
-  const me = await getSessionUser();
+  const me = await requireAgent();
   if (!me) return;
   const ticketId = Number(formData.get("ticketId"));
   const title = String(formData.get("title") ?? "").trim();
@@ -296,7 +303,7 @@ export async function addTask(formData: FormData) {
 }
 
 export async function toggleTask(formData: FormData) {
-  const me = await getSessionUser();
+  const me = await requireAgent();
   if (!me) return;
   const taskId = String(formData.get("taskId"));
   const task = await db.task.findUnique({ where: { id: taskId } });
@@ -306,7 +313,7 @@ export async function toggleTask(formData: FormData) {
 }
 
 export async function deleteTask(formData: FormData) {
-  const me = await getSessionUser();
+  const me = await requireAgent();
   if (!me) return;
   const taskId = String(formData.get("taskId"));
   const task = await db.task.findUnique({ where: { id: taskId } });

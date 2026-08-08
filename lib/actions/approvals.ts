@@ -22,6 +22,8 @@ export async function decideApproval(formData: FormData) {
   if (!approval || approval.status !== "PENDING") return;
   // only the assigned approver (or an admin) may decide
   if (approval.approverId !== me.id && me.role !== "ADMIN") return;
+  // separation of duties: you can never approve your own request, even as admin
+  if (approval.ticket.requesterId === me.id) return;
 
   await db.ticketApproval.update({
     where: { id: approvalId },

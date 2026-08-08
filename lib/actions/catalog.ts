@@ -22,7 +22,13 @@ export async function createServiceRequest(
 
   const serviceId = String(formData.get("serviceId") ?? "");
   const service = await db.service.findUnique({ where: { id: serviceId } });
-  if (!service) return { error: "Service not found" };
+  if (!service || !service.isPublic || !service.isRequestable) {
+    return { error: "This service can't be requested." };
+  }
+  // Fail closed: an approval-gated service without an approver must not be orderable.
+  if (service.requiresApproval && !service.approverId) {
+    return { error: "This service requires approval but has no approver configured. Please contact IT." };
+  }
 
   const fields = parseFormSchema(service.formSchema);
   const data: Record<string, string> = {};
