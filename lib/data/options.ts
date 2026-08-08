@@ -16,7 +16,7 @@ export const getFormOptions = cache(async () => {
       orderBy: { order: "asc" },
     }),
     db.category.findMany({
-      select: { id: true, name: true, type: true },
+      select: { id: true, name: true, parentId: true },
       orderBy: { name: "asc" },
     }),
     db.service.findMany({ select: { id: true, name: true }, orderBy: { name: "asc" } }),

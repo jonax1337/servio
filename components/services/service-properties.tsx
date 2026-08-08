@@ -75,7 +75,7 @@ export function ServiceProperties({
     none("No owner"),
     ...options.agents.map((a) => ({ value: a.id, label: a.name ?? a.email, avatar: initials(a.name ?? a.email), hint: a.email })),
   ];
-  const catOpts: ComboOption[] = [none("No category"), ...options.categories.map((c) => ({ value: c.id, label: c.name, hint: c.type }))];
+  const catOpts: ComboOption[] = [none("No category"), ...options.categories.map((c) => ({ value: c.id, label: c.name }))];
   const slaOpts: ComboOption[] = [none("No SLA"), ...options.slas.map((s) => ({ value: s.id, label: s.name }))];
 
   return (

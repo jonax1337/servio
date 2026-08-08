@@ -48,7 +48,7 @@ export function TicketForm({
   const agentOpts: ComboOption[] = options.agents.map((a) => ({ value: a.id, label: a.name ?? a.email, avatar: initials(a.name ?? a.email), hint: a.email }));
   const groupOpts: ComboOption[] = options.groups.map((g) => ({ value: g.id, label: g.name }));
   const queueOpts: ComboOption[] = options.queues.map((q) => ({ value: q.id, label: q.name }));
-  const catOpts: ComboOption[] = options.categories.map((c) => ({ value: c.id, label: c.name, hint: c.type }));
+  const catOpts: ComboOption[] = options.categories.map((c) => ({ value: c.id, label: c.name }));
   const svcOpts: ComboOption[] = options.services.map((s) => ({ value: s.id, label: s.name }));
 
   return (

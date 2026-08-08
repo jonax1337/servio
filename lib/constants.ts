@@ -202,14 +202,7 @@ export const SERVICE_STATUS_META: Record<string, Meta> = {
 export const CRITICALITIES = ["LOW", "MEDIUM", "HIGH", "CRITICAL"] as const;
 export const CRITICALITY_META: Record<string, Meta> = PRIORITY_META;
 
-// ---- Category / Group -----------------------------------------------------
-export const CATEGORY_TYPES = [
-  "INCIDENT",
-  "REQUEST",
-  "PROBLEM",
-  "CHANGE",
-  "ASSET",
-] as const;
+// ---- Group ----------------------------------------------------------------
 export const GROUP_TYPES = ["TEAM", "DEPARTMENT", "VENDOR"] as const;
 export const GROUP_TYPE_META: Record<string, Meta> = {
   TEAM: { label: "Team", tone: "indigo" },

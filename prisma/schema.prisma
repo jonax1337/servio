@@ -156,7 +156,6 @@ model Category {
   id       String  @id @default(cuid())
   name     String
   description String?
-  type     String  @default("INCIDENT") // INCIDENT | REQUEST | PROBLEM | CHANGE | ASSET
   icon     String?
   color    String  @default("#64748b")
   parentId String?
@@ -169,7 +168,7 @@ model Category {
   services Service[]
   articles Article[]
 
-  @@unique([name, type])
+  @@unique([name, parentId])
   @@index([parentId])
 }
 

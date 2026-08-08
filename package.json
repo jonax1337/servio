@@ -16,7 +16,7 @@
     "setup": "prisma migrate deploy && prisma db seed"
   },
   "prisma": {
-    "seed": "tsx prisma/seed.ts"
+    "seed": "tsx prisma/seed.ts && tsx prisma/seed-extras.ts"
   },
   "dependencies": {
     "@auth/prisma-adapter": "^2.11.3",

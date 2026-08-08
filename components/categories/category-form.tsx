@@ -7,30 +7,13 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { CATEGORY_TYPES } from "@/lib/constants";
+import { ComboField } from "@/components/combo-field";
+import type { ComboOption } from "@/components/combobox";
 
-const TYPE_LABELS: Record<(typeof CATEGORY_TYPES)[number], string> = {
-  INCIDENT: "Incident",
-  REQUEST: "Service Request",
-  PROBLEM: "Problem",
-  CHANGE: "Change",
-  ASSET: "Asset",
-};
-
-export type ParentOption = { id: string; name: string; type: string };
+export type ParentOption = { id: string; name: string };
 
 function Field({
-  label,
-  error,
-  children,
-  hint,
+  label, error, children, hint,
 }: {
   label: string;
   error?: string[];
@@ -53,16 +36,7 @@ export function CategoryForm({ parents }: { parents: ParentOption[] }) {
     undefined,
   );
   const fe = state?.fieldErrors ?? {};
-
-  const typeItems = Object.fromEntries(
-    CATEGORY_TYPES.map((t) => [t, TYPE_LABELS[t]]),
-  );
-  const parentItems = {
-    none: "— None (top level) —",
-    ...Object.fromEntries(
-      parents.map((p) => [p.id, `${p.name} · ${TYPE_LABELS[p.type as keyof typeof TYPE_LABELS] ?? p.type}`]),
-    ),
-  };
+  const parentOpts: ComboOption[] = parents.map((p) => ({ value: p.id, label: p.name }));
 
   return (
     <form action={action} className="grid gap-5">
@@ -73,53 +47,22 @@ export function CategoryForm({ parents }: { parents: ParentOption[] }) {
       ) : null}
 
       <Field label="Name" error={fe.name}>
-        <Input name="name" placeholder="e.g. Network, Access Request, Hardware" required />
+        <Input name="name" placeholder="e.g. Network, Laptop, Access" required />
       </Field>
 
       <div className="grid gap-5 sm:grid-cols-2">
-        <Field label="Type" error={fe.type}>
-          <Select name="type" defaultValue="INCIDENT" items={typeItems}>
-            <SelectTrigger className="w-full">
-              <SelectValue placeholder="Type" />
-            </SelectTrigger>
-            <SelectContent>
-              {CATEGORY_TYPES.map((t) => (
-                <SelectItem key={t} value={t}>
-                  {TYPE_LABELS[t]}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </Field>
-
         <Field
           label="Parent category"
           error={fe.parentId}
-          hint="Nest this under an existing category, or leave as top level."
+          hint="Nest under an existing category, or leave as a top-level category."
         >
-          <Select name="parentId" defaultValue="none" items={parentItems}>
-            <SelectTrigger className="w-full">
-              <SelectValue placeholder="— None (top level) —" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="none">— None (top level) —</SelectItem>
-              {parents.map((p) => (
-                <SelectItem key={p.id} value={p.id}>
-                  {p.name} · {TYPE_LABELS[p.type as keyof typeof TYPE_LABELS] ?? p.type}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <ComboField name="parentId" options={parentOpts} includeNone noneLabel="— Top level —" />
+        </Field>
+
+        <Field label="Color" error={fe.color} hint="Hex color for the category dot.">
+          <Input name="color" defaultValue="#64748b" placeholder="#64748b" />
         </Field>
       </div>
-
-      <Field
-        label="Color"
-        error={fe.color}
-        hint="Hex color used for the category dot, e.g. #64748b."
-      >
-        <Input name="color" defaultValue="#64748b" placeholder="#64748b" />
-      </Field>
 
       <Field label="Description" error={fe.description}>
         <Textarea
@@ -131,11 +74,7 @@ export function CategoryForm({ parents }: { parents: ParentOption[] }) {
 
       <div className="flex items-center justify-end gap-2 border-t pt-4">
         <Button type="submit" disabled={pending}>
-          {pending ? (
-            <Loader2 className="size-4 animate-spin" />
-          ) : (
-            <Plus className="size-4" />
-          )}
+          {pending ? <Loader2 className="size-4 animate-spin" /> : <Plus className="size-4" />}
           Create category
         </Button>
       </div>

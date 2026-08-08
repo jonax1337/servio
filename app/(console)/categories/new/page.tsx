@@ -10,8 +10,8 @@ export const dynamic = "force-dynamic";
 
 export default async function NewCategoryPage() {
   const parents = await db.category.findMany({
-    select: { id: true, name: true, type: true },
-    orderBy: [{ type: "asc" }, { name: "asc" }],
+    select: { id: true, name: true },
+    orderBy: { name: "asc" },
   });
 
   return (

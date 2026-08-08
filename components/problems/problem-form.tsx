@@ -44,7 +44,7 @@ export function ProblemForm({
   const levelOpts: ComboOption[] = IMPACT_URGENCY.map((l) => ({ value: l, label: LEVEL_META[l].label, tone: LEVEL_META[l].tone }));
   const agentOpts: ComboOption[] = options.agents.map((a) => ({ value: a.id, label: a.name ?? a.email, avatar: initials(a.name ?? a.email), hint: a.email }));
   const groupOpts: ComboOption[] = options.groups.map((g) => ({ value: g.id, label: g.name }));
-  const catOpts: ComboOption[] = options.categories.map((c) => ({ value: c.id, label: c.name, hint: c.type }));
+  const catOpts: ComboOption[] = options.categories.map((c) => ({ value: c.id, label: c.name }));
 
   return (
     <form action={action} className="grid gap-5">

@@ -70,7 +70,6 @@ export function ServiceForm({ options }: { options: FormOptions }) {
   const catOpts: ComboOption[] = options.categories.map((c) => ({
     value: c.id,
     label: c.name,
-    hint: c.type,
   }));
   const slaOpts: ComboOption[] = options.slas.map((s) => ({
     value: s.id,

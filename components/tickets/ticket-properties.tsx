@@ -89,7 +89,7 @@ export function TicketProperties({
   ];
   const groupOpts: ComboOption[] = [none("No group"), ...options.groups.map((g) => ({ value: g.id, label: g.name }))];
   const queueOpts: ComboOption[] = [none("No queue"), ...options.queues.map((q) => ({ value: q.id, label: q.name }))];
-  const catOpts: ComboOption[] = [none("No category"), ...options.categories.map((c) => ({ value: c.id, label: c.name, hint: c.type }))];
+  const catOpts: ComboOption[] = [none("No category"), ...options.categories.map((c) => ({ value: c.id, label: c.name }))];
   const svcOpts: ComboOption[] = [none("No service"), ...options.services.map((s) => ({ value: s.id, label: s.name }))];
 
   const [statusPending, startStatus] = useTransition();

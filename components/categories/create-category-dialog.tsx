@@ -13,7 +13,7 @@ import {
 } from "@/components/ui/dialog";
 import { CategoryForm } from "./category-form";
 
-type Parent = { id: string; name: string; type: string };
+type Parent = { id: string; name: string };
 
 export function CreateCategoryDialog({
   parents,

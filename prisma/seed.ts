@@ -143,21 +143,27 @@ async function main() {
   const qByName = (n: string) => queues.find((q) => q.name === n)!;
 
   // ---- Categories (tree) ----
-  const mkCat = (name: string, type: string, icon: string, color: string, parentId?: string) =>
-    db.category.create({ data: { name, type, icon, color, parentId } });
+  // Clean, type-independent 2-level taxonomy (categories apply to any ticket)
+  const mkCat = (name: string, icon: string, color: string, parentId?: string) =>
+    db.category.create({ data: { name, icon, color, parentId } });
 
-  const cHardware = await mkCat("Hardware", "INCIDENT", "HardDrive", "#6366f1");
-  const cSoftware = await mkCat("Software", "INCIDENT", "AppWindow", "#0ea5e9");
-  const cNetwork = await mkCat("Network", "INCIDENT", "Network", "#f59e0b");
-  const cAccount = await mkCat("Account & Access", "REQUEST", "KeyRound", "#8b5cf6");
-  const cEmail = await mkCat("Email", "INCIDENT", "Mail", "#10b981", cSoftware.id);
-  const cVpn = await mkCat("VPN", "INCIDENT", "ShieldCheck", "#f59e0b", cNetwork.id);
-  const cLaptop = await mkCat("Laptop", "INCIDENT", "Laptop", "#6366f1", cHardware.id);
-  const cOnboard = await mkCat("Onboarding", "REQUEST", "UserPlus", "#8b5cf6", cAccount.id);
-  const cChange = await mkCat("Infrastructure Change", "CHANGE", "Server", "#8b5cf6");
-  const cAssetCat = await mkCat("Datacenter", "ASSET", "Server", "#6366f1");
-  const incidentCats = [cHardware, cSoftware, cNetwork, cEmail, cVpn, cLaptop];
-  const requestCats = [cAccount, cOnboard];
+  const cHardware = await mkCat("Hardware", "HardDrive", "#6366f1");
+  const cLaptop = await mkCat("Laptop", "Laptop", "#6366f1", cHardware.id);
+  const cDesktop = await mkCat("Desktop", "Monitor", "#6366f1", cHardware.id);
+  const cPrinter = await mkCat("Printer", "Printer", "#6366f1", cHardware.id);
+  const cSoftware = await mkCat("Software", "AppWindow", "#0ea5e9");
+  const cEmail = await mkCat("Email", "Mail", "#10b981", cSoftware.id);
+  const cOS = await mkCat("Operating System", "MonitorCog", "#0ea5e9", cSoftware.id);
+  const cNetwork = await mkCat("Network", "Network", "#f59e0b");
+  const cVpn = await mkCat("VPN", "ShieldCheck", "#f59e0b", cNetwork.id);
+  const cWifi = await mkCat("Wi-Fi", "Wifi", "#f59e0b", cNetwork.id);
+  const cAccess = await mkCat("Access", "KeyRound", "#8b5cf6");
+  const cAccount = await mkCat("Account", "UserPlus", "#8b5cf6", cAccess.id);
+  const cPerm = await mkCat("Permissions", "Lock", "#8b5cf6", cAccess.id);
+  const cInfra = await mkCat("Infrastructure", "Server", "#6366f1");
+  const cOnboard = cAccount; // onboarding requests are routed under Access › Account
+  const leafCats = [cLaptop, cDesktop, cPrinter, cEmail, cOS, cVpn, cWifi, cAccount, cPerm];
+  const parentCats = [cHardware, cSoftware, cNetwork, cAccess, cInfra];
 
   // ---- SLAs ----
   const slaGold = await db.sLA.create({ data: { name: "Gold — Critical", priority: "CRITICAL", responseMins: 15, resolveMins: 240, description: "Business critical, 24/7" } });
@@ -296,7 +302,7 @@ async function main() {
     const created = daysAgo(Math.floor(rand() * 25));
     const isClosed = status === "RESOLVED" || status === "CLOSED";
     const assignee = rand() > 0.15 ? pick(agents) : null;
-    const cat = type === "REQUEST" ? pick(requestCats) : pick(incidentCats);
+    const cat = pick(leafCats);
     const grp = pick(groups.slice(0, 3));
     const svc = pick(services);
 
@@ -372,7 +378,7 @@ async function main() {
         status, priority, impact: pick(["MEDIUM", "HIGH"]),
         assigneeId: pick(agents).id,
         groupId: gInfra.id,
-        categoryId: pick(incidentCats).id,
+        categoryId: pick(parentCats).id,
         workaround: status === "KNOWN_ERROR" ? "Restart the affected service; batch heavy jobs off-peak." : null,
         rootCause: status === "RESOLVED" ? "Misconfigured connector timeout; corrected in config." : null,
         createdAt: daysAgo(Math.floor(rand() * 30 + 5)),
@@ -410,7 +416,7 @@ async function main() {
         rollbackPlan: "Restore from snapshot / revert firmware to previous version.",
         assigneeId: pick(agents).id,
         groupId: gInfra.id,
-        categoryId: cChange.id,
+        categoryId: cInfra.id,
         problemId: rand() > 0.6 ? pick(problems).id : null,
         plannedStart: start,
         plannedEnd: new Date(start.getTime() + pick([2, 4, 6]) * 3600000),
@@ -506,7 +512,7 @@ async function main() {
       data: {
         title, slug, excerpt,
         body: `## ${title}\n\n${excerpt}\n\n1. Open the self-service portal.\n2. Follow the on-screen steps.\n3. Contact the Service Desk if you need help.\n\n> Tip: You can track all your requests under **My Tickets**.`,
-        categoryId: pick(incidentCats).id,
+        categoryId: pick(parentCats).id,
         authorId: pick(agents).id,
         published: true,
         views: Math.floor(rand() * 400 + 20),

@@ -6,7 +6,6 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { getSessionUser } from "@/lib/session";
 import { writeAudit } from "@/lib/audit";
-import { CATEGORY_TYPES } from "@/lib/constants";
 
 const optionalId = z
   .string()
@@ -20,7 +19,6 @@ const optionalText = z
 
 const createSchema = z.object({
   name: z.string().min(2, "Name must be at least 2 characters"),
-  type: z.enum(CATEGORY_TYPES),
   parentId: optionalId,
   color: z
     .string()
@@ -52,7 +50,6 @@ export async function createCategory(
   const category = await db.category.create({
     data: {
       name: data.name,
-      type: data.type,
       parentId: data.parentId,
       color: data.color,
       description: data.description,
@@ -74,7 +71,6 @@ export async function createCategory(
 const updateSchema = z.object({
   id: z.string().min(1),
   name: z.string().min(2, "Name must be at least 2 characters"),
-  type: z.enum(CATEGORY_TYPES),
   parentId: optionalId,
   color: z
     .string()
@@ -106,7 +102,6 @@ export async function updateCategory(
     where: { id },
     data: {
       name: data.name,
-      type: data.type,
       parentId,
       color: data.color,
       description: data.description,

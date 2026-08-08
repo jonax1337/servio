@@ -1,64 +1,43 @@
 import type { Metadata } from "next";
 import { FolderTree } from "lucide-react";
 import { db } from "@/lib/db";
-import { CATEGORY_TYPES } from "@/lib/constants";
 import { PageHeader, PageBody } from "@/components/page-header";
-import { CreateCategoryDialog } from "@/components/categories/create-category-dialog";
 import { EmptyState } from "@/components/empty-state";
+import { Card, CardContent } from "@/components/ui/card";
+import { CreateCategoryDialog } from "@/components/categories/create-category-dialog";
 
 export const metadata: Metadata = { title: "Categories" };
 export const dynamic = "force-dynamic";
 
-const TYPE_LABELS: Record<(typeof CATEGORY_TYPES)[number], string> = {
-  INCIDENT: "Incident",
-  REQUEST: "Service Request",
-  PROBLEM: "Problem",
-  CHANGE: "Change",
-  ASSET: "Asset",
-};
-
-type CategoryNode = {
+type Node = {
   id: string;
   name: string;
   description: string | null;
-  type: string;
   color: string;
   parentId: string | null;
   ticketCount: number;
-  children: CategoryNode[];
+  children: Node[];
 };
 
-function CategoryRow({ node, depth }: { node: CategoryNode; depth: number }) {
+function Tree({ nodes, depth = 0 }: { nodes: Node[]; depth?: number }) {
   return (
-    <>
-      <div
-        className="flex items-start gap-3 rounded-lg px-3 py-2.5 transition-colors hover:bg-muted/40"
-        style={{ marginLeft: depth * 20 }}
-      >
-        <span
-          className="mt-1 size-2.5 shrink-0 rounded-full ring-2 ring-inset ring-black/5"
-          style={{ backgroundColor: node.color }}
-        />
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2">
-            <span className="truncate text-sm font-medium">{node.name}</span>
-            {node.ticketCount > 0 ? (
-              <span className="rounded-full border bg-muted px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground">
-                {node.ticketCount} linked
-              </span>
+    <ul className={depth > 0 ? "ml-3 border-l pl-3" : "grid gap-0.5"}>
+      {nodes.map((n) => (
+        <li key={n.id} className="py-0.5">
+          <div className="flex items-center gap-2.5 rounded-md px-2 py-1.5">
+            <span className="size-2.5 shrink-0 rounded-full" style={{ background: n.color }} />
+            <span className="font-medium">{n.name}</span>
+            {n.description ? (
+              <span className="truncate text-xs text-muted-foreground">{n.description}</span>
+            ) : null}
+            {n.ticketCount > 0 ? (
+              <span className="ml-auto text-xs text-muted-foreground">{n.ticketCount} tickets</span>
             ) : null}
           </div>
-          {node.description ? (
-            <p className="mt-0.5 line-clamp-1 text-xs text-muted-foreground">
-              {node.description}
-            </p>
-          ) : null}
-        </div>
-      </div>
-      {node.children.map((child) => (
-        <CategoryRow key={child.id} node={child} depth={depth + 1} />
+          {n.children.length > 0 ? <Tree nodes={n.children} depth={depth + 1} /> : null}
+        </li>
       ))}
-    </>
+    </ul>
   );
 }
 
@@ -67,86 +46,44 @@ export default async function CategoriesPage() {
     orderBy: { name: "asc" },
     include: { _count: { select: { tickets: true } } },
   });
-  const parents = categories.map((c) => ({ id: c.id, name: c.name, type: c.type }));
+  const parents = categories.map((c) => ({ id: c.id, name: c.name }));
 
-  const nodes: CategoryNode[] = categories.map((c) => ({
-    id: c.id,
-    name: c.name,
-    description: c.description,
-    type: c.type,
-    color: c.color,
-    parentId: c.parentId,
-    ticketCount: c._count.tickets,
-    children: [],
+  const nodes: Node[] = categories.map((c) => ({
+    id: c.id, name: c.name, description: c.description, color: c.color,
+    parentId: c.parentId, ticketCount: c._count.tickets, children: [],
   }));
-
   const byId = new Map(nodes.map((n) => [n.id, n]));
-  for (const node of nodes) {
-    if (node.parentId) {
-      const parent = byId.get(node.parentId);
-      if (parent) parent.children.push(node);
-    }
+  const roots: Node[] = [];
+  for (const n of nodes) {
+    if (n.parentId && byId.get(n.parentId)) byId.get(n.parentId)!.children.push(n);
+    else roots.push(n);
   }
-
-  const hasAny = nodes.length > 0;
 
   return (
     <>
       <PageHeader
         icon={FolderTree}
         title="Categories"
-        description="Classification taxonomy for tickets, problems, changes and assets."
+        description="Your classification taxonomy — nest categories to organise tickets, problems, changes and assets."
       >
         <CreateCategoryDialog parents={parents} />
       </PageHeader>
 
-      <PageBody className="grid gap-4">
-        {!hasAny ? (
+      <PageBody>
+        {roots.length === 0 ? (
           <EmptyState
             icon={FolderTree}
             title="No categories yet"
-            description="Create your first category to start organising tickets and other records."
+            description="Create a top-level category (e.g. Hardware) and nest subcategories under it."
           >
             <CreateCategoryDialog parents={parents} size="sm" />
           </EmptyState>
         ) : (
-          <div className="grid gap-4 lg:grid-cols-2">
-            {CATEGORY_TYPES.map((type) => {
-              const roots = nodes.filter(
-                (n) => n.type === type && n.parentId === null,
-              );
-              const total = nodes.filter((n) => n.type === type).length;
-              return (
-                <section
-                  key={type}
-                  className="overflow-hidden rounded-xl border bg-card"
-                >
-                  <div className="flex items-center justify-between border-b px-4 py-3">
-                    <div className="flex items-center gap-2">
-                      <FolderTree className="size-4 text-muted-foreground" />
-                      <h2 className="text-sm font-semibold tracking-tight">
-                        {TYPE_LABELS[type]}
-                      </h2>
-                    </div>
-                    <span className="text-xs text-muted-foreground">
-                      {total} {total === 1 ? "category" : "categories"}
-                    </span>
-                  </div>
-                  <div className="p-2">
-                    {roots.length === 0 ? (
-                      <p className="px-3 py-6 text-center text-xs text-muted-foreground">
-                        No {TYPE_LABELS[type].toLowerCase()} categories.
-                      </p>
-                    ) : (
-                      roots.map((node) => (
-                        <CategoryRow key={node.id} node={node} depth={0} />
-                      ))
-                    )}
-                  </div>
-                </section>
-              );
-            })}
-          </div>
+          <Card>
+            <CardContent className="pt-6">
+              <Tree nodes={roots} />
+            </CardContent>
+          </Card>
         )}
       </PageBody>
     </>

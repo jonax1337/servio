@@ -18,7 +18,6 @@ export default async function PortalNewPage({
   const sp = await searchParams;
   const [categories, services] = await Promise.all([
     db.category.findMany({
-      where: { type: { in: ["INCIDENT", "REQUEST"] } },
       select: { id: true, name: true },
       orderBy: { name: "asc" },
     }),
