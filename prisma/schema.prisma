@@ -227,6 +227,8 @@ model Ticket {
   isMajorIncident Boolean @default(false)
   pendingReason String? // AWAITING_CUSTOMER | AWAITING_VENDOR | AWAITING_CHANGE | AWAITING_PARTS | SCHEDULED
   pendingNote   String?
+  resolutionCode String? // FIXED | WORKAROUND | NOT_REPRODUCIBLE | DUPLICATE | NO_ACTION
+  resolutionNote String?
   mergedIntoId Int?
 
   requesterId String

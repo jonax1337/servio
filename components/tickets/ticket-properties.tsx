@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import { updateTicketField } from "@/lib/actions/tickets";
 import { Combobox, type ComboOption } from "@/components/combobox";
 import { PendingReasonDialog } from "@/components/tickets/pending-reason-dialog";
+import { ResolutionDialog } from "@/components/tickets/resolution-dialog";
 import {
   TICKET_STATUSES,
   PRIORITIES,
@@ -93,10 +94,15 @@ export function TicketProperties({
 
   const [statusPending, startStatus] = useTransition();
   const [pendingDlg, setPendingDlg] = useState<{ open: boolean; status: string }>({ open: false, status: "PENDING" });
+  const [resDlg, setResDlg] = useState<{ open: boolean; status: string }>({ open: false, status: "RESOLVED" });
 
   const changeStatus = (v: string) => {
     if (v === "PENDING" || v === "ON_HOLD") {
       setPendingDlg({ open: true, status: v });
+      return;
+    }
+    if (v === "RESOLVED" || v === "CLOSED" || v === "CANCELLED") {
+      setResDlg({ open: true, status: v });
       return;
     }
     const fd = new FormData();
@@ -117,6 +123,12 @@ export function TicketProperties({
         status={pendingDlg.status}
         open={pendingDlg.open}
         onOpenChange={(o) => setPendingDlg((s) => ({ ...s, open: o }))}
+      />
+      <ResolutionDialog
+        ticketId={ticket.id}
+        status={resDlg.status}
+        open={resDlg.open}
+        onOpenChange={(o) => setResDlg((s) => ({ ...s, open: o }))}
       />
       <Prop label="Priority" ticketId={ticket.id} field="priority" value={ticket.priority} options={prioOpts} />
       <Prop label="Assignee" ticketId={ticket.id} field="assigneeId" value={ticket.assigneeId} options={agentOpts} searchable placeholder="Unassigned" />

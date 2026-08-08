@@ -114,7 +114,7 @@ export async function updateTicketField(formData: FormData) {
   if (field === "status") {
     if (value === "RESOLVED") patch.resolvedAt = new Date();
     if (value === "CLOSED") patch.closedAt = new Date();
-    if (value === "OPEN" || value === "NEW") { patch.resolvedAt = null; patch.closedAt = null; }
+    if (value === "OPEN" || value === "NEW") { patch.resolvedAt = null; patch.closedAt = null; patch.resolutionCode = null; patch.resolutionNote = null; }
     // leaving a pending state clears the reason
     if (value !== "PENDING" && value !== "ON_HOLD") { patch.pendingReason = null; patch.pendingNote = null; }
   }
@@ -287,13 +287,120 @@ export async function mergeTicket(formData: FormData) {
   const id = Number(formData.get("id"));
   const targetId = Number(formData.get("targetId"));
   if (!id || !targetId || id === targetId) return;
+
+  const source = await db.ticket.findUnique({
+    where: { id },
+    include: { comments: { orderBy: { createdAt: "asc" } }, watchers: true },
+  });
+  if (!source) return;
+
+  // 1) Carry the source's description + comments into the target (attributed to original authors)
+  await db.ticketComment.create({
+    data: {
+      ticketId: targetId, authorId: me.id, isInternal: true,
+      body: `⤵︎ Merged from ${ticketRef(source.id, source.type)} — "${source.title}"\n\n${source.description || "(no description)"}`,
+    },
+  });
+  for (const c of source.comments) {
+    await db.ticketComment.create({
+      data: {
+        ticketId: targetId, authorId: c.authorId, isInternal: c.isInternal,
+        body: `[from ${ticketRef(source.id, source.type)}] ${c.body}`,
+        createdAt: c.createdAt,
+      },
+    });
+  }
+
+  // 2) Move watchers + any linked assets over to the target
+  for (const w of source.watchers) {
+    await db.ticketWatcher.upsert({
+      where: { ticketId_userId: { ticketId: targetId, userId: w.userId } },
+      create: { ticketId: targetId, userId: w.userId },
+      update: {},
+    });
+  }
+  const srcAssets = await db.ticketAsset.findMany({ where: { ticketId: id } });
+  for (const a of srcAssets) {
+    await db.ticketAsset.upsert({
+      where: { ticketId_assetId: { ticketId: targetId, assetId: a.assetId } },
+      create: { ticketId: targetId, assetId: a.assetId },
+      update: {},
+    });
+  }
+
+  // 3) Close the source as merged, and cross-link
   await db.ticket.update({ where: { id }, data: { mergedIntoId: targetId, status: "CANCELLED", closedAt: new Date() } });
-  await db.ticketComment.create({ data: { ticketId: id, authorId: me.id, isInternal: true, body: `Merged into ${ticketRef(targetId)}.` } });
-  await db.ticketComment.create({ data: { ticketId: targetId, authorId: me.id, isInternal: true, body: `${ticketRef(id)} was merged into this ticket.` } });
+  await db.ticketComment.create({ data: { ticketId: id, authorId: me.id, isInternal: true, body: `Merged into ${ticketRef(targetId)}. Comments, watchers and assets were carried over.` } });
+  await db.ticketLink.upsert({
+    where: { ticketId_linkedTicketId: { ticketId: targetId, linkedTicketId: id } },
+    create: { ticketId: targetId, linkedTicketId: id, type: "DUPLICATE" },
+    update: { type: "DUPLICATE" },
+  });
   await writeAudit({ userId: me.id, action: "UPDATE", entity: "Ticket", entityId: id, summary: `Merged into ${ticketRef(targetId)}` });
+
   revalidatePath(`/tickets/${id}`);
   revalidatePath(`/tickets/${targetId}`);
   redirect(`/tickets/${targetId}`);
+}
+
+// ── Resolution / cancel ──────────────────────────────────────────────────────
+
+export async function setTicketResolution(formData: FormData) {
+  const me = await requireAgent();
+  if (!me) return;
+  const id = Number(formData.get("id"));
+  const status = String(formData.get("status") ?? "");
+  const code = String(formData.get("code") ?? "").trim() || null;
+  const note = String(formData.get("note") ?? "").trim() || null;
+  if (!id || !["RESOLVED", "CLOSED", "CANCELLED"].includes(status)) return;
+
+  const now = new Date();
+  const ticket = await db.ticket.update({
+    where: { id },
+    data: {
+      status,
+      resolutionCode: status === "CANCELLED" ? null : code,
+      resolutionNote: note,
+      resolvedAt: status === "RESOLVED" ? now : undefined,
+      closedAt: status === "CLOSED" || status === "CANCELLED" ? now : undefined,
+    },
+    include: { requester: true },
+  });
+
+  const verb = status === "CANCELLED" ? "Cancelled" : status === "CLOSED" ? "Closed" : "Resolved";
+  await db.ticketComment.create({
+    data: { ticketId: id, authorId: me.id, isInternal: false, body: `${verb}${code ? ` (${code.replace(/_/g, " ").toLowerCase()})` : ""}${note ? `: ${note}` : "."}` },
+  });
+  await writeAudit({ userId: me.id, action: "UPDATE", entity: "Ticket", entityId: id, summary: `${verb} ticket` });
+
+  if (status === "RESOLVED" && ticket.requester?.email) {
+    await sendMail({ to: ticket.requester.email, toName: ticket.requester.name, entity: "Ticket", entityId: id, ...tplTicketResolved(ticket) });
+  }
+  await runAutomations("TICKET_UPDATED", id);
+  revalidatePath(`/tickets/${id}`);
+  revalidatePath("/tickets");
+}
+
+// ── Unlink relations ─────────────────────────────────────────────────────────
+
+export async function unlinkAsset(formData: FormData) {
+  const me = await requireAgent();
+  if (!me) return;
+  const ticketId = Number(formData.get("ticketId"));
+  const assetId = String(formData.get("assetId") ?? "");
+  if (!ticketId || !assetId) return;
+  await db.ticketAsset.delete({ where: { ticketId_assetId: { ticketId, assetId } } }).catch(() => {});
+  revalidatePath(`/tickets/${ticketId}`);
+}
+
+export async function unlinkRelation(formData: FormData) {
+  const me = await requireAgent();
+  if (!me) return;
+  const ticketId = Number(formData.get("ticketId"));
+  const kind = String(formData.get("kind") ?? "");
+  if (!ticketId || !["problem", "change"].includes(kind)) return;
+  await db.ticket.update({ where: { id: ticketId }, data: kind === "problem" ? { problemId: null } : { changeId: null } });
+  revalidatePath(`/tickets/${ticketId}`);
 }
 
 // ── Tasks ──────────────────────────────────────────────────────────────────

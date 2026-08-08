@@ -94,6 +94,22 @@ export const PENDING_REASON_META: Record<string, Meta> = {
   SCHEDULED: { label: "Scheduled", tone: "neutral", icon: CalendarClock },
 };
 
+// Resolution codes (on resolve/close)
+export const RESOLUTION_CODES = [
+  "FIXED",
+  "WORKAROUND",
+  "NOT_REPRODUCIBLE",
+  "DUPLICATE",
+  "NO_ACTION",
+] as const;
+export const RESOLUTION_CODE_META: Record<string, Meta> = {
+  FIXED: { label: "Fixed", tone: "success", icon: CheckCircle2 },
+  WORKAROUND: { label: "Workaround", tone: "info", icon: ShieldAlert },
+  NOT_REPRODUCIBLE: { label: "Not reproducible", tone: "neutral", icon: Search },
+  DUPLICATE: { label: "Duplicate", tone: "warning", icon: CircleCheck },
+  NO_ACTION: { label: "No action needed", tone: "neutral", icon: Ban },
+};
+
 export const PRIORITIES = ["LOW", "MEDIUM", "HIGH", "CRITICAL"] as const;
 export const PRIORITY_META: Record<string, Meta> = {
   LOW: { label: "Low", tone: "success", icon: ArrowDown },

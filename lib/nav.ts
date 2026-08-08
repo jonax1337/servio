@@ -12,7 +12,6 @@ import {
   FolderTree,
   RefreshCw,
   BookOpen,
-  KeyRound,
   Settings,
   LifeBuoy,
   CheckSquare,
@@ -67,7 +66,6 @@ export const consoleNav: NavGroup[] = [
     items: [
       { title: "Automations", href: "/automations", icon: Zap, minRole: "MANAGER" },
       { title: "Syncs", href: "/syncs", icon: RefreshCw, minRole: "MANAGER" },
-      { title: "API Tokens", href: "/settings/api", icon: KeyRound, minRole: "ADMIN" },
       { title: "Settings", href: "/settings", icon: Settings, minRole: "MANAGER" },
     ],
   },

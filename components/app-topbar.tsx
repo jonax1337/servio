@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/breadcrumb";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { CommandMenu } from "@/components/command-menu";
+import { CreateMenu } from "@/components/create-menu";
 import { UserMenu } from "@/components/user-menu";
 
 function label(seg: string) {
@@ -69,6 +70,7 @@ export function AppTopbar({
 
       <div className="ml-auto flex items-center gap-1.5">
         <CommandMenu role={user.role} />
+        <CreateMenu />
         <LinkButton
           href="/notifications"
           variant="ghost"

@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import {
   ArrowLeft, Server, AlertTriangle, GitPullRequestArrow,
-  Flame, Link2, ListChecks, GitMerge,
+  Flame, Link2, ListChecks, GitMerge, X, CheckCircle2,
 } from "lucide-react";
 import { db } from "@/lib/db";
 import { getFormOptions } from "@/lib/data/options";
@@ -13,13 +13,13 @@ import { StatusBadge, VipBadge, ToneBadge } from "@/components/status-badge";
 import { TicketProperties } from "@/components/tickets/ticket-properties";
 import { CommentThread } from "@/components/comments/comment-thread";
 import { EditEntityDialog } from "@/components/edit-entity-dialog";
-import { addTicketComment, updateTicketDetails } from "@/lib/actions/tickets";
+import { addTicketComment, updateTicketDetails, unlinkTicket, unlinkAsset, unlinkRelation } from "@/lib/actions/tickets";
 import { TicketActions } from "@/components/tickets/ticket-actions";
 import { TicketTasks } from "@/components/tickets/ticket-tasks";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   TICKET_STATUS_META, PRIORITY_META, TICKET_TYPE_META, SOURCE_META,
-  PENDING_REASON_META, metaFor,
+  PENDING_REASON_META, RESOLUTION_CODE_META, metaFor,
   ticketRef, problemRef, changeRef,
 } from "@/lib/constants";
 import { format, formatDistanceToNow } from "date-fns";
@@ -121,6 +121,7 @@ export default async function TicketDetailPage({
               isWatching={isWatching}
               isMajorIncident={ticket.isMajorIncident}
               candidates={candidateOpts}
+              watchers={ticket.watchers.map((w) => w.user.name ?? w.user.email)}
             />
           </div>
         </div>
@@ -135,6 +136,17 @@ export default async function TicketDetailPage({
           <div className="flex flex-wrap items-center gap-2 border-b bg-amber-500/5 px-4 py-2.5 text-sm sm:px-6">
             <ToneBadge meta={metaFor(PENDING_REASON_META, ticket.pendingReason)} />
             {ticket.pendingNote ? <span className="text-muted-foreground">{ticket.pendingNote}</span> : null}
+          </div>
+        ) : null}
+
+        {ticket.resolutionNote && ["RESOLVED", "CLOSED", "CANCELLED"].includes(ticket.status) ? (
+          <div className="flex flex-wrap items-center gap-2 border-b bg-emerald-500/5 px-4 py-2.5 text-sm sm:px-6">
+            {ticket.resolutionCode ? (
+              <ToneBadge meta={metaFor(RESOLUTION_CODE_META, ticket.resolutionCode)} />
+            ) : (
+              <CheckCircle2 className="size-4 text-emerald-500" />
+            )}
+            <span className="text-muted-foreground">{ticket.resolutionNote}</span>
           </div>
         ) : null}
 
@@ -163,28 +175,24 @@ export default async function TicketDetailPage({
             {ticket.description || <span className="text-muted-foreground">No description provided.</span>}
           </div>
 
-          {/* Linked records */}
+          {/* Linked records (with unlink) */}
           {(ticket.problem || ticket.change || ticket.assets.length > 0 || ticket.linksFrom.length > 0) && (
             <div className="mt-4 flex flex-wrap gap-2">
               {ticket.problem ? (
-                <Link href={`/problems/${ticket.problem.id}`} className="inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs hover:border-primary/40">
-                  <AlertTriangle className="size-3.5 text-amber-500" /> {problemRef(ticket.problem.id)} · {ticket.problem.title}
-                </Link>
+                <Chip href={`/problems/${ticket.problem.id}`} icon={<AlertTriangle className="size-3.5 text-amber-500" />} label={`${problemRef(ticket.problem.id)} · ${ticket.problem.title}`}
+                  unlink={<UnlinkBtn action={unlinkRelation} fields={{ ticketId: ticket.id, kind: "problem" }} />} />
               ) : null}
               {ticket.change ? (
-                <Link href={`/changes/${ticket.change.id}`} className="inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs hover:border-primary/40">
-                  <GitPullRequestArrow className="size-3.5 text-primary" /> {changeRef(ticket.change.id)}
-                </Link>
+                <Chip href={`/changes/${ticket.change.id}`} icon={<GitPullRequestArrow className="size-3.5 text-primary" />} label={changeRef(ticket.change.id)}
+                  unlink={<UnlinkBtn action={unlinkRelation} fields={{ ticketId: ticket.id, kind: "change" }} />} />
               ) : null}
               {ticket.linksFrom.map((l) => (
-                <Link key={l.id} href={`/tickets/${l.linkedTicketId}`} className="inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs hover:border-primary/40">
-                  <Link2 className="size-3.5 text-sky-500" /> {ticketRef(l.linked.id, l.linked.type)} · {l.linked.title}
-                </Link>
+                <Chip key={l.id} href={`/tickets/${l.linkedTicketId}`} icon={<Link2 className="size-3.5 text-sky-500" />} label={`${ticketRef(l.linked.id, l.linked.type)} · ${l.linked.title}`}
+                  unlink={<UnlinkBtn action={unlinkTicket} fields={{ linkId: l.id, ticketId: ticket.id }} />} />
               ))}
               {ticket.assets.map((a) => (
-                <Link key={a.assetId} href={`/assets/${a.assetId}`} className="inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs hover:border-primary/40">
-                  <Server className="size-3.5 text-indigo-500" /> {a.asset.name}
-                </Link>
+                <Chip key={a.assetId} href={`/assets/${a.assetId}`} icon={<Server className="size-3.5 text-indigo-500" />} label={a.asset.name}
+                  unlink={<UnlinkBtn action={unlinkAsset} fields={{ ticketId: ticket.id, assetId: a.assetId }} />} />
               ))}
             </div>
           )}
@@ -266,5 +274,45 @@ function Meta({ label, value }: { label: string; value: string }) {
       <span className="text-muted-foreground">{label}</span>
       <span className="text-right font-medium tabular-nums">{value}</span>
     </div>
+  );
+}
+
+function Chip({
+  href, icon, label, unlink,
+}: {
+  href: string;
+  icon: React.ReactNode;
+  label: string;
+  unlink: React.ReactNode;
+}) {
+  return (
+    <span className="group/chip inline-flex items-center rounded-lg border text-xs transition-colors hover:border-primary/40">
+      <Link href={href} className="inline-flex items-center gap-1.5 py-1 pl-2.5 pr-1.5">
+        {icon} {label}
+      </Link>
+      {unlink}
+    </span>
+  );
+}
+
+function UnlinkBtn({
+  action, fields,
+}: {
+  action: (formData: FormData) => void | Promise<void>;
+  fields: Record<string, string | number>;
+}) {
+  return (
+    <form action={action} className="flex">
+      {Object.entries(fields).map(([k, v]) => (
+        <input key={k} type="hidden" name={k} value={v} />
+      ))}
+      <button
+        type="submit"
+        aria-label="Unlink"
+        className="mr-1 grid size-5 place-items-center rounded text-muted-foreground opacity-0 transition-opacity hover:text-destructive group-hover/chip:opacity-100"
+      >
+        <X className="size-3.5" />
+      </button>
+    </form>
   );
 }

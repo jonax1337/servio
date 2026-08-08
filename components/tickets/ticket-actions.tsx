@@ -15,6 +15,7 @@ import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
 import { Combobox, type ComboOption } from "@/components/combobox";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
@@ -29,12 +30,13 @@ const LINK_TYPES = [
 ];
 
 export function TicketActions({
-  ticketId, isWatching, isMajorIncident, candidates,
+  ticketId, isWatching, isMajorIncident, candidates, watchers = [],
 }: {
   ticketId: number;
   isWatching: boolean;
   isMajorIncident: boolean;
   candidates: Candidate[];
+  watchers?: string[];
 }) {
   const [linkOpen, setLinkOpen] = useState(false);
   const [mergeOpen, setMergeOpen] = useState(false);
@@ -45,14 +47,33 @@ export function TicketActions({
 
   return (
     <>
-      {/* Watch */}
-      <form action={toggleWatch}>
-        <input type="hidden" name="id" value={ticketId} />
-        <Button type="submit" variant={isWatching ? "secondary" : "outline"} size="sm">
-          {isWatching ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
-          {isWatching ? "Watching" : "Watch"}
-        </Button>
-      </form>
+      {/* Watch (hover shows who's watching) */}
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <form action={toggleWatch}>
+              <input type="hidden" name="id" value={ticketId} />
+              <Button type="submit" variant={isWatching ? "secondary" : "outline"} size="sm">
+                {isWatching ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+                {isWatching ? "Watching" : "Watch"}
+                {watchers.length > 0 ? <span className="ml-0.5 opacity-70">· {watchers.length}</span> : null}
+              </Button>
+            </form>
+          }
+        />
+        <TooltipContent>
+          {watchers.length > 0 ? (
+            <div className="grid gap-0.5">
+              <span className="text-xs font-medium">Watching this ticket</span>
+              {watchers.slice(0, 8).map((w) => (
+                <span key={w} className="text-xs text-muted-foreground">{w}</span>
+              ))}
+            </div>
+          ) : (
+            <span className="text-xs">No one is watching yet</span>
+          )}
+        </TooltipContent>
+      </Tooltip>
 
       {/* Actions menu */}
       <DropdownMenu>
