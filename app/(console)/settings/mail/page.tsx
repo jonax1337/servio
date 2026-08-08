@@ -1,0 +1,107 @@
+import type { Metadata } from "next";
+import { Mail, CheckCircle2, Server, Inbox } from "lucide-react";
+import { db } from "@/lib/db";
+import { requireRole } from "@/lib/session";
+import { smtpConfigured } from "@/lib/mail";
+import { PageHeader, PageBody } from "@/components/page-header";
+import { StatusBadge } from "@/components/status-badge";
+import { EmptyState } from "@/components/empty-state";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+} from "@/components/ui/table";
+import { formatDistanceToNow } from "date-fns";
+
+export const metadata: Metadata = { title: "Mail" };
+export const dynamic = "force-dynamic";
+
+const MAIL_STATUS_META = {
+  QUEUED: { label: "Queued", tone: "info" as const },
+  SENT: { label: "Sent", tone: "success" as const },
+  FAILED: { label: "Failed", tone: "danger" as const },
+};
+
+export default async function MailSettingsPage() {
+  await requireRole("MANAGER");
+  const configured = smtpConfigured();
+  const [messages, sentCount] = await Promise.all([
+    db.emailMessage.findMany({ orderBy: { createdAt: "desc" }, take: 50 }),
+    db.emailMessage.count({ where: { status: "SENT" } }),
+  ]);
+
+  return (
+    <>
+      <PageHeader
+        icon={Mail}
+        title="Mail"
+        description="Outgoing notifications for tickets, assignments and updates."
+      />
+      <PageBody className="grid gap-6">
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-sm">
+              <Server className="size-4 text-muted-foreground" /> Delivery
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="grid gap-2 text-sm sm:grid-cols-3">
+            <div className="flex items-center gap-2">
+              {configured ? (
+                <>
+                  <CheckCircle2 className="size-4 text-emerald-500" />
+                  <span>SMTP configured — emails are delivered</span>
+                </>
+              ) : (
+                <>
+                  <Inbox className="size-4 text-amber-500" />
+                  <span>Outbox mode — set <code className="font-mono text-xs">SMTP_HOST</code> to deliver</span>
+                </>
+              )}
+            </div>
+            <div className="text-muted-foreground">
+              Total sent: <span className="font-medium text-foreground">{sentCount}</span>
+            </div>
+          </CardContent>
+        </Card>
+
+        {messages.length === 0 ? (
+          <EmptyState icon={Mail} title="No emails yet" description="Notifications will appear here as tickets are created and updated." />
+        ) : (
+          <div className="overflow-hidden rounded-xl border bg-card">
+            <Table>
+              <TableHeader>
+                <TableRow className="hover:bg-transparent">
+                  <TableHead>Recipient</TableHead>
+                  <TableHead>Subject</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead className="text-right">When</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {messages.map((m) => (
+                  <TableRow key={m.id}>
+                    <TableCell className="whitespace-nowrap text-sm">
+                      <div className="font-medium">{m.toName ?? m.toEmail}</div>
+                      <div className="text-xs text-muted-foreground">{m.toEmail}</div>
+                    </TableCell>
+                    <TableCell className="max-w-[420px]">
+                      <div className="truncate text-sm">{m.subject}</div>
+                      <div className="truncate text-xs text-muted-foreground">
+                        {m.body.split("\n").find((l) => l.trim()) ?? ""}
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <StatusBadge map={MAIL_STATUS_META} value={m.status} />
+                    </TableCell>
+                    <TableCell className="whitespace-nowrap text-right text-xs text-muted-foreground">
+                      {formatDistanceToNow(m.createdAt, { addSuffix: true })}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        )}
+      </PageBody>
+    </>
+  );
+}

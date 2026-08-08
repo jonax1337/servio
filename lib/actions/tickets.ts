@@ -7,6 +7,9 @@ import { db } from "@/lib/db";
 import { getSessionUser } from "@/lib/session";
 import { writeAudit, notify } from "@/lib/audit";
 import {
+  sendMail, tplTicketReceived, tplTicketAssigned, tplTicketReply, tplTicketResolved,
+} from "@/lib/mail";
+import {
   TICKET_TYPES,
   TICKET_STATUSES,
   PRIORITIES,
@@ -50,11 +53,21 @@ export async function createTicket(_prev: ActionState, formData: FormData): Prom
 
   const ticket = await db.ticket.create({
     data: { ...data, status: "NEW" },
+    include: { requester: true, assignee: true },
   });
 
   await writeAudit({ userId: me.id, action: "CREATE", entity: "Ticket", entityId: ticket.id, summary: `Created ticket "${ticket.title}"` });
-  if (data.assigneeId && data.assigneeId !== me.id) {
-    await notify(data.assigneeId, { type: "ASSIGNED", title: "Ticket assigned to you", body: ticket.title, entity: "Ticket", entityId: String(ticket.id) });
+
+  // Confirmation to the requester
+  if (ticket.requester?.email) {
+    await sendMail({ to: ticket.requester.email, toName: ticket.requester.name, entity: "Ticket", entityId: ticket.id, ...tplTicketReceived(ticket) });
+  }
+  // Assignment notice
+  if (ticket.assignee && ticket.assigneeId !== me.id) {
+    await notify(ticket.assigneeId!, { type: "ASSIGNED", title: "Ticket assigned to you", body: ticket.title, entity: "Ticket", entityId: String(ticket.id) });
+    if (ticket.assignee.email) {
+      await sendMail({ to: ticket.assignee.email, toName: ticket.assignee.name, entity: "Ticket", entityId: ticket.id, ...tplTicketAssigned(ticket, ticket.assignee.name ?? "there") });
+    }
   }
 
   revalidatePath("/tickets");
@@ -87,8 +100,21 @@ export async function updateTicketField(formData: FormData) {
     if (value === "OPEN" || value === "NEW") { patch.resolvedAt = null; patch.closedAt = null; }
   }
 
-  await db.ticket.update({ where: { id }, data: patch });
+  const ticket = await db.ticket.update({
+    where: { id },
+    data: patch,
+    include: { requester: true, assignee: true },
+  });
   await writeAudit({ userId: me.id, action: "UPDATE", entity: "Ticket", entityId: id, summary: `Updated ${field}` });
+
+  if (field === "status" && value === "RESOLVED" && ticket.requester?.email) {
+    await sendMail({ to: ticket.requester.email, toName: ticket.requester.name, entity: "Ticket", entityId: ticket.id, ...tplTicketResolved(ticket) });
+  }
+  if (field === "assigneeId" && ticket.assignee?.email && ticket.assigneeId !== me.id) {
+    await notify(ticket.assigneeId!, { type: "ASSIGNED", title: "Ticket assigned to you", body: ticket.title, entity: "Ticket", entityId: String(ticket.id) });
+    await sendMail({ to: ticket.assignee.email, toName: ticket.assignee.name, entity: "Ticket", entityId: ticket.id, ...tplTicketAssigned(ticket, ticket.assignee.name ?? "there") });
+  }
+
   revalidatePath(`/tickets/${id}`);
   revalidatePath("/tickets");
 }
@@ -102,7 +128,18 @@ export async function addTicketComment(formData: FormData) {
   if (!id || !body) return;
 
   await db.ticketComment.create({ data: { ticketId: id, authorId: me.id, body, isInternal } });
-  await db.ticket.update({ where: { id }, data: { updatedAt: new Date() } });
+  const ticket = await db.ticket.update({
+    where: { id },
+    data: { updatedAt: new Date() },
+    include: { requester: true },
+  });
   await writeAudit({ userId: me.id, action: "UPDATE", entity: "Ticket", entityId: id, summary: "Added a comment" });
+
+  // Notify the requester when an agent posts a public reply
+  if (!isInternal && me.role !== "USER" && ticket.requester?.email && ticket.requesterId !== me.id) {
+    const snippet = body.length > 160 ? `${body.slice(0, 157)}…` : body;
+    await sendMail({ to: ticket.requester.email, toName: ticket.requester.name, entity: "Ticket", entityId: ticket.id, ...tplTicketReply(ticket, snippet) });
+  }
+
   revalidatePath(`/tickets/${id}`);
 }
