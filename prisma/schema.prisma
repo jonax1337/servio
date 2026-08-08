@@ -485,6 +485,7 @@ model Asset {
   model        String?
   manufacturer String?
   location     String?
+  locationId   String?
   ipAddress    String?
   macAddress   String?
   os           String?
@@ -505,6 +506,7 @@ model Asset {
 
   owner      User?       @relation("AssetOwner", fields: [ownerId], references: [id])
   group      Group?      @relation(fields: [groupId], references: [id])
+  locationRef Location?  @relation(fields: [locationId], references: [id])
   syncSource SyncSource? @relation(fields: [syncSourceId], references: [id])
   relationsFrom AssetRelation[] @relation("RelationSource")
   relationsTo   AssetRelation[] @relation("RelationTarget")
@@ -514,6 +516,25 @@ model Asset {
   @@index([type])
   @@index([status])
   @@index([syncSourceId])
+}
+
+model Location {
+  id        String   @id @default(cuid())
+  name      String
+  type      String   @default("BUILDING") // SITE | BUILDING | FLOOR | ROOM | DATACENTER | RACK
+  parentId  String?
+  address   String?
+  city      String?
+  country   String?
+  notes     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  parent   Location?  @relation("LocationTree", fields: [parentId], references: [id])
+  children Location[] @relation("LocationTree")
+  assets   Asset[]
+
+  @@index([parentId])
 }
 
 model AssetRelation {

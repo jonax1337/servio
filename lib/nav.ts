@@ -17,6 +17,7 @@ import {
   LifeBuoy,
   CheckSquare,
   Zap,
+  MapPin,
 } from "lucide-react";
 
 export type NavItem = {
@@ -48,6 +49,7 @@ export const consoleNav: NavGroup[] = [
     items: [
       { title: "Services", href: "/services", icon: LifeBuoy },
       { title: "Assets", href: "/assets", icon: Server },
+      { title: "Locations", href: "/locations", icon: MapPin },
       { title: "Categories", href: "/categories", icon: FolderTree },
       { title: "Knowledge Base", href: "/knowledge", icon: BookOpen },
     ],

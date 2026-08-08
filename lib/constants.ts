@@ -7,6 +7,7 @@ import {
   AlertTriangle, Wrench, Search, ShieldAlert,
   FileEdit, Send, ThumbsUp, CalendarClock, PlayCircle,
   TriangleAlert, CircleSlash, Crown,
+  MapPin, Building2, Layers, DoorClosed, Server, Rows3,
 } from "lucide-react";
 
 export type Tone =
@@ -300,6 +301,24 @@ export const SYNC_RUN_STATUS_META: Record<string, Meta> = {
 
 // VIP flag (for important requesters)
 export const VIP_META: Meta = { label: "VIP", tone: "warning", icon: Crown };
+
+// ---- Location ----
+export const LOCATION_TYPES = [
+  "SITE",
+  "BUILDING",
+  "FLOOR",
+  "ROOM",
+  "DATACENTER",
+  "RACK",
+] as const;
+export const LOCATION_TYPE_META: Record<string, Meta> = {
+  SITE: { label: "Site", tone: "indigo", icon: MapPin },
+  BUILDING: { label: "Building", tone: "info", icon: Building2 },
+  FLOOR: { label: "Floor", tone: "purple", icon: Layers },
+  ROOM: { label: "Room", tone: "neutral", icon: DoorClosed },
+  DATACENTER: { label: "Datacenter", tone: "success", icon: Server },
+  RACK: { label: "Rack", tone: "warning", icon: Rows3 },
+};
 
 // Generic fallback lookup
 export function metaFor(

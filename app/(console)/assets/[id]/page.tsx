@@ -7,6 +7,8 @@ import { getFormOptions } from "@/lib/data/options";
 import { LinkButton } from "@/components/link-button";
 import { StatusBadge, ToneBadge } from "@/components/status-badge";
 import { AssetProperties } from "@/components/assets/asset-properties";
+import { AssetEditDialog } from "@/components/assets/asset-edit-dialog";
+import { EntityHistory, HistoryHeading } from "@/components/history/entity-history";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   ASSET_TYPE_META,
@@ -40,12 +42,13 @@ export default async function AssetDetailPage({
 }) {
   const { id } = await params;
 
-  const [asset, options] = await Promise.all([
+  const [asset, options, locations] = await Promise.all([
     db.asset.findUnique({
       where: { id },
       include: {
         owner: true,
         group: true,
+        locationRef: true,
         syncSource: true,
         relationsFrom: { include: { target: true } },
         relationsTo: { include: { source: true } },
@@ -53,8 +56,15 @@ export default async function AssetDetailPage({
       },
     }),
     getFormOptions(),
+    db.location.findMany({ select: { id: true, name: true }, orderBy: { name: "asc" } }),
   ]);
   if (!asset) notFound();
+
+  const editOptions = {
+    locations: locations.map((l) => ({ value: l.id, label: l.name })),
+    agents: options.agents.map((a) => ({ value: a.id, label: a.name ?? a.email })),
+    groups: options.groups.map((g) => ({ value: g.id, label: g.name })),
+  };
 
   const specs: { label: string; value: React.ReactNode }[] = [];
   const push = (label: string, value: React.ReactNode) => {
@@ -72,7 +82,16 @@ export default async function AssetDetailPage({
   push("Storage", asset.storageGb != null ? `${asset.storageGb} GB` : null);
   push("IP", asset.ipAddress ? <span className="font-mono">{asset.ipAddress}</span> : null);
   push("MAC", asset.macAddress ? <span className="font-mono">{asset.macAddress}</span> : null);
-  push("Location", asset.location);
+  push(
+    "Location",
+    asset.locationRef ? (
+      <Link href={`/locations/${asset.locationRef.id}`} className="text-primary hover:underline">
+        {asset.locationRef.name}
+      </Link>
+    ) : (
+      asset.location
+    ),
+  );
   push("Cost", asset.cost != null ? `$${asset.cost.toLocaleString()}` : null);
   push("Warranty end", asset.warrantyEnd ? format(asset.warrantyEnd, "PP") : null);
 
@@ -91,6 +110,7 @@ export default async function AssetDetailPage({
           ) : null}
           <StatusBadge map={ASSET_TYPE_META} value={asset.type} dot />
           <div className="ml-auto flex items-center gap-2">
+            <AssetEditDialog asset={asset} options={editOptions} />
             <StatusBadge map={ASSET_STATUS_META} value={asset.status} />
           </div>
         </div>
@@ -244,6 +264,15 @@ export default async function AssetDetailPage({
             {asset.lastSeenAt ? (
               <Meta label="Last seen" value={format(asset.lastSeenAt, "PP p")} />
             ) : null}
+          </CardContent>
+        </Card>
+
+        <Card className="mt-4">
+          <CardHeader>
+            <CardTitle className="text-sm"><HistoryHeading /></CardTitle>
+          </CardHeader>
+          <CardContent>
+            <EntityHistory entity="Asset" entityId={asset.id} />
           </CardContent>
         </Card>
       </aside>
