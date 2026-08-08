@@ -1,5 +1,13 @@
 // Single source of truth for the "enum" string fields (SQLite has no enums).
-// Each domain exports: the allowed values, human labels, and a badge tone.
+// Each domain exports: the allowed values, human labels, a badge tone, and an icon.
+import type { LucideIcon } from "lucide-react";
+import {
+  ArrowDown, Minus, ArrowUp, Flame,
+  Sparkle, CircleDot, Clock, PauseCircle, CheckCircle2, CircleCheck, XCircle, Ban,
+  AlertTriangle, Wrench, Search, ShieldAlert,
+  FileEdit, Send, ThumbsUp, CalendarClock, PlayCircle,
+  TriangleAlert, CircleSlash, Crown,
+} from "lucide-react";
 
 export type Tone =
   | "neutral"
@@ -24,7 +32,7 @@ export const TONE_CLASSES: Record<Tone, string> = {
     "bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border-indigo-500/20",
 };
 
-export type Meta = { label: string; tone: Tone };
+export type Meta = { label: string; tone: Tone; icon?: LucideIcon };
 
 // ---- Roles ----------------------------------------------------------------
 export const ROLES = ["ADMIN", "MANAGER", "AGENT", "USER"] as const;
@@ -39,8 +47,8 @@ export const ROLE_META: Record<Role, Meta> = {
 // ---- Ticket ---------------------------------------------------------------
 export const TICKET_TYPES = ["INCIDENT", "REQUEST"] as const;
 export const TICKET_TYPE_META: Record<string, Meta> = {
-  INCIDENT: { label: "Incident", tone: "danger" },
-  REQUEST: { label: "Service Request", tone: "info" },
+  INCIDENT: { label: "Incident", tone: "danger", icon: AlertTriangle },
+  REQUEST: { label: "Service Request", tone: "info", icon: Send },
 };
 
 export const TICKET_STATUSES = [
@@ -53,13 +61,13 @@ export const TICKET_STATUSES = [
   "CANCELLED",
 ] as const;
 export const TICKET_STATUS_META: Record<string, Meta> = {
-  NEW: { label: "New", tone: "info" },
-  OPEN: { label: "Open", tone: "indigo" },
-  PENDING: { label: "Pending", tone: "warning" },
-  ON_HOLD: { label: "On Hold", tone: "warning" },
-  RESOLVED: { label: "Resolved", tone: "success" },
-  CLOSED: { label: "Closed", tone: "neutral" },
-  CANCELLED: { label: "Cancelled", tone: "neutral" },
+  NEW: { label: "New", tone: "info", icon: Sparkle },
+  OPEN: { label: "Open", tone: "indigo", icon: CircleDot },
+  PENDING: { label: "Pending", tone: "warning", icon: Clock },
+  ON_HOLD: { label: "On Hold", tone: "warning", icon: PauseCircle },
+  RESOLVED: { label: "Resolved", tone: "success", icon: CheckCircle2 },
+  CLOSED: { label: "Closed", tone: "neutral", icon: CircleCheck },
+  CANCELLED: { label: "Cancelled", tone: "neutral", icon: Ban },
 };
 export const OPEN_TICKET_STATUSES = [
   "NEW",
@@ -70,10 +78,10 @@ export const OPEN_TICKET_STATUSES = [
 
 export const PRIORITIES = ["LOW", "MEDIUM", "HIGH", "CRITICAL"] as const;
 export const PRIORITY_META: Record<string, Meta> = {
-  LOW: { label: "Low", tone: "neutral" },
-  MEDIUM: { label: "Medium", tone: "info" },
-  HIGH: { label: "High", tone: "warning" },
-  CRITICAL: { label: "Critical", tone: "danger" },
+  LOW: { label: "Low", tone: "success", icon: ArrowDown },
+  MEDIUM: { label: "Medium", tone: "info", icon: Minus },
+  HIGH: { label: "High", tone: "warning", icon: ArrowUp },
+  CRITICAL: { label: "Critical", tone: "danger", icon: Flame },
 };
 
 export const IMPACT_URGENCY = ["LOW", "MEDIUM", "HIGH"] as const;
@@ -107,11 +115,11 @@ export const PROBLEM_STATUSES = [
   "CLOSED",
 ] as const;
 export const PROBLEM_STATUS_META: Record<string, Meta> = {
-  NEW: { label: "New", tone: "info" },
-  INVESTIGATING: { label: "Investigating", tone: "indigo" },
-  KNOWN_ERROR: { label: "Known Error", tone: "warning" },
-  RESOLVED: { label: "Resolved", tone: "success" },
-  CLOSED: { label: "Closed", tone: "neutral" },
+  NEW: { label: "New", tone: "info", icon: Sparkle },
+  INVESTIGATING: { label: "Investigating", tone: "indigo", icon: Search },
+  KNOWN_ERROR: { label: "Known Error", tone: "warning", icon: ShieldAlert },
+  RESOLVED: { label: "Resolved", tone: "success", icon: CheckCircle2 },
+  CLOSED: { label: "Closed", tone: "neutral", icon: CircleCheck },
 };
 
 // ---- Change ---------------------------------------------------------------
@@ -135,16 +143,16 @@ export const CHANGE_STATUSES = [
   "FAILED",
 ] as const;
 export const CHANGE_STATUS_META: Record<string, Meta> = {
-  DRAFT: { label: "Draft", tone: "neutral" },
-  SUBMITTED: { label: "Submitted", tone: "info" },
-  APPROVAL: { label: "In Approval", tone: "warning" },
-  APPROVED: { label: "Approved", tone: "success" },
-  SCHEDULED: { label: "Scheduled", tone: "indigo" },
-  IN_PROGRESS: { label: "In Progress", tone: "purple" },
-  REVIEW: { label: "Review", tone: "warning" },
-  CLOSED: { label: "Closed", tone: "success" },
-  REJECTED: { label: "Rejected", tone: "danger" },
-  FAILED: { label: "Failed", tone: "danger" },
+  DRAFT: { label: "Draft", tone: "neutral", icon: FileEdit },
+  SUBMITTED: { label: "Submitted", tone: "info", icon: Send },
+  APPROVAL: { label: "In Approval", tone: "warning", icon: Clock },
+  APPROVED: { label: "Approved", tone: "success", icon: ThumbsUp },
+  SCHEDULED: { label: "Scheduled", tone: "indigo", icon: CalendarClock },
+  IN_PROGRESS: { label: "In Progress", tone: "purple", icon: PlayCircle },
+  REVIEW: { label: "Review", tone: "warning", icon: Search },
+  CLOSED: { label: "Closed", tone: "success", icon: CircleCheck },
+  REJECTED: { label: "Rejected", tone: "danger", icon: XCircle },
+  FAILED: { label: "Failed", tone: "danger", icon: TriangleAlert },
 };
 
 export const RISKS = ["LOW", "MEDIUM", "HIGH"] as const;
@@ -166,11 +174,11 @@ export const SERVICE_STATUSES = [
   "RETIRED",
 ] as const;
 export const SERVICE_STATUS_META: Record<string, Meta> = {
-  OPERATIONAL: { label: "Operational", tone: "success" },
-  DEGRADED: { label: "Degraded", tone: "warning" },
-  OUTAGE: { label: "Outage", tone: "danger" },
-  MAINTENANCE: { label: "Maintenance", tone: "info" },
-  RETIRED: { label: "Retired", tone: "neutral" },
+  OPERATIONAL: { label: "Operational", tone: "success", icon: CheckCircle2 },
+  DEGRADED: { label: "Degraded", tone: "warning", icon: TriangleAlert },
+  OUTAGE: { label: "Outage", tone: "danger", icon: XCircle },
+  MAINTENANCE: { label: "Maintenance", tone: "info", icon: Wrench },
+  RETIRED: { label: "Retired", tone: "neutral", icon: CircleSlash },
 };
 
 export const CRITICALITIES = ["LOW", "MEDIUM", "HIGH", "CRITICAL"] as const;
@@ -284,11 +292,14 @@ export const SYNC_RUN_STATUSES = [
   "PARTIAL",
 ] as const;
 export const SYNC_RUN_STATUS_META: Record<string, Meta> = {
-  RUNNING: { label: "Running", tone: "info" },
-  SUCCESS: { label: "Success", tone: "success" },
-  FAILED: { label: "Failed", tone: "danger" },
-  PARTIAL: { label: "Partial", tone: "warning" },
+  RUNNING: { label: "Running", tone: "info", icon: PlayCircle },
+  SUCCESS: { label: "Success", tone: "success", icon: CheckCircle2 },
+  FAILED: { label: "Failed", tone: "danger", icon: XCircle },
+  PARTIAL: { label: "Partial", tone: "warning", icon: TriangleAlert },
 };
+
+// VIP flag (for important requesters)
+export const VIP_META: Meta = { label: "VIP", tone: "warning", icon: Crown };
 
 // Generic fallback lookup
 export function metaFor(

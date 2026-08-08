@@ -23,6 +23,7 @@ model User {
   passwordHash  String?
   image         String?
   role          String    @default("USER") // ADMIN | MANAGER | AGENT | USER
+  isVip         Boolean   @default(false)
   jobTitle      String?
   phone         String?
   department    String?
@@ -562,6 +563,24 @@ model Notification {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, read])
+}
+
+model EmailMessage {
+  id         String    @id @default(cuid())
+  toEmail    String
+  toName     String?
+  subject    String
+  body       String
+  template   String    @default("generic")
+  status     String    @default("QUEUED") // QUEUED | SENT | FAILED
+  error      String?
+  entity     String?
+  entityId   String?
+  createdAt  DateTime  @default(now())
+  sentAt     DateTime?
+
+  @@index([status])
+  @@index([createdAt])
 }
 
 model Article {

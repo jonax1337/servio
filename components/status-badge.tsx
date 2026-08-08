@@ -1,3 +1,4 @@
+import { Crown } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { TONE_CLASSES, metaFor, type Meta, type Tone } from "@/lib/constants";
 
@@ -5,23 +6,50 @@ export function ToneBadge({
   meta,
   className,
   dot = false,
+  icon = true,
 }: {
   meta: Meta;
   className?: string;
   dot?: boolean;
+  icon?: boolean;
 }) {
+  const Icon = meta.icon;
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border px-2 py-0.5 text-xs font-medium",
+        "inline-flex items-center gap-1 whitespace-nowrap rounded-full border px-2 py-0.5 text-xs font-medium",
         TONE_CLASSES[meta.tone],
         className,
       )}
     >
-      {dot ? (
+      {icon && Icon ? (
+        <Icon className="size-3" strokeWidth={2.25} />
+      ) : dot ? (
         <span className="size-1.5 rounded-full bg-current opacity-80" />
       ) : null}
       {meta.label}
+    </span>
+  );
+}
+
+/** Gold VIP badge for important requesters. */
+export function VipBadge({
+  className,
+  label = true,
+}: {
+  className?: string;
+  label?: boolean;
+}) {
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center gap-1 whitespace-nowrap rounded-full border border-amber-400/40 bg-gradient-to-b from-amber-300/20 to-amber-500/10 px-1.5 py-0.5 text-xs font-semibold text-amber-600 dark:text-amber-300",
+        className,
+      )}
+      title="VIP — priority handling"
+    >
+      <Crown className="size-3" strokeWidth={2.5} />
+      {label ? "VIP" : null}
     </span>
   );
 }

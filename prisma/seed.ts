@@ -27,6 +27,7 @@ async function main() {
   await db.$transaction([
     db.auditLog.deleteMany(),
     db.notification.deleteMany(),
+    db.emailMessage.deleteMany(),
     db.apiToken.deleteMany(),
     db.syncRun.deleteMany(),
     db.ticketTag.deleteMany(),
@@ -91,6 +92,13 @@ async function main() {
     );
   }
   const byEmail = (e: string) => users.find((u) => u.email === e)!;
+
+  // Mark a few important requesters as VIP
+  for (const email of ["liam@servio.dev", "emma@servio.dev", "ola@servio.dev"]) {
+    const u = byEmail(email);
+    u.isVip = true;
+    await db.user.update({ where: { id: u.id }, data: { isVip: true } });
+  }
   const agents = users.filter((u) => u.role === "AGENT" || u.role === "MANAGER");
   const endUsers = users.filter((u) => u.role === "USER");
 
