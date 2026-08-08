@@ -15,7 +15,7 @@ export function CreateMenu() {
   const [open, setOpen] = useState(false);
   return (
     <DropdownMenu open={open} onOpenChange={setOpen}>
-      <DropdownMenuTrigger render={<Button size="sm" onMouseEnter={() => setOpen(true)} />}>
+      <DropdownMenuTrigger render={<Button className="h-9" onMouseEnter={() => setOpen(true)} />}>
         <Plus className="size-4" /> Create
         <ChevronDown className="size-3.5 opacity-70" />
       </DropdownMenuTrigger>

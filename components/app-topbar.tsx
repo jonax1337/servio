@@ -5,7 +5,6 @@ import { usePathname } from "next/navigation";
 import { Bell } from "lucide-react";
 import { Fragment } from "react";
 import { SidebarTrigger } from "@/components/ui/sidebar";
-import { Separator } from "@/components/ui/separator";
 import { LinkButton } from "@/components/link-button";
 import {
   Breadcrumb,
@@ -86,7 +85,6 @@ export function AppTopbar({
           ) : null}
         </LinkButton>
         <ThemeToggle />
-        <Separator orientation="vertical" className="mx-1 h-5" />
         <UserMenu {...user} />
       </div>
     </header>
