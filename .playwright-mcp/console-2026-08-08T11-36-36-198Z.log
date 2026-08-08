@@ -1,0 +1,255 @@
+[      73ms] [LOG] [Fast Refresh] done in 5ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[     381ms] [LOG] [Fast Refresh] done in 5ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[     458ms] [LOG] [Fast Refresh] done in 5ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[     568ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[     587ms] [LOG] [HMR] connected @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[     752ms] [ERROR] Base UI: A component that acts as a button expected a native <button> because the `nativeButton` prop is true. Rendering a non-<button> removes native button semantics, which can impact forms and accessibility. Use a real <button> in the `render` prop, or set `nativeButton` to `false`.
+    at Button (http://localhost:3000/_next/static/chunks/_173e0lb._.js:1117:325)
+    at AppSidebar (http://localhost:3000/_next/static/chunks/_173e0lb._.js:61:348)
+    at ConsoleLayout (about://React/Server/E:%5CDEV%5Cservio%5C.next%5Cdev%5Cserver%5Cchunks%5Cssr%5C%5Broot-of-the-server%5D__178-rst._.js?88:37:375) @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:1052
+[     754ms] [ERROR] Base UI: A component that acts as a button expected a native <button> because the `nativeButton` prop is true. Rendering a non-<button> removes native button semantics, which can impact forms and accessibility. Use a real <button> in the `render` prop, or set `nativeButton` to `false`.
+    at Button (http://localhost:3000/_next/static/chunks/_173e0lb._.js:1117:325)
+    at AppTopbar (http://localhost:3000/_next/static/chunks/_173e0lb._.js:347:334)
+    at ConsoleLayout (about://React/Server/E:%5CDEV%5Cservio%5C.next%5Cdev%5Cserver%5Cchunks%5Cssr%5C%5Broot-of-the-server%5D__178-rst._.js?89:47:383) @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:1052
+[     755ms] [ERROR] Base UI: A component that acts as a button expected a native <button> because the `nativeButton` prop is true. Rendering a non-<button> removes native button semantics, which can impact forms and accessibility. Use a real <button> in the `render` prop, or set `nativeButton` to `false`.
+    at Button (about://React/Server/E:%5CDEV%5Cservio%5C.next%5Cdev%5Cserver%5Cchunks%5Cssr%5C%5Broot-of-the-server%5D__1l9ahvu._.js?97:1314:374)
+    at DashboardPage (about://React/Server/file:///E:/DEV/servio/.next/dev/server/chunks/ssr/%255Broot-of-the-server%255D__1l9ahvu._.js?id=%255Bproject%255D/app/(console)/page.tsx+%255Bapp-rsc%255D+(ecmascript)?17:211:383) @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:1052
+[     756ms] [ERROR] Base UI: A component that acts as a button expected a native <button> because the `nativeButton` prop is true. Rendering a non-<button> removes native button semantics, which can impact forms and accessibility. Use a real <button> in the `render` prop, or set `nativeButton` to `false`.
+    at Button (about://React/Server/E:%5CDEV%5Cservio%5C.next%5Cdev%5Cserver%5Cchunks%5Cssr%5C%5Broot-of-the-server%5D__1l9ahvu._.js?97:1314:374)
+    at DashboardPage (about://React/Server/file:///E:/DEV/servio/.next/dev/server/chunks/ssr/%255Broot-of-the-server%255D__1l9ahvu._.js?id=%255Bproject%255D/app/(console)/page.tsx+%255Bapp-rsc%255D+(ecmascript)?20:226:383) @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:1052
+[     757ms] [ERROR] Base UI: A component that acts as a button expected a native <button> because the `nativeButton` prop is true. Rendering a non-<button> removes native button semantics, which can impact forms and accessibility. Use a real <button> in the `render` prop, or set `nativeButton` to `false`.
+    at Button (about://React/Server/E:%5CDEV%5Cservio%5C.next%5Cdev%5Cserver%5Cchunks%5Cssr%5C%5Broot-of-the-server%5D__1l9ahvu._.js?97:1314:374)
+    at DashboardPage (about://React/Server/file:///E:/DEV/servio/.next/dev/server/chunks/ssr/%255Broot-of-the-server%255D__1l9ahvu._.js?id=%255Bproject%255D/app/(console)/page.tsx+%255Bapp-rsc%255D+(ecmascript)?49:496:407) @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:1052
+[   24284ms] [LOG] [Fast Refresh] rebuilding @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[   24338ms] [LOG] [Fast Refresh] done in 9ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[   24355ms] ReferenceError: LinkButton is not defined
+    at AppSidebar (http://localhost:3000/_next/static/chunks/_173e0lb._.js?id=%255Bproject%255D/components/app-sidebar.tsx+%255Bapp-client%255D+(ecmascript):58:349)
+    at Object.react_stack_bottom_frame (http://localhost:3000/_next/static/chunks/137q_next_dist_compiled_react-dom_115opyv._.js:14894:24)
+    at renderWithHooks (http://localhost:3000/_next/static/chunks/137q_next_dist_compiled_react-dom_115opyv._.js:4425:24)
+    at updateFunctionComponent (http://localhost:3000/_next/static/chunks/137q_next_dist_compiled_react-dom_115opyv._.js:5892:21)
+    at beginWork (http://localhost:3000/_next/static/chunks/137q_next_dist_compiled_react-dom_115opyv._.js:6518:24)
+    at runWithFiberInDEV (http://localhost:3000/_next/static/chunks/137q_next_dist_compiled_react-dom_115opyv._.js:761:74)
+    at performUnitOfWork (http://localhost:3000/_next/static/chunks/137q_next_dist_compiled_react-dom_115opyv._.js:9385:97)
+    at workLoopSync (http://localhost:3000/_next/static/chunks/137q_next_dist_compiled_react-dom_115opyv._.js:9279:40)
+    at renderRootSync (http://localhost:3000/_next/static/chunks/137q_next_dist_compiled_react-dom_115opyv._.js:9263:13)
+    at performWorkOnRoot (http://localhost:3000/_next/static/chunks/137q_next_dist_compiled_react-dom_115opyv._.js:8928:47)
+    at performSyncWorkOnRoot (http://localhost:3000/_next/static/chunks/137q_next_dist_compiled_react-dom_115opyv._.js:10093:9)
+    at flushSyncWorkAcrossRoots_impl (http://localhost:3000/_next/static/chunks/137q_next_dist_compiled_react-dom_115opyv._.js:10009:316)
+    at processRootScheduleInMicrotask (http://localhost:3000/_next/static/chunks/137q_next_dist_compiled_react-dom_115opyv._.js:10030:106)
+    at http://localhost:3000/_next/static/chunks/137q_next_dist_compiled_react-dom_115opyv._.js:10104:158
+[   24403ms] [LOG] [Fast Refresh] done in 9ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[   24475ms] [LOG] [Fast Refresh] done in 9ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[   24524ms] [LOG] [Fast Refresh] done in 9ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[   24587ms] [LOG] [Fast Refresh] done in 9ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[   24634ms] [LOG] [Fast Refresh] done in 9ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[   24682ms] [LOG] [Fast Refresh] done in 9ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[   24730ms] [LOG] [Fast Refresh] done in 9ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[   24778ms] [LOG] [Fast Refresh] done in 9ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[   24840ms] [LOG] [Fast Refresh] done in 9ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[   24903ms] [LOG] [Fast Refresh] done in 9ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[   24966ms] [LOG] [Fast Refresh] done in 9ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[   25014ms] [LOG] [Fast Refresh] done in 9ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[   25061ms] [LOG] [Fast Refresh] done in 9ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[   25123ms] [LOG] [Fast Refresh] done in 9ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[   25186ms] [LOG] [Fast Refresh] done in 9ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[   25249ms] [LOG] [Fast Refresh] done in 9ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[   25311ms] [LOG] [Fast Refresh] done in 9ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[   25359ms] [LOG] [Fast Refresh] done in 9ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[   25420ms] [LOG] [Fast Refresh] done in 9ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[   25482ms] [LOG] [Fast Refresh] done in 9ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[   25544ms] [LOG] [Fast Refresh] done in 9ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[   25607ms] [LOG] [Fast Refresh] done in 9ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[   25669ms] [LOG] [Fast Refresh] done in 9ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[   25731ms] [LOG] [Fast Refresh] done in 9ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[   25796ms] [LOG] [Fast Refresh] done in 9ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[   25844ms] [LOG] [Fast Refresh] done in 9ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[   25905ms] [LOG] [Fast Refresh] done in 9ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[   25967ms] [LOG] [Fast Refresh] done in 9ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[   26031ms] [LOG] [Fast Refresh] done in 9ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[   26079ms] [LOG] [Fast Refresh] done in 9ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[   26141ms] [LOG] [Fast Refresh] done in 9ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[   26203ms] [LOG] [Fast Refresh] done in 9ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[   26265ms] [LOG] [Fast Refresh] done in 9ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[   26327ms] [LOG] [Fast Refresh] done in 9ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[   26376ms] [LOG] [Fast Refresh] done in 9ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[   26423ms] [LOG] [Fast Refresh] done in 9ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[   26471ms] [LOG] [Fast Refresh] done in 9ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[   26518ms] [LOG] [Fast Refresh] done in 9ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[   26581ms] [LOG] [Fast Refresh] done in 9ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[   26629ms] [LOG] [Fast Refresh] done in 9ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[   26676ms] [LOG] [Fast Refresh] done in 9ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[   26739ms] [LOG] [Fast Refresh] done in 9ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[   26801ms] [LOG] [Fast Refresh] done in 9ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[   26848ms] [LOG] [Fast Refresh] done in 9ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[   26910ms] [LOG] [Fast Refresh] done in 9ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[   26958ms] [LOG] [Fast Refresh] done in 9ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[   27019ms] [LOG] [Fast Refresh] done in 9ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[   27066ms] [LOG] [Fast Refresh] done in 9ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[   27128ms] [LOG] [Fast Refresh] done in 9ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[   27190ms] [LOG] [Fast Refresh] done in 9ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[   27236ms] [LOG] [Fast Refresh] done in 9ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[   27284ms] [LOG] [Fast Refresh] done in 9ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[   27346ms] [LOG] [Fast Refresh] done in 9ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[   27408ms] [LOG] [Fast Refresh] done in 9ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[   27470ms] [LOG] [Fast Refresh] done in 9ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[   27532ms] [LOG] [Fast Refresh] done in 9ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[   27594ms] [LOG] [Fast Refresh] done in 9ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[   27642ms] [LOG] [Fast Refresh] done in 9ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[   27689ms] [LOG] [Fast Refresh] done in 9ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[   27752ms] [LOG] [Fast Refresh] done in 9ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[   27799ms] [LOG] [Fast Refresh] done in 9ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[   27861ms] [LOG] [Fast Refresh] done in 9ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[   27925ms] [LOG] [Fast Refresh] done in 9ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[   27987ms] [LOG] [Fast Refresh] done in 9ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[   28050ms] [LOG] [Fast Refresh] done in 9ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[   28113ms] [LOG] [Fast Refresh] done in 9ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[   28176ms] [LOG] [Fast Refresh] done in 9ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[   28238ms] [LOG] [Fast Refresh] done in 9ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[   28336ms] [LOG] [Fast Refresh] rebuilding @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[   28338ms] [WARNING] [Fast Refresh] performing full reload because your application had an unrecoverable error @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[   28340ms] [ERROR] Encountered a script tag while rendering React component. Scripts inside React components are never executed when rendering on the client. Consider using template tag instead (https://developer.mozilla.org/en-US/docs/Web/HTML/Element/template). @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:1052
+[   28485ms] [LOG] [Fast Refresh] done in 3ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[   28631ms] [LOG] [Fast Refresh] done in 3ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[   28705ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[   28731ms] [LOG] [HMR] connected @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[   28832ms] [ERROR] Base UI: A component that acts as a button expected a native <button> because the `nativeButton` prop is true. Rendering a non-<button> removes native button semantics, which can impact forms and accessibility. Use a real <button> in the `render` prop, or set `nativeButton` to `false`.
+    at Button (http://localhost:3000/_next/static/chunks/_04jc_vp._.js:1148:325)
+    at AppTopbar (http://localhost:3000/_next/static/chunks/_04jc_vp._.js:341:334)
+    at ConsoleLayout (about://React/Server/E:%5CDEV%5Cservio%5C.next%5Cdev%5Cserver%5Cchunks%5Cssr%5C%5Broot-of-the-server%5D__178-rst._.js?91:47:383) @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:1052
+[   28833ms] [ERROR] Base UI: A component that acts as a button expected a native <button> because the `nativeButton` prop is true. Rendering a non-<button> removes native button semantics, which can impact forms and accessibility. Use a real <button> in the `render` prop, or set `nativeButton` to `false`.
+    at Button (about://React/Server/E:%5CDEV%5Cservio%5C.next%5Cdev%5Cserver%5Cchunks%5Cssr%5C%5Broot-of-the-server%5D__1l9ahvu._.js?99:1314:374)
+    at DashboardPage (about://React/Server/file:///E:/DEV/servio/.next/dev/server/chunks/ssr/%255Broot-of-the-server%255D__1l9ahvu._.js?id=%255Bproject%255D/app/(console)/page.tsx+%255Bapp-rsc%255D+(ecmascript)?19:211:383) @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:1052
+[   28834ms] [ERROR] Base UI: A component that acts as a button expected a native <button> because the `nativeButton` prop is true. Rendering a non-<button> removes native button semantics, which can impact forms and accessibility. Use a real <button> in the `render` prop, or set `nativeButton` to `false`.
+    at Button (about://React/Server/E:%5CDEV%5Cservio%5C.next%5Cdev%5Cserver%5Cchunks%5Cssr%5C%5Broot-of-the-server%5D__1l9ahvu._.js?99:1314:374)
+    at DashboardPage (about://React/Server/file:///E:/DEV/servio/.next/dev/server/chunks/ssr/%255Broot-of-the-server%255D__1l9ahvu._.js?id=%255Bproject%255D/app/(console)/page.tsx+%255Bapp-rsc%255D+(ecmascript)?22:226:383) @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:1052
+[   28838ms] [ERROR] Base UI: A component that acts as a button expected a native <button> because the `nativeButton` prop is true. Rendering a non-<button> removes native button semantics, which can impact forms and accessibility. Use a real <button> in the `render` prop, or set `nativeButton` to `false`.
+    at Button (about://React/Server/E:%5CDEV%5Cservio%5C.next%5Cdev%5Cserver%5Cchunks%5Cssr%5C%5Broot-of-the-server%5D__1l9ahvu._.js?99:1314:374)
+    at DashboardPage (about://React/Server/file:///E:/DEV/servio/.next/dev/server/chunks/ssr/%255Broot-of-the-server%255D__1l9ahvu._.js?id=%255Bproject%255D/app/(console)/page.tsx+%255Bapp-rsc%255D+(ecmascript)?51:496:407) @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:1052
+[   36040ms] [LOG] [Fast Refresh] rebuilding @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[   36128ms] ReferenceError: LinkButton is not defined
+    at AppTopbar (http://localhost:3000/_next/static/chunks/_04jc_vp._.js?id=%255Bproject%255D/components/app-topbar.tsx+%255Bapp-client%255D+(ecmascript):146:335)
+    at Object.react_stack_bottom_frame (http://localhost:3000/_next/static/chunks/137q_next_dist_compiled_react-dom_115opyv._.js:14894:24)
+    at renderWithHooks (http://localhost:3000/_next/static/chunks/137q_next_dist_compiled_react-dom_115opyv._.js:4425:24)
+    at updateFunctionComponent (http://localhost:3000/_next/static/chunks/137q_next_dist_compiled_react-dom_115opyv._.js:5892:21)
+    at beginWork (http://localhost:3000/_next/static/chunks/137q_next_dist_compiled_react-dom_115opyv._.js:6518:24)
+    at runWithFiberInDEV (http://localhost:3000/_next/static/chunks/137q_next_dist_compiled_react-dom_115opyv._.js:761:74)
+    at performUnitOfWork (http://localhost:3000/_next/static/chunks/137q_next_dist_compiled_react-dom_115opyv._.js:9385:97)
+    at workLoopSync (http://localhost:3000/_next/static/chunks/137q_next_dist_compiled_react-dom_115opyv._.js:9279:40)
+    at renderRootSync (http://localhost:3000/_next/static/chunks/137q_next_dist_compiled_react-dom_115opyv._.js:9263:13)
+    at performWorkOnRoot (http://localhost:3000/_next/static/chunks/137q_next_dist_compiled_react-dom_115opyv._.js:8928:47)
+    at performSyncWorkOnRoot (http://localhost:3000/_next/static/chunks/137q_next_dist_compiled_react-dom_115opyv._.js:10093:9)
+    at flushSyncWorkAcrossRoots_impl (http://localhost:3000/_next/static/chunks/137q_next_dist_compiled_react-dom_115opyv._.js:10009:316)
+    at processRootScheduleInMicrotask (http://localhost:3000/_next/static/chunks/137q_next_dist_compiled_react-dom_115opyv._.js:10030:106)
+    at http://localhost:3000/_next/static/chunks/137q_next_dist_compiled_react-dom_115opyv._.js:10104:158
+[   36134ms] [LOG] [Fast Refresh] done in 7ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[   36193ms] [LOG] [Fast Refresh] done in 7ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[   36241ms] [LOG] [Fast Refresh] done in 7ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[   36304ms] [LOG] [Fast Refresh] done in 7ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[   36366ms] [LOG] [Fast Refresh] done in 7ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[   36428ms] [LOG] [Fast Refresh] done in 7ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[   36491ms] [LOG] [Fast Refresh] done in 7ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[   36553ms] [LOG] [Fast Refresh] done in 7ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[   36616ms] [LOG] [Fast Refresh] done in 7ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[   36678ms] [LOG] [Fast Refresh] done in 7ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[   36741ms] [LOG] [Fast Refresh] done in 7ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[   36804ms] [LOG] [Fast Refresh] done in 7ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[   36866ms] [LOG] [Fast Refresh] done in 7ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[   36927ms] [LOG] [Fast Refresh] done in 7ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[   36975ms] [LOG] [Fast Refresh] done in 7ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[   37039ms] [LOG] [Fast Refresh] done in 7ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[   37087ms] [LOG] [Fast Refresh] done in 7ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[   37148ms] [LOG] [Fast Refresh] done in 7ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[   37209ms] [LOG] [Fast Refresh] done in 7ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[   37256ms] [LOG] [Fast Refresh] done in 7ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[   37319ms] [LOG] [Fast Refresh] done in 7ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[   37368ms] [LOG] [Fast Refresh] done in 7ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[   37431ms] [LOG] [Fast Refresh] done in 7ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[   37493ms] [LOG] [Fast Refresh] done in 7ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[   37541ms] [LOG] [Fast Refresh] done in 7ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[   37588ms] [LOG] [Fast Refresh] done in 7ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[   37636ms] [LOG] [Fast Refresh] done in 7ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[   37684ms] [LOG] [Fast Refresh] done in 7ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[   37732ms] [LOG] [Fast Refresh] done in 7ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[   37780ms] [LOG] [Fast Refresh] done in 7ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[   37843ms] [LOG] [Fast Refresh] done in 7ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[   37905ms] [LOG] [Fast Refresh] done in 7ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[   37952ms] [LOG] [Fast Refresh] done in 7ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[   38013ms] [LOG] [Fast Refresh] done in 7ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[   38076ms] [LOG] [Fast Refresh] done in 7ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[   38137ms] [LOG] [Fast Refresh] done in 7ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[   38184ms] [LOG] [Fast Refresh] done in 7ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[   38245ms] [LOG] [Fast Refresh] done in 7ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[   38293ms] [LOG] [Fast Refresh] done in 7ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[   38340ms] [LOG] [Fast Refresh] done in 7ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[   38403ms] [LOG] [Fast Refresh] done in 7ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[   38466ms] [LOG] [Fast Refresh] done in 7ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[   38528ms] [LOG] [Fast Refresh] done in 7ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[   38591ms] [LOG] [Fast Refresh] done in 7ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[   38653ms] [LOG] [Fast Refresh] done in 7ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[   38720ms] [LOG] [Fast Refresh] done in 7ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[   38778ms] [LOG] [Fast Refresh] done in 7ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[   38839ms] [LOG] [Fast Refresh] done in 7ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[   38887ms] [LOG] [Fast Refresh] done in 7ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[   38949ms] [LOG] [Fast Refresh] done in 7ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[   38997ms] [LOG] [Fast Refresh] done in 7ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[   39059ms] [LOG] [Fast Refresh] done in 7ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[   39121ms] [LOG] [Fast Refresh] done in 7ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[   39183ms] [LOG] [Fast Refresh] done in 7ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[   39245ms] [LOG] [Fast Refresh] done in 7ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[   39306ms] [LOG] [Fast Refresh] done in 7ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[   39354ms] [LOG] [Fast Refresh] done in 7ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[   39401ms] [LOG] [Fast Refresh] done in 7ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[   39463ms] [LOG] [Fast Refresh] done in 7ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[   39510ms] [LOG] [Fast Refresh] done in 7ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[   39572ms] [LOG] [Fast Refresh] done in 7ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[   39620ms] [LOG] [Fast Refresh] done in 7ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[   39668ms] [LOG] [Fast Refresh] done in 7ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[   39730ms] [LOG] [Fast Refresh] done in 7ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[   39793ms] [LOG] [Fast Refresh] done in 7ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[   39854ms] [LOG] [Fast Refresh] done in 7ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[   39917ms] [LOG] [Fast Refresh] done in 7ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[   39980ms] [LOG] [Fast Refresh] done in 7ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[   40027ms] [LOG] [Fast Refresh] done in 7ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[   40088ms] [LOG] [Fast Refresh] done in 7ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[   40151ms] [LOG] [Fast Refresh] done in 7ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[   40198ms] [LOG] [Fast Refresh] done in 7ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[   40265ms] [LOG] [Fast Refresh] rebuilding @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[   40267ms] [WARNING] [Fast Refresh] performing full reload because your application had an unrecoverable error @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[   40269ms] [ERROR] Encountered a script tag while rendering React component. Scripts inside React components are never executed when rendering on the client. Consider using template tag instead (https://developer.mozilla.org/en-US/docs/Web/HTML/Element/template). @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:1052
+[   40426ms] [LOG] [Fast Refresh] done in 2ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[   40502ms] [LOG] [Fast Refresh] done in 2ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[   40575ms] [LOG] [Fast Refresh] done in 2ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[   40647ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[   40663ms] [LOG] [HMR] connected @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[   40774ms] [ERROR] Base UI: A component that acts as a button expected a native <button> because the `nativeButton` prop is true. Rendering a non-<button> removes native button semantics, which can impact forms and accessibility. Use a real <button> in the `render` prop, or set `nativeButton` to `false`.
+    at Button (about://React/Server/E:%5CDEV%5Cservio%5C.next%5Cdev%5Cserver%5Cchunks%5Cssr%5C%5Broot-of-the-server%5D__1l9ahvu._.js?97:1314:374)
+    at DashboardPage (about://React/Server/file:///E:/DEV/servio/.next/dev/server/chunks/ssr/%255Broot-of-the-server%255D__1l9ahvu._.js?id=%255Bproject%255D/app/(console)/page.tsx+%255Bapp-rsc%255D+(ecmascript)?13:211:383) @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:1052
+[   40775ms] [ERROR] Base UI: A component that acts as a button expected a native <button> because the `nativeButton` prop is true. Rendering a non-<button> removes native button semantics, which can impact forms and accessibility. Use a real <button> in the `render` prop, or set `nativeButton` to `false`.
+    at Button (about://React/Server/E:%5CDEV%5Cservio%5C.next%5Cdev%5Cserver%5Cchunks%5Cssr%5C%5Broot-of-the-server%5D__1l9ahvu._.js?97:1314:374)
+    at DashboardPage (about://React/Server/file:///E:/DEV/servio/.next/dev/server/chunks/ssr/%255Broot-of-the-server%255D__1l9ahvu._.js?id=%255Bproject%255D/app/(console)/page.tsx+%255Bapp-rsc%255D+(ecmascript)?16:226:383) @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:1052
+[   40776ms] [ERROR] Base UI: A component that acts as a button expected a native <button> because the `nativeButton` prop is true. Rendering a non-<button> removes native button semantics, which can impact forms and accessibility. Use a real <button> in the `render` prop, or set `nativeButton` to `false`.
+    at Button (about://React/Server/E:%5CDEV%5Cservio%5C.next%5Cdev%5Cserver%5Cchunks%5Cssr%5C%5Broot-of-the-server%5D__1l9ahvu._.js?97:1314:374)
+    at DashboardPage (about://React/Server/file:///E:/DEV/servio/.next/dev/server/chunks/ssr/%255Broot-of-the-server%255D__1l9ahvu._.js?id=%255Bproject%255D/app/(console)/page.tsx+%255Bapp-rsc%255D+(ecmascript)?45:496:407) @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:1052
+[   45500ms] ReferenceError: LinkButton is not defined
+    at DashboardPage (about://React/Server/file:///E:/DEV/servio/.next/dev/server/chunks/ssr/%255Broot-of-the-server%255D__1l9ahvu._.js?id=%255Bproject%255D/app/(console)/page.tsx+%255Bapp-rsc%255D+(ecmascript)?128:211:384)
+    at resolveErrorDev (http://localhost:3000/_next/static/chunks/137q_next_dist_compiled_react-server-dom-turbopack_03zts2w._.js:1937:150)
+    at processFullStringRow (http://localhost:3000/_next/static/chunks/137q_next_dist_compiled_react-server-dom-turbopack_03zts2w._.js:2456:29)
+    at processFullBinaryRow (http://localhost:3000/_next/static/chunks/137q_next_dist_compiled_react-server-dom-turbopack_03zts2w._.js:2415:9)
+    at processBinaryChunk (http://localhost:3000/_next/static/chunks/137q_next_dist_compiled_react-server-dom-turbopack_03zts2w._.js:2524:221)
+    at progress (http://localhost:3000/_next/static/chunks/137q_next_dist_compiled_react-server-dom-turbopack_03zts2w._.js:2711:13)
+[   51616ms] [LOG] [Fast Refresh] rebuilding @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[   51692ms] [LOG] [Fast Refresh] done in 59ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[   51756ms] [LOG] [Fast Refresh] done in 59ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[   51787ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://localhost:3000/:0
+[   51816ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[   51830ms] [LOG] [HMR] connected @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[   51847ms] [ERROR] Encountered a script tag while rendering React component. Scripts inside React components are never executed when rendering on the client. Consider using template tag instead (https://developer.mozilla.org/en-US/docs/Web/HTML/Element/template). @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:1052
+[   51948ms] ReferenceError: LinkButton is not defined
+    at DashboardPage (about://React/Server/file:///E:/DEV/servio/.next/dev/server/chunks/ssr/%255Broot-of-the-server%255D__0bhogy5._.js?id=%255Bproject%255D/app/(console)/page.tsx+%255Bapp-rsc%255D+(ecmascript)?0:209:384)
+    at resolveErrorDev (http://localhost:3000/_next/static/chunks/137q_next_dist_compiled_react-server-dom-turbopack_03zts2w._.js:1937:105)
+    at processFullStringRow (http://localhost:3000/_next/static/chunks/137q_next_dist_compiled_react-server-dom-turbopack_03zts2w._.js:2456:29)
+    at processFullBinaryRow (http://localhost:3000/_next/static/chunks/137q_next_dist_compiled_react-server-dom-turbopack_03zts2w._.js:2415:9)
+    at processBinaryChunk (http://localhost:3000/_next/static/chunks/137q_next_dist_compiled_react-server-dom-turbopack_03zts2w._.js:2524:221)
+    at progress (http://localhost:3000/_next/static/chunks/137q_next_dist_compiled_react-server-dom-turbopack_03zts2w._.js:2711:13)
+[   59641ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[   59655ms] [LOG] [HMR] connected @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776

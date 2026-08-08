@@ -1,0 +1,318 @@
+// Single source of truth for the "enum" string fields (SQLite has no enums).
+// Each domain exports: the allowed values, human labels, and a badge tone.
+
+export type Tone =
+  | "neutral"
+  | "info"
+  | "success"
+  | "warning"
+  | "danger"
+  | "purple"
+  | "indigo";
+
+export const TONE_CLASSES: Record<Tone, string> = {
+  neutral: "bg-muted text-muted-foreground border-border",
+  info: "bg-sky-500/10 text-sky-600 dark:text-sky-400 border-sky-500/20",
+  success:
+    "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20",
+  warning:
+    "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20",
+  danger: "bg-red-500/10 text-red-600 dark:text-red-400 border-red-500/20",
+  purple:
+    "bg-purple-500/10 text-purple-600 dark:text-purple-400 border-purple-500/20",
+  indigo:
+    "bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border-indigo-500/20",
+};
+
+export type Meta = { label: string; tone: Tone };
+
+// ---- Roles ----------------------------------------------------------------
+export const ROLES = ["ADMIN", "MANAGER", "AGENT", "USER"] as const;
+export type Role = (typeof ROLES)[number];
+export const ROLE_META: Record<Role, Meta> = {
+  ADMIN: { label: "Administrator", tone: "danger" },
+  MANAGER: { label: "Manager", tone: "purple" },
+  AGENT: { label: "Agent", tone: "indigo" },
+  USER: { label: "User", tone: "neutral" },
+};
+
+// ---- Ticket ---------------------------------------------------------------
+export const TICKET_TYPES = ["INCIDENT", "REQUEST"] as const;
+export const TICKET_TYPE_META: Record<string, Meta> = {
+  INCIDENT: { label: "Incident", tone: "danger" },
+  REQUEST: { label: "Service Request", tone: "info" },
+};
+
+export const TICKET_STATUSES = [
+  "NEW",
+  "OPEN",
+  "PENDING",
+  "ON_HOLD",
+  "RESOLVED",
+  "CLOSED",
+  "CANCELLED",
+] as const;
+export const TICKET_STATUS_META: Record<string, Meta> = {
+  NEW: { label: "New", tone: "info" },
+  OPEN: { label: "Open", tone: "indigo" },
+  PENDING: { label: "Pending", tone: "warning" },
+  ON_HOLD: { label: "On Hold", tone: "warning" },
+  RESOLVED: { label: "Resolved", tone: "success" },
+  CLOSED: { label: "Closed", tone: "neutral" },
+  CANCELLED: { label: "Cancelled", tone: "neutral" },
+};
+export const OPEN_TICKET_STATUSES = [
+  "NEW",
+  "OPEN",
+  "PENDING",
+  "ON_HOLD",
+] as const;
+
+export const PRIORITIES = ["LOW", "MEDIUM", "HIGH", "CRITICAL"] as const;
+export const PRIORITY_META: Record<string, Meta> = {
+  LOW: { label: "Low", tone: "neutral" },
+  MEDIUM: { label: "Medium", tone: "info" },
+  HIGH: { label: "High", tone: "warning" },
+  CRITICAL: { label: "Critical", tone: "danger" },
+};
+
+export const IMPACT_URGENCY = ["LOW", "MEDIUM", "HIGH"] as const;
+export const LEVEL_META: Record<string, Meta> = {
+  LOW: { label: "Low", tone: "neutral" },
+  MEDIUM: { label: "Medium", tone: "info" },
+  HIGH: { label: "High", tone: "warning" },
+};
+
+export const TICKET_SOURCES = [
+  "PORTAL",
+  "EMAIL",
+  "PHONE",
+  "API",
+  "AGENT",
+] as const;
+export const SOURCE_META: Record<string, Meta> = {
+  PORTAL: { label: "Portal", tone: "info" },
+  EMAIL: { label: "Email", tone: "purple" },
+  PHONE: { label: "Phone", tone: "indigo" },
+  API: { label: "API", tone: "neutral" },
+  AGENT: { label: "Agent", tone: "neutral" },
+};
+
+// ---- Problem --------------------------------------------------------------
+export const PROBLEM_STATUSES = [
+  "NEW",
+  "INVESTIGATING",
+  "KNOWN_ERROR",
+  "RESOLVED",
+  "CLOSED",
+] as const;
+export const PROBLEM_STATUS_META: Record<string, Meta> = {
+  NEW: { label: "New", tone: "info" },
+  INVESTIGATING: { label: "Investigating", tone: "indigo" },
+  KNOWN_ERROR: { label: "Known Error", tone: "warning" },
+  RESOLVED: { label: "Resolved", tone: "success" },
+  CLOSED: { label: "Closed", tone: "neutral" },
+};
+
+// ---- Change ---------------------------------------------------------------
+export const CHANGE_TYPES = ["STANDARD", "NORMAL", "EMERGENCY"] as const;
+export const CHANGE_TYPE_META: Record<string, Meta> = {
+  STANDARD: { label: "Standard", tone: "neutral" },
+  NORMAL: { label: "Normal", tone: "info" },
+  EMERGENCY: { label: "Emergency", tone: "danger" },
+};
+
+export const CHANGE_STATUSES = [
+  "DRAFT",
+  "SUBMITTED",
+  "APPROVAL",
+  "APPROVED",
+  "SCHEDULED",
+  "IN_PROGRESS",
+  "REVIEW",
+  "CLOSED",
+  "REJECTED",
+  "FAILED",
+] as const;
+export const CHANGE_STATUS_META: Record<string, Meta> = {
+  DRAFT: { label: "Draft", tone: "neutral" },
+  SUBMITTED: { label: "Submitted", tone: "info" },
+  APPROVAL: { label: "In Approval", tone: "warning" },
+  APPROVED: { label: "Approved", tone: "success" },
+  SCHEDULED: { label: "Scheduled", tone: "indigo" },
+  IN_PROGRESS: { label: "In Progress", tone: "purple" },
+  REVIEW: { label: "Review", tone: "warning" },
+  CLOSED: { label: "Closed", tone: "success" },
+  REJECTED: { label: "Rejected", tone: "danger" },
+  FAILED: { label: "Failed", tone: "danger" },
+};
+
+export const RISKS = ["LOW", "MEDIUM", "HIGH"] as const;
+export const RISK_META: Record<string, Meta> = LEVEL_META;
+
+export const APPROVAL_STATUSES = ["PENDING", "APPROVED", "REJECTED"] as const;
+export const APPROVAL_META: Record<string, Meta> = {
+  PENDING: { label: "Pending", tone: "warning" },
+  APPROVED: { label: "Approved", tone: "success" },
+  REJECTED: { label: "Rejected", tone: "danger" },
+};
+
+// ---- Service --------------------------------------------------------------
+export const SERVICE_STATUSES = [
+  "OPERATIONAL",
+  "DEGRADED",
+  "OUTAGE",
+  "MAINTENANCE",
+  "RETIRED",
+] as const;
+export const SERVICE_STATUS_META: Record<string, Meta> = {
+  OPERATIONAL: { label: "Operational", tone: "success" },
+  DEGRADED: { label: "Degraded", tone: "warning" },
+  OUTAGE: { label: "Outage", tone: "danger" },
+  MAINTENANCE: { label: "Maintenance", tone: "info" },
+  RETIRED: { label: "Retired", tone: "neutral" },
+};
+
+export const CRITICALITIES = ["LOW", "MEDIUM", "HIGH", "CRITICAL"] as const;
+export const CRITICALITY_META: Record<string, Meta> = PRIORITY_META;
+
+// ---- Category / Group -----------------------------------------------------
+export const CATEGORY_TYPES = [
+  "INCIDENT",
+  "REQUEST",
+  "PROBLEM",
+  "CHANGE",
+  "ASSET",
+] as const;
+export const GROUP_TYPES = ["TEAM", "DEPARTMENT", "VENDOR"] as const;
+export const GROUP_TYPE_META: Record<string, Meta> = {
+  TEAM: { label: "Team", tone: "indigo" },
+  DEPARTMENT: { label: "Department", tone: "purple" },
+  VENDOR: { label: "Vendor", tone: "info" },
+};
+
+// ---- Asset ----------------------------------------------------------------
+export const ASSET_TYPES = [
+  "SERVER",
+  "WORKSTATION",
+  "LAPTOP",
+  "NETWORK",
+  "SOFTWARE",
+  "MOBILE",
+  "PRINTER",
+  "VM",
+  "CLOUD",
+  "SERVICE",
+  "MONITOR",
+  "PHONE",
+] as const;
+export const ASSET_TYPE_META: Record<string, Meta> = {
+  SERVER: { label: "Server", tone: "indigo" },
+  WORKSTATION: { label: "Workstation", tone: "info" },
+  LAPTOP: { label: "Laptop", tone: "info" },
+  NETWORK: { label: "Network", tone: "purple" },
+  SOFTWARE: { label: "Software", tone: "neutral" },
+  MOBILE: { label: "Mobile", tone: "success" },
+  PRINTER: { label: "Printer", tone: "neutral" },
+  VM: { label: "Virtual Machine", tone: "indigo" },
+  CLOUD: { label: "Cloud", tone: "info" },
+  SERVICE: { label: "Service", tone: "purple" },
+  MONITOR: { label: "Monitor", tone: "neutral" },
+  PHONE: { label: "Phone", tone: "success" },
+};
+
+export const ASSET_STATUSES = [
+  "IN_USE",
+  "IN_STOCK",
+  "MAINTENANCE",
+  "RETIRED",
+  "DISPOSED",
+] as const;
+export const ASSET_STATUS_META: Record<string, Meta> = {
+  IN_USE: { label: "In Use", tone: "success" },
+  IN_STOCK: { label: "In Stock", tone: "info" },
+  MAINTENANCE: { label: "Maintenance", tone: "warning" },
+  RETIRED: { label: "Retired", tone: "neutral" },
+  DISPOSED: { label: "Disposed", tone: "danger" },
+};
+
+export const ASSET_RELATION_TYPES = [
+  "DEPENDS_ON",
+  "CONNECTS_TO",
+  "RUNS_ON",
+  "HOSTS",
+  "PART_OF",
+  "BACKS_UP",
+] as const;
+export const ASSET_RELATION_META: Record<string, Meta> = {
+  DEPENDS_ON: { label: "Depends on", tone: "warning" },
+  CONNECTS_TO: { label: "Connects to", tone: "info" },
+  RUNS_ON: { label: "Runs on", tone: "indigo" },
+  HOSTS: { label: "Hosts", tone: "purple" },
+  PART_OF: { label: "Part of", tone: "neutral" },
+  BACKS_UP: { label: "Backs up", tone: "success" },
+};
+
+// ---- Sync -----------------------------------------------------------------
+export const SYNC_TYPES = [
+  "LDAP",
+  "ACTIVE_DIRECTORY",
+  "AZURE_AD",
+  "INTUNE",
+  "CSV",
+  "SNOW",
+  "REST_API",
+  "GLPI",
+] as const;
+export const SYNC_TYPE_META: Record<string, Meta> = {
+  LDAP: { label: "LDAP", tone: "indigo" },
+  ACTIVE_DIRECTORY: { label: "Active Directory", tone: "info" },
+  AZURE_AD: { label: "Azure AD / Entra", tone: "info" },
+  INTUNE: { label: "Microsoft Intune", tone: "purple" },
+  CSV: { label: "CSV Import", tone: "neutral" },
+  SNOW: { label: "ServiceNow", tone: "success" },
+  REST_API: { label: "REST API", tone: "neutral" },
+  GLPI: { label: "GLPI", tone: "warning" },
+};
+
+export const SYNC_DIRECTIONS = ["IMPORT", "EXPORT", "BIDIRECTIONAL"] as const;
+export const SYNC_SCOPES = ["USERS", "ASSETS", "TICKETS", "ALL"] as const;
+export const SYNC_RUN_STATUSES = [
+  "RUNNING",
+  "SUCCESS",
+  "FAILED",
+  "PARTIAL",
+] as const;
+export const SYNC_RUN_STATUS_META: Record<string, Meta> = {
+  RUNNING: { label: "Running", tone: "info" },
+  SUCCESS: { label: "Success", tone: "success" },
+  FAILED: { label: "Failed", tone: "danger" },
+  PARTIAL: { label: "Partial", tone: "warning" },
+};
+
+// Generic fallback lookup
+export function metaFor(
+  map: Record<string, Meta>,
+  key: string | null | undefined,
+): Meta {
+  if (!key) return { label: "—", tone: "neutral" };
+  return map[key] ?? { label: key, tone: "neutral" };
+}
+
+// Human ref numbers
+export const PREFIX = {
+  ticket: "INC",
+  request: "REQ",
+  problem: "PRB",
+  change: "CHG",
+} as const;
+
+export function ticketRef(id: number, type = "INCIDENT") {
+  return `${type === "REQUEST" ? "REQ" : "INC"}-${String(id).padStart(4, "0")}`;
+}
+export function problemRef(id: number) {
+  return `PRB-${String(id).padStart(4, "0")}`;
+}
+export function changeRef(id: number) {
+  return `CHG-${String(id).padStart(4, "0")}`;
+}

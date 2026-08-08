@@ -1,0 +1,108 @@
+[     378ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[     437ms] [LOG] [HMR] connected @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[    5654ms] [LOG] [Fast Refresh] rebuilding @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[    7181ms] [LOG] [Fast Refresh] done in 1631ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[    7368ms] [ERROR] React does not recognize the `%s` prop on a DOM element. If you intentionally want it to appear in the DOM as a custom attribute, spell it as lowercase `%s` instead. If you accidentally passed it from a parent component, remove it from the DOM element. asChild aschild @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:1052
+[    7432ms] [ERROR] In HTML, %s cannot be a descendant of <%s>.
+This will cause a hydration error.%s <a> a 
+
+  ...
+    <script>
+    <script>
+    <script>
+    <script>
+    <script>
+    <script>
+    <script>
+    <script>
+    <script>
+    <ConsoleLayout>
+      <SidebarProvider>
+        <div data-slot="sidebar-wr..." style={{...}} className="group/side...">
+          <AppSidebar>
+          <SidebarInset className="min-w-0">
+            <main data-slot="sidebar-inset" className="relative f...">
+              <AppTopbar user={{name:"Alex...", ...}} notifications={0}>
+                <header className="sticky top...">
+                  <SidebarTrigger>
+                  <Separator>
+                  <Breadcrumb className="hidden md:...">
+                    <nav aria-label="breadcrumb" data-slot="breadcrumb" className="hidden md:...">
+                      <BreadcrumbList>
+                        <ol data-slot="breadcrumb..." className="flex flex-...">
+                          <BreadcrumbItem>
+                            <li data-slot="breadcrumb..." className="inline-fle...">
+                              <BreadcrumbLink asChild={true}>
+>                               <a
+>                                 data-slot="breadcrumb-link"
+>                                 className="transition-colors hover:text-foreground"
+>                                 asChild={true}
+>                                 ref={null}
+>                               >
+                                  <LinkComponent href="/">
+>                                   <a
+>                                     ref={function}
+>                                     onClick={function onClick}
+>                                     onMouseEnter={function onMouseEnter}
+>                                     onTouchStart={function onTouchStart}
+>                                     href="/"
+>                                   >
+                          ...
+                  ...
+              ...
+ @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:1052
+[    7433ms] [ERROR] <%s> cannot contain a nested %s.
+See this log for the ancestor stack trace. a <a> @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:1052
+[  143428ms] [LOG] [Fast Refresh] rebuilding @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[  143477ms] [LOG] [Fast Refresh] done in 5ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[  143540ms] [LOG] [Fast Refresh] done in 5ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[  143601ms] [LOG] [Fast Refresh] done in 5ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[  143649ms] [LOG] [Fast Refresh] done in 5ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[  143711ms] [LOG] [Fast Refresh] done in 5ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[  143774ms] [LOG] [Fast Refresh] done in 5ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[  143837ms] [LOG] [Fast Refresh] done in 5ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[  143899ms] [LOG] [Fast Refresh] done in 5ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[  143962ms] [LOG] [Fast Refresh] done in 5ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[  144008ms] [LOG] [Fast Refresh] done in 5ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[  144057ms] [LOG] [Fast Refresh] done in 5ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[  144120ms] [LOG] [Fast Refresh] done in 5ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[  144167ms] [LOG] [Fast Refresh] done in 5ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[  144214ms] [LOG] [Fast Refresh] done in 5ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[  144276ms] [LOG] [Fast Refresh] done in 5ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[  144338ms] [LOG] [Fast Refresh] done in 5ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[  144399ms] [LOG] [Fast Refresh] done in 5ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[  144462ms] [LOG] [Fast Refresh] done in 5ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[  144509ms] [LOG] [Fast Refresh] done in 5ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[  144573ms] [LOG] [Fast Refresh] done in 5ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[  144637ms] [LOG] [Fast Refresh] done in 5ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[  144699ms] [LOG] [Fast Refresh] done in 5ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[  144759ms] [LOG] [Fast Refresh] done in 5ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[  144822ms] [LOG] [Fast Refresh] done in 5ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[  144870ms] [LOG] [Fast Refresh] done in 5ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[  144931ms] [LOG] [Fast Refresh] done in 5ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[  144995ms] [LOG] [Fast Refresh] done in 5ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[  145057ms] [LOG] [Fast Refresh] done in 5ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[  145120ms] [LOG] [Fast Refresh] done in 5ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[  145183ms] [LOG] [Fast Refresh] done in 5ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[  145230ms] [LOG] [Fast Refresh] done in 5ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[  145293ms] [LOG] [Fast Refresh] done in 5ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[  145355ms] [LOG] [Fast Refresh] done in 5ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[  145402ms] [LOG] [Fast Refresh] done in 5ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[  145466ms] [LOG] [Fast Refresh] done in 5ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[  145529ms] [LOG] [Fast Refresh] done in 5ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[  145591ms] [LOG] [Fast Refresh] done in 5ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[  145654ms] [LOG] [Fast Refresh] done in 5ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[  145700ms] [LOG] [Fast Refresh] done in 5ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[  145748ms] [LOG] [Fast Refresh] done in 5ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[  145795ms] [LOG] [Fast Refresh] done in 5ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[  145857ms] [LOG] [Fast Refresh] done in 5ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[  145919ms] [LOG] [Fast Refresh] done in 5ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[  145966ms] [LOG] [Fast Refresh] done in 5ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[  146028ms] [LOG] [Fast Refresh] done in 5ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[  146089ms] [LOG] [Fast Refresh] done in 5ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[  146137ms] [LOG] [Fast Refresh] done in 5ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[  146200ms] [LOG] [Fast Refresh] done in 5ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[  146262ms] [LOG] [Fast Refresh] done in 5ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[  146310ms] [LOG] [Fast Refresh] done in 5ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[  146373ms] [LOG] [Fast Refresh] done in 5ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776
+[  146435ms] [LOG] [Fast Refresh] done in 5ms @ http://localhost:3000/_next/static/chunks/137q_next_dist_0ewclpe._.js:776

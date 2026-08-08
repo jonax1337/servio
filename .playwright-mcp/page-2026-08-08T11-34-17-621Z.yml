@@ -1,0 +1,359 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e29]:
+    - generic [ref=e32]:
+      - link "Servio Open-Source ITSM" [ref=e34] [cursor=pointer]:
+        - /url: /
+        - generic [ref=e41]:
+          - generic [ref=e42]: Servio
+          - generic [ref=e43]: Open-Source ITSM
+      - generic [ref=e44]:
+        - button [ref=e46]:
+          - link "New ticket" [ref=e47] [cursor=pointer]:
+            - /url: /tickets/new
+        - generic [ref=e48]:
+          - generic [ref=e49]: Overview
+          - list [ref=e51]:
+            - listitem [ref=e52]:
+              - button [ref=e53]:
+                - link "Dashboard" [ref=e54] [cursor=pointer]:
+                  - /url: /
+        - generic [ref=e60]:
+          - generic [ref=e61]: Service Operations
+          - list [ref=e63]:
+            - listitem [ref=e64]:
+              - button [ref=e65]:
+                - link "Tickets" [ref=e66] [cursor=pointer]:
+                  - /url: /tickets
+            - listitem [ref=e69]:
+              - button [ref=e70]:
+                - link "Queues" [ref=e71] [cursor=pointer]:
+                  - /url: /queues
+            - listitem [ref=e75]:
+              - button [ref=e76]:
+                - link "Problems" [ref=e77] [cursor=pointer]:
+                  - /url: /problems
+            - listitem [ref=e80]:
+              - button [ref=e81]:
+                - link "Changes" [ref=e82] [cursor=pointer]:
+                  - /url: /changes
+        - generic [ref=e88]:
+          - generic [ref=e89]: Catalog & CMDB
+          - list [ref=e91]:
+            - listitem [ref=e92]:
+              - button [ref=e93]:
+                - link "Services" [ref=e94] [cursor=pointer]:
+                  - /url: /services
+            - listitem [ref=e102]:
+              - button [ref=e103]:
+                - link "Assets" [ref=e104] [cursor=pointer]:
+                  - /url: /assets
+            - listitem [ref=e108]:
+              - button [ref=e109]:
+                - link "Categories" [ref=e110] [cursor=pointer]:
+                  - /url: /categories
+            - listitem [ref=e116]:
+              - button [ref=e117]:
+                - link "Knowledge Base" [ref=e118] [cursor=pointer]:
+                  - /url: /knowledge
+        - generic [ref=e121]:
+          - generic [ref=e122]: Organisation
+          - list [ref=e124]:
+            - listitem [ref=e125]:
+              - button [ref=e126]:
+                - link "Groups" [ref=e127] [cursor=pointer]:
+                  - /url: /groups
+            - listitem [ref=e133]:
+              - button [ref=e134]:
+                - link "People" [ref=e135] [cursor=pointer]:
+                  - /url: /people
+            - listitem [ref=e146]:
+              - button [ref=e147]:
+                - link "Tags" [ref=e148] [cursor=pointer]:
+                  - /url: /tags
+        - generic [ref=e153]:
+          - generic [ref=e154]: Administration
+          - list [ref=e156]:
+            - listitem [ref=e157]:
+              - button [ref=e158]:
+                - link "Syncs" [ref=e159] [cursor=pointer]:
+                  - /url: /syncs
+            - listitem [ref=e165]:
+              - button [ref=e166]:
+                - link "API Tokens" [ref=e167] [cursor=pointer]:
+                  - /url: /settings/api
+            - listitem [ref=e171]:
+              - button [ref=e172]:
+                - link "Settings" [ref=e173] [cursor=pointer]:
+                  - /url: /settings
+      - paragraph [ref=e178]: v0.1 · MIT licensed
+      - button "Toggle Sidebar" [ref=e179]
+    - main [ref=e180]:
+      - generic [ref=e181]:
+        - button "Toggle Sidebar" [ref=e182]
+        - separator [ref=e184]
+        - navigation "breadcrumb" [ref=e185]:
+          - list [ref=e186]:
+            - listitem [ref=e187]:
+              - link "Servio" [ref=e189] [cursor=pointer]:
+                - /url: /
+        - generic [ref=e190]:
+          - button "Search… ⌘K" [ref=e191]:
+            - generic [ref=e195]: Search…
+            - generic: ⌘K
+          - generic [ref=e196]:
+            - heading "Command Palette" [level=2] [ref=e197]
+            - paragraph [ref=e198]: Search for a command to run...
+          - button "Notifications" [ref=e199]:
+            - link [ref=e200] [cursor=pointer]:
+              - /url: /notifications
+          - button "Toggle theme" [ref=e201]
+          - separator [ref=e202]
+          - button "AA" [ref=e203]
+      - main [ref=e206]:
+        - generic [ref=e207]:
+          - generic [ref=e209]:
+            - heading "Good afternoon, Alex" [level=1] [ref=e210]
+            - paragraph [ref=e211]: Here's what's happening across your service desk today.
+          - generic [ref=e212]:
+            - button [ref=e213]:
+              - link "Open queues" [ref=e214] [cursor=pointer]:
+                - /url: /queues
+            - button [ref=e215]:
+              - link "New ticket" [ref=e216] [cursor=pointer]:
+                - /url: /tickets/new
+        - generic [ref=e217]:
+          - generic [ref=e218]:
+            - link "20 Open tickets" [ref=e219] [cursor=pointer]:
+              - /url: /tickets?status=open
+              - generic [ref=e224]:
+                - generic [ref=e225]: "20"
+                - generic [ref=e226]: Open tickets
+            - link "5 Unassigned" [ref=e227] [cursor=pointer]:
+              - /url: /tickets?assignee=unassigned
+              - generic [ref=e235]:
+                - generic [ref=e236]: "5"
+                - generic [ref=e237]: Unassigned
+            - link "4 Critical open" [ref=e238] [cursor=pointer]:
+              - /url: /tickets?priority=CRITICAL
+              - generic [ref=e243]:
+                - generic [ref=e244]: "4"
+                - generic [ref=e245]: Critical open
+            - generic [ref=e251]:
+              - generic [ref=e252]: "2"
+              - generic [ref=e253]: Resolved today
+            - link "1 Changes to approve" [ref=e254] [cursor=pointer]:
+              - /url: /changes?status=APPROVAL
+              - generic [ref=e262]:
+                - generic [ref=e263]: "1"
+                - generic [ref=e264]: Changes to approve
+          - generic [ref=e265]:
+            - generic [ref=e266]:
+              - generic [ref=e267]:
+                - generic [ref=e268]: Ticket volume · last 14 days
+                - generic [ref=e269]:
+                  - generic [ref=e270]: Created
+                  - generic [ref=e272]: Resolved
+              - application [ref=e277]:
+                - generic [ref=e293]:
+                  - generic [ref=e294]:
+                    - generic [ref=e295]: Jul 26
+                    - generic [ref=e297]: Jul 27
+                    - generic [ref=e299]: Jul 28
+                    - generic [ref=e301]: Jul 29
+                    - generic [ref=e303]: Jul 30
+                    - generic [ref=e305]: Jul 31
+                    - generic [ref=e307]: Aug 1
+                    - generic [ref=e309]: Aug 2
+                    - generic [ref=e311]: Aug 3
+                    - generic [ref=e313]: Aug 4
+                    - generic [ref=e315]: Aug 5
+                    - generic [ref=e317]: Aug 6
+                    - generic [ref=e319]: Aug 8
+                  - generic [ref=e321]:
+                    - generic [ref=e322]: "0"
+                    - generic [ref=e324]: "1"
+                    - generic [ref=e326]: "2"
+                    - generic [ref=e328]: "3"
+                    - generic [ref=e330]: "4"
+            - generic [ref=e332]:
+              - generic [ref=e333]: Open by priority
+              - generic [ref=e335]:
+                - generic [ref=e337]:
+                  - generic [ref=e338]: Low
+                  - generic [ref=e339]: "5"
+                - generic [ref=e343]:
+                  - generic [ref=e344]: Medium
+                  - generic [ref=e345]: "7"
+                - generic [ref=e349]:
+                  - generic [ref=e350]: High
+                  - generic [ref=e351]: "4"
+                - generic [ref=e355]:
+                  - generic [ref=e356]: Critical
+                  - generic [ref=e357]: "4"
+                - generic [ref=e360]:
+                  - generic [ref=e361]: Open problems
+                  - link "3 active" [ref=e362] [cursor=pointer]:
+                    - /url: /problems
+          - generic [ref=e363]:
+            - generic [ref=e364]:
+              - generic [ref=e365]:
+                - generic [ref=e366]: Recent tickets
+                - button [ref=e367]:
+                  - link "View all" [ref=e368] [cursor=pointer]:
+                    - /url: /tickets
+              - list [ref=e370]:
+                - listitem [ref=e371]:
+                  - link "INC-0004 ERP system is very slow this morning Medium Open 9 minutes ago" [ref=e372] [cursor=pointer]:
+                    - /url: /tickets/4
+                    - generic [ref=e373]: INC-0004
+                    - generic [ref=e374]: ERP system is very slow this morning
+                    - generic [ref=e375]: Medium
+                    - generic [ref=e377]: Open
+                    - generic [ref=e379]: 9 minutes ago
+                - listitem [ref=e380]:
+                  - 'link "INC-0020 Request: standing desk & docking station Critical Resolved 1 day ago" [ref=e381] [cursor=pointer]':
+                    - /url: /tickets/20
+                    - generic [ref=e382]: INC-0020
+                    - generic [ref=e383]: "Request: standing desk & docking station"
+                    - generic [ref=e384]: Critical
+                    - generic [ref=e386]: Resolved
+                    - generic [ref=e388]: 1 day ago
+                - listitem [ref=e389]:
+                  - link "REQ-0021 Teams call quality poor Low Open 2 days ago" [ref=e390] [cursor=pointer]:
+                    - /url: /tickets/21
+                    - generic [ref=e391]: REQ-0021
+                    - generic [ref=e392]: Teams call quality poor
+                    - generic [ref=e393]: Low
+                    - generic [ref=e395]: Open
+                    - generic [ref=e397]: 2 days ago
+                - listitem [ref=e398]:
+                  - link "INC-0010 Email not syncing on phone Critical Resolved 2 days ago" [ref=e399] [cursor=pointer]:
+                    - /url: /tickets/10
+                    - generic [ref=e400]: INC-0010
+                    - generic [ref=e401]: Email not syncing on phone
+                    - generic [ref=e402]: Critical
+                    - generic [ref=e404]: Resolved
+                    - generic [ref=e406]: 2 days ago
+                - listitem [ref=e407]:
+                  - link "REQ-0029 Server DC02 high CPU alert Medium Pending 3 days ago" [ref=e408] [cursor=pointer]:
+                    - /url: /tickets/29
+                    - generic [ref=e409]: REQ-0029
+                    - generic [ref=e410]: Server DC02 high CPU alert
+                    - generic [ref=e411]: Medium
+                    - generic [ref=e413]: Pending
+                    - generic [ref=e415]: 3 days ago
+                - listitem [ref=e416]:
+                  - link "INC-0019 Slow internet in the whole office Medium On Hold 3 days ago" [ref=e417] [cursor=pointer]:
+                    - /url: /tickets/19
+                    - generic [ref=e418]: INC-0019
+                    - generic [ref=e419]: Slow internet in the whole office
+                    - generic [ref=e420]: Medium
+                    - generic [ref=e422]: On Hold
+                    - generic [ref=e424]: 3 days ago
+                - listitem [ref=e425]:
+                  - 'link "INC-0008 Access request: Finance shared drive Critical Closed 3 days ago" [ref=e426] [cursor=pointer]':
+                    - /url: /tickets/8
+                    - generic [ref=e427]: INC-0008
+                    - generic [ref=e428]: "Access request: Finance shared drive"
+                    - generic [ref=e429]: Critical
+                    - generic [ref=e431]: Closed
+                    - generic [ref=e433]: 3 days ago
+            - generic [ref=e434]:
+              - generic [ref=e435]:
+                - generic [ref=e436]:
+                  - generic [ref=e437]: Service status
+                  - link "All services" [ref=e438] [cursor=pointer]:
+                    - /url: /services
+                - generic [ref=e439]:
+                  - generic [ref=e440]:
+                    - generic [ref=e441]: New Employee Onboarding
+                    - generic [ref=e442]: Operational
+                  - generic [ref=e444]:
+                    - generic [ref=e445]: Company Website
+                    - generic [ref=e446]: Operational
+                  - generic [ref=e448]:
+                    - generic [ref=e449]: File Storage
+                    - generic [ref=e450]: Operational
+                  - generic [ref=e452]:
+                    - generic [ref=e453]: Hardware Request
+                    - generic [ref=e454]: Operational
+                  - generic [ref=e456]:
+                    - generic [ref=e457]: Email & Calendar
+                    - generic [ref=e458]: Operational
+                  - generic [ref=e460]:
+                    - generic [ref=e461]: VPN Access
+                    - generic [ref=e462]: Operational
+              - generic [ref=e464]:
+                - generic [ref=e465]: Activity
+                - generic [ref=e469]:
+                  - generic [ref=e470]:
+                    - generic [ref=e471]: SA
+                    - generic [ref=e473]:
+                      - paragraph [ref=e474]:
+                        - text: Sam Rivera
+                        - generic [ref=e475]: updated status · Change
+                      - paragraph [ref=e476]: about 2 hours ago
+                  - generic [ref=e477]:
+                    - generic [ref=e478]: TH
+                    - generic [ref=e480]:
+                      - paragraph [ref=e481]:
+                        - text: Theo Brandt
+                        - generic [ref=e482]: assigned owner · User
+                      - paragraph [ref=e483]: about 7 hours ago
+                  - generic [ref=e484]:
+                    - generic [ref=e485]: MA
+                    - generic [ref=e487]:
+                      - paragraph [ref=e488]:
+                        - text: Mara Manager
+                        - generic [ref=e489]: created record · User
+                      - paragraph [ref=e490]: 1 day ago
+                  - generic [ref=e491]:
+                    - generic [ref=e492]: SA
+                    - generic [ref=e494]:
+                      - paragraph [ref=e495]:
+                        - text: Sam Rivera
+                        - generic [ref=e496]: updated status · Asset
+                      - paragraph [ref=e497]: 1 day ago
+                  - generic [ref=e498]:
+                    - generic [ref=e499]: SA
+                    - generic [ref=e501]:
+                      - paragraph [ref=e502]:
+                        - text: Sam Rivera
+                        - generic [ref=e503]: created record · Change
+                      - paragraph [ref=e504]: 1 day ago
+                  - generic [ref=e505]:
+                    - generic [ref=e506]: "NO"
+                    - generic [ref=e508]:
+                      - paragraph [ref=e509]:
+                        - text: Nora K900
+                        - generic [ref=e510]: ran sync job · Change
+                      - paragraph [ref=e511]: 2 days ago
+          - generic [ref=e512]:
+            - generic [ref=e513]: Upcoming changes
+            - generic [ref=e515]:
+              - 'link "Emergency patch: firewall CVE 7.8.2026" [ref=e516] [cursor=pointer]':
+                - /url: /changes/3
+                - generic [ref=e517]: "Emergency patch: firewall CVE"
+                - generic [ref=e518]: 7.8.2026
+              - link "Migrate ERP database to new VM 11.8.2026" [ref=e519] [cursor=pointer]:
+                - /url: /changes/2
+                - generic [ref=e520]: Migrate ERP database to new VM
+                - generic [ref=e521]: 11.8.2026
+              - 'link "Standard: monthly OS patching 13.8.2026" [ref=e522] [cursor=pointer]':
+                - /url: /changes/4
+                - generic [ref=e523]: "Standard: monthly OS patching"
+                - generic [ref=e524]: 13.8.2026
+  - region "Notifications alt+T"
+  - generic [ref=e529] [cursor=pointer]:
+    - button "Open Next.js Dev Tools" [ref=e530]
+    - generic [ref=e534]:
+      - button "Open issues overlay" [ref=e535]:
+        - generic [ref=e536]:
+          - generic [ref=e537]: "2"
+          - generic [ref=e538]: "3"
+        - generic [ref=e539]:
+          - text: Issue
+          - generic [ref=e540]: s
+      - button "Collapse issues badge" [ref=e541]
+  - alert [ref=e544]: Good afternoon, Alex
+  - generic [ref=e545]: "0"

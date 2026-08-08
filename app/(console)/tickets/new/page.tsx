@@ -1,0 +1,40 @@
+import type { Metadata } from "next";
+import { Ticket as TicketIcon } from "lucide-react";
+import { db } from "@/lib/db";
+import { getFormOptions } from "@/lib/data/options";
+import { requireUser } from "@/lib/session";
+import { PageHeader, PageBody } from "@/components/page-header";
+import { Card, CardContent } from "@/components/ui/card";
+import { TicketForm } from "@/components/tickets/ticket-form";
+
+export const metadata: Metadata = { title: "New ticket" };
+export const dynamic = "force-dynamic";
+
+export default async function NewTicketPage() {
+  const me = await requireUser();
+  const [options, requesters] = await Promise.all([
+    getFormOptions(),
+    db.user.findMany({
+      where: { isActive: true },
+      select: { id: true, name: true, email: true },
+      orderBy: { name: "asc" },
+    }),
+  ]);
+
+  return (
+    <>
+      <PageHeader
+        icon={TicketIcon}
+        title="New ticket"
+        description="Log a new incident or service request."
+      />
+      <PageBody>
+        <Card className="mx-auto max-w-3xl">
+          <CardContent className="pt-6">
+            <TicketForm options={options} requesters={requesters} currentUserId={me.id} />
+          </CardContent>
+        </Card>
+      </PageBody>
+    </>
+  );
+}

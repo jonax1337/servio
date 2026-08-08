@@ -1,0 +1,230 @@
+- generic [active] [ref=f10e1]:
+  - generic [ref=f10e2]:
+    - generic [ref=f10e5]:
+      - link "Servio Open-Source ITSM" [ref=f10e7] [cursor=pointer]:
+        - /url: /
+        - generic [ref=f10e14]:
+          - generic [ref=f10e15]: Servio
+          - generic [ref=f10e16]: Open-Source ITSM
+      - generic [ref=f10e17]:
+        - button "New ticket" [ref=f10e19] [cursor=pointer]
+        - generic [ref=f10e20]:
+          - generic [ref=f10e21]: Overview
+          - list [ref=f10e23]:
+            - listitem [ref=f10e24]:
+              - link "Dashboard" [ref=f10e25] [cursor=pointer]:
+                - /url: /
+        - generic [ref=f10e32]:
+          - generic [ref=f10e33]: Service Operations
+          - list [ref=f10e35]:
+            - listitem [ref=f10e36]:
+              - link "Tickets" [ref=f10e37] [cursor=pointer]:
+                - /url: /tickets
+            - listitem [ref=f10e41]:
+              - link "Queues" [ref=f10e42] [cursor=pointer]:
+                - /url: /queues
+            - listitem [ref=f10e47]:
+              - link "Problems" [ref=f10e48] [cursor=pointer]:
+                - /url: /problems
+            - listitem [ref=f10e52]:
+              - link "Changes" [ref=f10e53] [cursor=pointer]:
+                - /url: /changes
+        - generic [ref=f10e60]:
+          - generic [ref=f10e61]: Catalog & CMDB
+          - list [ref=f10e63]:
+            - listitem [ref=f10e64]:
+              - link "Services" [ref=f10e65] [cursor=pointer]:
+                - /url: /services
+            - listitem [ref=f10e74]:
+              - link "Assets" [ref=f10e75] [cursor=pointer]:
+                - /url: /assets
+            - listitem [ref=f10e80]:
+              - link "Categories" [ref=f10e81] [cursor=pointer]:
+                - /url: /categories
+            - listitem [ref=f10e88]:
+              - link "Knowledge Base" [ref=f10e89] [cursor=pointer]:
+                - /url: /knowledge
+        - generic [ref=f10e93]:
+          - generic [ref=f10e94]: Organisation
+          - list [ref=f10e96]:
+            - listitem [ref=f10e97]:
+              - link "Groups" [ref=f10e98] [cursor=pointer]:
+                - /url: /groups
+            - listitem [ref=f10e105]:
+              - link "People" [ref=f10e106] [cursor=pointer]:
+                - /url: /people
+            - listitem [ref=f10e118]:
+              - link "Tags" [ref=f10e119] [cursor=pointer]:
+                - /url: /tags
+        - generic [ref=f10e125]:
+          - generic [ref=f10e126]: Administration
+          - list [ref=f10e128]:
+            - listitem [ref=f10e129]:
+              - link "Syncs" [ref=f10e130] [cursor=pointer]:
+                - /url: /syncs
+            - listitem [ref=f10e137]:
+              - link "API Tokens" [ref=f10e138] [cursor=pointer]:
+                - /url: /settings/api
+            - listitem [ref=f10e143]:
+              - link "Settings" [ref=f10e144] [cursor=pointer]:
+                - /url: /settings
+      - paragraph [ref=f10e150]: v0.1 · MIT licensed
+      - button "Toggle Sidebar" [ref=f10e151]
+    - main [ref=f10e152]:
+      - generic [ref=f10e153]:
+        - button "Toggle Sidebar" [ref=f10e154]
+        - separator [ref=f10e156]
+        - navigation "breadcrumb" [ref=f10e157]:
+          - list [ref=f10e158]:
+            - listitem [ref=f10e159]:
+              - link "Servio" [ref=f10e160] [cursor=pointer]:
+                - /url: /
+            - listitem [ref=f10e161]
+            - listitem [ref=f10e164]:
+              - link "Tickets" [ref=f10e165] [cursor=pointer]:
+                - /url: /tickets
+            - listitem [ref=f10e166]
+            - listitem [ref=f10e169]:
+              - link "#1" [disabled] [ref=f10e170]
+        - generic [ref=f10e171]:
+          - button "Search… ⌘K" [ref=f10e172]:
+            - generic [ref=f10e176]: Search…
+            - generic: ⌘K
+          - generic [ref=f10e177]:
+            - heading "Command Palette" [level=2] [ref=f10e178]
+            - paragraph [ref=f10e179]: Search for a command to run...
+          - button "Notifications" [ref=f10e180] [cursor=pointer]
+          - button "Toggle theme" [ref=f10e181]
+          - separator [ref=f10e182]
+          - button "AA" [ref=f10e183]
+      - main [ref=f10e186]:
+        - generic [ref=f10e187]:
+          - generic [ref=f10e188]:
+            - generic [ref=f10e189]:
+              - button [ref=f10e190] [cursor=pointer]
+              - generic [ref=f10e191]: INC-0001
+              - generic [ref=f10e192]: Incident
+              - generic [ref=f10e194]:
+                - generic [ref=f10e195]: High
+                - generic [ref=f10e197]: Pending
+            - generic [ref=f10e199]:
+              - heading "Cannot connect to VPN from home" [level=1] [ref=f10e200]
+              - paragraph [ref=f10e201]: Opened by Sofia Rossi · 5 days ago · via Phone
+              - generic [ref=f10e202]: Cannot connect to VPN from home. Reported by the user via the portal. Please investigate and follow up.
+              - link "PRB-0003 · Intermittent Wi-Fi drops in Building B" [ref=f10e204] [cursor=pointer]:
+                - /url: /problems/3
+              - generic [ref=f10e207]:
+                - heading "Activity · 2" [level=2] [ref=f10e208]
+                - generic [ref=f10e212]:
+                  - generic [ref=f10e213]:
+                    - generic [ref=f10e214]: MM
+                    - generic [ref=f10e216]:
+                      - generic [ref=f10e217]:
+                        - generic [ref=f10e218]: Mara Manager
+                        - generic [ref=f10e219]: 5 days ago
+                      - generic [ref=f10e220]: Waiting on vendor response, will update shortly.
+                  - generic [ref=f10e221]:
+                    - generic [ref=f10e222]: MM
+                    - generic [ref=f10e224]:
+                      - generic [ref=f10e225]:
+                        - generic [ref=f10e226]: Mara Manager
+                        - generic [ref=f10e227]: Internal
+                        - generic [ref=f10e231]: 5 days ago
+                      - generic [ref=f10e232]: Could you confirm your device name and location?
+                - generic [ref=f10e234]:
+                  - textbox "Write a reply or add an internal note…" [ref=f10e235]
+                  - generic [ref=f10e236]:
+                    - generic [ref=f10e237]:
+                      - checkbox [ref=f10e238]
+                      - checkbox [ref=f10e239]
+                      - generic [ref=f10e240]: Internal note (not visible to requester)
+                    - button "Send" [ref=f10e241]
+          - complementary [ref=f10e242]:
+            - generic [ref=f10e243]:
+              - generic [ref=f10e244]: Properties
+              - generic [ref=f10e247]:
+                - generic [ref=f10e248]:
+                  - generic [ref=f10e249]: Status
+                  - generic [ref=f10e250]:
+                    - combobox [ref=f10e251]:
+                      - generic [ref=f10e252]: PENDING
+                      - img: ▼
+                    - textbox [ref=f10e253]: PENDING
+                - generic [ref=f10e254]:
+                  - generic [ref=f10e255]: Priority
+                  - generic [ref=f10e256]:
+                    - combobox [ref=f10e257]:
+                      - generic [ref=f10e258]: HIGH
+                      - img: ▼
+                    - textbox [ref=f10e259]: HIGH
+                - generic [ref=f10e260]:
+                  - generic [ref=f10e261]: Assignee
+                  - generic [ref=f10e262]:
+                    - combobox [ref=f10e263]:
+                      - generic [ref=f10e264]: cmskaek3u0001v6l8pqt14idb
+                      - img: ▼
+                    - textbox [ref=f10e265]: cmskaek3u0001v6l8pqt14idb
+                - generic [ref=f10e266]:
+                  - generic [ref=f10e267]: Group
+                  - generic [ref=f10e268]:
+                    - combobox [ref=f10e269]:
+                      - generic [ref=f10e270]: cmskaek5b000gv6l88i41sk47
+                      - img: ▼
+                    - textbox [ref=f10e271]: cmskaek5b000gv6l88i41sk47
+                - generic [ref=f10e272]:
+                  - generic [ref=f10e273]: Queue
+                  - generic [ref=f10e274]:
+                    - combobox [ref=f10e275]:
+                      - generic [ref=f10e276]: cmskaek5o000rv6l84k5r5bsq
+                      - img: ▼
+                    - textbox [ref=f10e277]: cmskaek5o000rv6l84k5r5bsq
+                - generic [ref=f10e278]:
+                  - generic [ref=f10e279]: Category
+                  - generic [ref=f10e280]:
+                    - combobox [ref=f10e281]:
+                      - generic [ref=f10e282]: cmskaek7y000zv6l859hh84yc
+                      - img: ▼
+                    - textbox [ref=f10e283]: cmskaek7y000zv6l859hh84yc
+                - generic [ref=f10e284]:
+                  - generic [ref=f10e285]: Service
+                  - generic [ref=f10e286]:
+                    - combobox [ref=f10e287]:
+                      - generic [ref=f10e288]: cmskaek99001ov6l8mj4692xw
+                      - img: ▼
+                    - textbox [ref=f10e289]: cmskaek99001ov6l8mj4692xw
+                - generic [ref=f10e290]:
+                  - generic [ref=f10e291]: Impact
+                  - generic [ref=f10e292]:
+                    - combobox [ref=f10e293]:
+                      - generic [ref=f10e294]: HIGH
+                      - img: ▼
+                    - textbox [ref=f10e295]: HIGH
+                - generic [ref=f10e296]:
+                  - generic [ref=f10e297]: Urgency
+                  - generic [ref=f10e298]:
+                    - combobox [ref=f10e299]:
+                      - generic [ref=f10e300]: LOW
+                      - img: ▼
+                    - textbox [ref=f10e301]: LOW
+            - generic [ref=f10e302]:
+              - generic [ref=f10e303]: People
+              - generic [ref=f10e306]:
+                - generic [ref=f10e307]: Requester
+                - generic [ref=f10e308]: Sofia Rossi
+            - generic [ref=f10e309]:
+              - generic [ref=f10e310]: Timeline & SLA
+              - generic [ref=f10e312]:
+                - generic [ref=f10e313]:
+                  - generic [ref=f10e314]: Created
+                  - generic [ref=f10e315]: Aug 3, 2026 1:25 PM
+                - generic [ref=f10e316]:
+                  - generic [ref=f10e317]: Due
+                  - generic [ref=f10e318]: Aug 4, 2026 1:25 PM
+                - generic [ref=f10e319]:
+                  - generic [ref=f10e320]: First response
+                  - generic [ref=f10e321]: Aug 3, 2026 4:25 PM
+                - generic [ref=f10e322]:
+                  - generic [ref=f10e323]: SLA
+                  - generic [ref=f10e324]: Gold — Critical
+  - region "Notifications alt+T"
+  - button "Open Next.js Dev Tools" [ref=f10e330] [cursor=pointer]

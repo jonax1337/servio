@@ -1,0 +1,582 @@
+// Servio — ITSM data model
+// SQLite for local dev (swap provider to postgresql for prod).
+// NOTE: SQLite has no native enums — status/priority/type are String fields
+// backed by the constants in lib/constants.ts (validated with Zod).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Identity & access (Auth.js adapter models + RBAC)
+// ---------------------------------------------------------------------------
+
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  name          String?
+  passwordHash  String?
+  image         String?
+  role          String    @default("USER") // ADMIN | MANAGER | AGENT | USER
+  jobTitle      String?
+  phone         String?
+  department    String?
+  timezone      String    @default("UTC")
+  locale        String    @default("en")
+  isActive      Boolean   @default(true)
+  syncSourceId  String?
+  externalId    String?
+  lastLoginAt   DateTime?
+  emailVerified DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  accounts        Account[]
+  sessions        Session[]
+  memberships     GroupMember[]
+  requestedTickets Ticket[]   @relation("TicketRequester")
+  assignedTickets  Ticket[]   @relation("TicketAssignee")
+  comments        TicketComment[]
+  watching        TicketWatcher[]
+  assignedProblems Problem[]  @relation("ProblemAssignee")
+  assignedChanges  Change[]   @relation("ChangeAssignee")
+  approvals       ChangeApproval[]
+  ownedAssets     Asset[]     @relation("AssetOwner")
+  ownedServices   Service[]   @relation("ServiceOwner")
+  managedGroups   Group[]     @relation("GroupManager")
+  apiTokens       ApiToken[]
+  auditLogs       AuditLog[]
+  notifications   Notification[]
+  articles        Article[]
+  syncSource      SyncSource? @relation(fields: [syncSourceId], references: [id])
+
+  @@index([role])
+  @@index([syncSourceId])
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+// ---------------------------------------------------------------------------
+// Organisation: groups & queues
+// ---------------------------------------------------------------------------
+
+model Group {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  description String?
+  type        String   @default("TEAM") // TEAM | DEPARTMENT | VENDOR
+  email       String?
+  color       String   @default("#6366f1")
+  managerId   String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  manager  User?         @relation("GroupManager", fields: [managerId], references: [id])
+  members  GroupMember[]
+  queues   Queue[]
+  tickets  Ticket[]
+  problems Problem[]
+  changes  Change[]
+  assets   Asset[]
+}
+
+model GroupMember {
+  id       String @id @default(cuid())
+  groupId  String
+  userId   String
+  role     String @default("MEMBER") // MEMBER | LEAD
+  group    Group  @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  user     User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([groupId, userId])
+}
+
+model Queue {
+  id          String  @id @default(cuid())
+  name        String  @unique
+  description String?
+  color       String  @default("#6366f1")
+  groupId     String?
+  isActive    Boolean @default(true)
+  order       Int     @default(0)
+  createdAt   DateTime @default(now())
+
+  group   Group?   @relation(fields: [groupId], references: [id])
+  tickets Ticket[]
+}
+
+// ---------------------------------------------------------------------------
+// Catalog: categories, services, SLAs
+// ---------------------------------------------------------------------------
+
+model Category {
+  id       String  @id @default(cuid())
+  name     String
+  description String?
+  type     String  @default("INCIDENT") // INCIDENT | REQUEST | PROBLEM | CHANGE | ASSET
+  icon     String?
+  color    String  @default("#64748b")
+  parentId String?
+
+  parent   Category?  @relation("CategoryTree", fields: [parentId], references: [id])
+  children Category[] @relation("CategoryTree")
+  tickets  Ticket[]
+  problems Problem[]
+  changes  Change[]
+  services Service[]
+  articles Article[]
+
+  @@unique([name, type])
+  @@index([parentId])
+}
+
+model SLA {
+  id           String  @id @default(cuid())
+  name         String  @unique
+  description  String?
+  priority     String? // matches ticket priority for auto-assignment
+  responseMins Int     @default(60)
+  resolveMins  Int     @default(480)
+  isActive     Boolean @default(true)
+
+  services Service[]
+  tickets  Ticket[]
+}
+
+model Service {
+  id          String  @id @default(cuid())
+  name        String  @unique
+  description String?
+  status      String  @default("OPERATIONAL") // OPERATIONAL | DEGRADED | OUTAGE | MAINTENANCE | RETIRED
+  criticality String  @default("MEDIUM") // LOW | MEDIUM | HIGH | CRITICAL
+  icon        String?
+  isPublic    Boolean @default(true) // shown in self-service catalog
+  categoryId  String?
+  ownerId     String?
+  slaId       String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  category Category? @relation(fields: [categoryId], references: [id])
+  owner    User?     @relation("ServiceOwner", fields: [ownerId], references: [id])
+  sla      SLA?      @relation(fields: [slaId], references: [id])
+  tickets  Ticket[]
+}
+
+// ---------------------------------------------------------------------------
+// Ticketing (incidents & requests)
+// ---------------------------------------------------------------------------
+
+model Ticket {
+  id          Int      @id @default(autoincrement())
+  title       String
+  description String   @default("")
+  type        String   @default("INCIDENT") // INCIDENT | REQUEST
+  status      String   @default("NEW") // NEW | OPEN | PENDING | ON_HOLD | RESOLVED | CLOSED | CANCELLED
+  priority    String   @default("MEDIUM") // LOW | MEDIUM | HIGH | CRITICAL
+  impact      String   @default("MEDIUM") // LOW | MEDIUM | HIGH
+  urgency     String   @default("MEDIUM") // LOW | MEDIUM | HIGH
+  source      String   @default("PORTAL") // PORTAL | EMAIL | PHONE | API | AGENT
+
+  requesterId String
+  assigneeId  String?
+  groupId     String?
+  queueId     String?
+  categoryId  String?
+  serviceId   String?
+  slaId       String?
+  problemId   Int?
+  changeId    Int?
+
+  dueAt          DateTime?
+  firstResponseAt DateTime?
+  resolvedAt     DateTime?
+  closedAt       DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  requester User      @relation("TicketRequester", fields: [requesterId], references: [id])
+  assignee  User?     @relation("TicketAssignee", fields: [assigneeId], references: [id])
+  group     Group?    @relation(fields: [groupId], references: [id])
+  queue     Queue?    @relation(fields: [queueId], references: [id])
+  category  Category? @relation(fields: [categoryId], references: [id])
+  service   Service?  @relation(fields: [serviceId], references: [id])
+  sla       SLA?      @relation(fields: [slaId], references: [id])
+  problem   Problem?  @relation(fields: [problemId], references: [id])
+  change    Change?   @relation(fields: [changeId], references: [id])
+
+  comments    TicketComment[]
+  watchers    TicketWatcher[]
+  attachments Attachment[]
+  assets      TicketAsset[]
+  tags        TicketTag[]
+
+  @@index([status])
+  @@index([priority])
+  @@index([assigneeId])
+  @@index([queueId])
+  @@index([requesterId])
+}
+
+model TicketComment {
+  id         String   @id @default(cuid())
+  ticketId   Int
+  authorId   String
+  body       String
+  isInternal Boolean  @default(false)
+  createdAt  DateTime @default(now())
+
+  ticket      Ticket       @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  author      User         @relation(fields: [authorId], references: [id])
+  attachments Attachment[]
+
+  @@index([ticketId])
+}
+
+model TicketWatcher {
+  ticketId Int
+  userId   String
+  ticket   Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  user     User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([ticketId, userId])
+}
+
+model Tag {
+  id      String      @id @default(cuid())
+  name    String      @unique
+  color   String      @default("#64748b")
+  tickets TicketTag[]
+}
+
+model TicketTag {
+  ticketId Int
+  tagId    String
+  ticket   Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  tag      Tag    @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([ticketId, tagId])
+}
+
+// ---------------------------------------------------------------------------
+// Problem management
+// ---------------------------------------------------------------------------
+
+model Problem {
+  id          Int      @id @default(autoincrement())
+  title       String
+  description String   @default("")
+  status      String   @default("NEW") // NEW | INVESTIGATING | KNOWN_ERROR | RESOLVED | CLOSED
+  priority    String   @default("MEDIUM")
+  impact      String   @default("MEDIUM")
+  rootCause   String?
+  workaround  String?
+  assigneeId  String?
+  groupId     String?
+  categoryId  String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  resolvedAt  DateTime?
+
+  assignee User?     @relation("ProblemAssignee", fields: [assigneeId], references: [id])
+  group    Group?    @relation(fields: [groupId], references: [id])
+  category Category? @relation(fields: [categoryId], references: [id])
+  tickets  Ticket[]
+  changes  Change[]
+
+  @@index([status])
+}
+
+// ---------------------------------------------------------------------------
+// Change management
+// ---------------------------------------------------------------------------
+
+model Change {
+  id          Int      @id @default(autoincrement())
+  title       String
+  description String   @default("")
+  type        String   @default("NORMAL") // STANDARD | NORMAL | EMERGENCY
+  status      String   @default("DRAFT") // DRAFT | SUBMITTED | APPROVAL | APPROVED | SCHEDULED | IN_PROGRESS | REVIEW | CLOSED | REJECTED | FAILED
+  risk        String   @default("MEDIUM") // LOW | MEDIUM | HIGH
+  priority    String   @default("MEDIUM")
+  impact      String   @default("MEDIUM")
+  reason             String?
+  implementationPlan String?
+  rollbackPlan       String?
+  assigneeId  String?
+  groupId     String?
+  categoryId  String?
+  problemId   Int?
+  plannedStart DateTime?
+  plannedEnd   DateTime?
+  actualStart  DateTime?
+  actualEnd    DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  assignee  User?     @relation("ChangeAssignee", fields: [assigneeId], references: [id])
+  group     Group?    @relation(fields: [groupId], references: [id])
+  category  Category? @relation(fields: [categoryId], references: [id])
+  problem   Problem?  @relation(fields: [problemId], references: [id])
+  approvals ChangeApproval[]
+  assets    ChangeAsset[]
+  tickets   Ticket[]
+
+  @@index([status])
+}
+
+model ChangeApproval {
+  id         String    @id @default(cuid())
+  changeId   Int
+  approverId String
+  status     String    @default("PENDING") // PENDING | APPROVED | REJECTED
+  comment    String?
+  decidedAt  DateTime?
+  createdAt  DateTime  @default(now())
+
+  change   Change @relation(fields: [changeId], references: [id], onDelete: Cascade)
+  approver User   @relation(fields: [approverId], references: [id])
+
+  @@unique([changeId, approverId])
+}
+
+// ---------------------------------------------------------------------------
+// Assets / CMDB
+// ---------------------------------------------------------------------------
+
+model Asset {
+  id           String   @id @default(cuid())
+  assetTag     String?  @unique
+  name         String
+  type         String   @default("SERVER") // SERVER | WORKSTATION | LAPTOP | NETWORK | SOFTWARE | MOBILE | PRINTER | VM | CLOUD | SERVICE | MONITOR | PHONE
+  status       String   @default("IN_USE") // IN_USE | IN_STOCK | MAINTENANCE | RETIRED | DISPOSED
+  serial       String?
+  model        String?
+  manufacturer String?
+  location     String?
+  ipAddress    String?
+  macAddress   String?
+  os           String?
+  cpu          String?
+  ramGb        Int?
+  storageGb    Int?
+  cost         Float?
+  purchaseDate DateTime?
+  warrantyEnd  DateTime?
+  notes        String?
+  ownerId      String?
+  groupId      String?
+  syncSourceId String?
+  externalId   String?
+  lastSeenAt   DateTime?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  owner      User?       @relation("AssetOwner", fields: [ownerId], references: [id])
+  group      Group?      @relation(fields: [groupId], references: [id])
+  syncSource SyncSource? @relation(fields: [syncSourceId], references: [id])
+  relationsFrom AssetRelation[] @relation("RelationSource")
+  relationsTo   AssetRelation[] @relation("RelationTarget")
+  tickets    TicketAsset[]
+  changes    ChangeAsset[]
+
+  @@index([type])
+  @@index([status])
+  @@index([syncSourceId])
+}
+
+model AssetRelation {
+  id       String @id @default(cuid())
+  sourceId String
+  targetId String
+  type     String @default("DEPENDS_ON") // DEPENDS_ON | CONNECTS_TO | RUNS_ON | HOSTS | PART_OF | BACKS_UP
+
+  source Asset @relation("RelationSource", fields: [sourceId], references: [id], onDelete: Cascade)
+  target Asset @relation("RelationTarget", fields: [targetId], references: [id], onDelete: Cascade)
+
+  @@unique([sourceId, targetId, type])
+}
+
+model TicketAsset {
+  ticketId Int
+  assetId  String
+  ticket   Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  asset    Asset  @relation(fields: [assetId], references: [id], onDelete: Cascade)
+
+  @@id([ticketId, assetId])
+}
+
+model ChangeAsset {
+  changeId Int
+  assetId  String
+  change   Change @relation(fields: [changeId], references: [id], onDelete: Cascade)
+  asset    Asset  @relation(fields: [assetId], references: [id], onDelete: Cascade)
+
+  @@id([changeId, assetId])
+}
+
+// ---------------------------------------------------------------------------
+// Attachments
+// ---------------------------------------------------------------------------
+
+model Attachment {
+  id         String   @id @default(cuid())
+  filename   String
+  url        String
+  mime       String   @default("application/octet-stream")
+  size       Int      @default(0)
+  ticketId   Int?
+  commentId  String?
+  createdAt  DateTime @default(now())
+
+  ticket  Ticket?        @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  comment TicketComment? @relation(fields: [commentId], references: [id], onDelete: Cascade)
+}
+
+// ---------------------------------------------------------------------------
+// Sync / integrations between infrastructures
+// ---------------------------------------------------------------------------
+
+model SyncSource {
+  id         String   @id @default(cuid())
+  name       String   @unique
+  type       String   @default("LDAP") // LDAP | ACTIVE_DIRECTORY | AZURE_AD | INTUNE | CSV | SNOW | REST_API | GLPI
+  direction  String   @default("IMPORT") // IMPORT | EXPORT | BIDIRECTIONAL
+  scope      String   @default("ASSETS") // USERS | ASSETS | TICKETS | ALL
+  config     String   @default("{}") // JSON blob (host, baseDN, mapping, etc.)
+  schedule   String?  // cron expression
+  isActive   Boolean  @default(true)
+  lastRunAt  DateTime?
+  lastStatus String?  // SUCCESS | FAILED | PARTIAL | RUNNING
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  runs   SyncRun[]
+  users  User[]
+  assets Asset[]
+}
+
+model SyncRun {
+  id         String    @id @default(cuid())
+  sourceId   String
+  status     String    @default("RUNNING") // RUNNING | SUCCESS | FAILED | PARTIAL
+  trigger    String    @default("MANUAL") // MANUAL | SCHEDULE | API
+  created    Int       @default(0)
+  updated    Int       @default(0)
+  failed     Int       @default(0)
+  log        String    @default("")
+  startedAt  DateTime  @default(now())
+  finishedAt DateTime?
+
+  source SyncSource @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+
+  @@index([sourceId])
+}
+
+// ---------------------------------------------------------------------------
+// API tokens, audit, notifications, knowledge base
+// ---------------------------------------------------------------------------
+
+model ApiToken {
+  id         String    @id @default(cuid())
+  name       String
+  tokenHash  String    @unique
+  prefix     String
+  scopes     String    @default("read") // csv: read,write,admin
+  userId     String
+  lastUsedAt DateTime?
+  expiresAt  DateTime?
+  revoked    Boolean   @default(false)
+  createdAt  DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model AuditLog {
+  id       String   @id @default(cuid())
+  userId   String?
+  action   String   // CREATE | UPDATE | DELETE | LOGIN | SYNC | ...
+  entity   String   // Ticket | Asset | ...
+  entityId String
+  summary  String?
+  meta     String   @default("{}")
+  ip       String?
+  createdAt DateTime @default(now())
+
+  user User? @relation(fields: [userId], references: [id])
+
+  @@index([entity, entityId])
+  @@index([createdAt])
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String
+  type      String   @default("INFO")
+  title     String
+  body      String?
+  entity    String?
+  entityId  String?
+  read      Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, read])
+}
+
+model Article {
+  id         String   @id @default(cuid())
+  title      String
+  slug       String   @unique
+  excerpt    String?
+  body       String
+  categoryId String?
+  authorId   String?
+  published  Boolean  @default(true)
+  views      Int      @default(0)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  category Category? @relation(fields: [categoryId], references: [id])
+  author   User?     @relation(fields: [authorId], references: [id])
+}
