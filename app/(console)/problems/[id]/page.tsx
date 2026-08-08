@@ -9,6 +9,9 @@ import { getFormOptions } from "@/lib/data/options";
 import { LinkButton } from "@/components/link-button";
 import { StatusBadge } from "@/components/status-badge";
 import { ProblemProperties } from "@/components/problems/problem-properties";
+import { CommentThread } from "@/components/comments/comment-thread";
+import { EditEntityDialog } from "@/components/edit-entity-dialog";
+import { addProblemComment, updateProblemDetails } from "@/lib/actions/problems";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   PROBLEM_STATUS_META, PRIORITY_META, TICKET_STATUS_META,
@@ -37,7 +40,7 @@ export default async function ProblemDetailPage({
   const problemId = Number(id);
   if (!Number.isFinite(problemId)) notFound();
 
-  const [problem, options] = await Promise.all([
+  const [problem, options, audits] = await Promise.all([
     db.problem.findUnique({
       where: { id: problemId },
       include: {
@@ -46,11 +49,24 @@ export default async function ProblemDetailPage({
         category: true,
         tickets: { include: { assignee: true }, orderBy: { createdAt: "desc" } },
         changes: { orderBy: { createdAt: "desc" } },
+        comments: { include: { author: true }, orderBy: { createdAt: "asc" } },
       },
     }),
     getFormOptions(),
+    db.auditLog.findMany({
+      where: { entity: "Problem", entityId: String(problemId) },
+      include: { user: true },
+      orderBy: { createdAt: "asc" },
+    }),
   ]);
   if (!problem) notFound();
+
+  const comments = problem.comments.map((c) => ({
+    id: c.id, author: c.author.name ?? c.author.email, body: c.body, isInternal: c.isInternal, createdAt: c.createdAt,
+  }));
+  const activity = audits
+    .filter((a) => a.summary && a.summary !== "Added a comment")
+    .map((a) => ({ id: a.id, who: a.user?.name ?? "System", summary: a.summary!, createdAt: a.createdAt }));
 
   return (
     <div className="grid gap-0 lg:grid-cols-[1fr_320px]">
@@ -66,6 +82,14 @@ export default async function ProblemDetailPage({
           <div className="ml-auto flex items-center gap-2">
             <StatusBadge map={PRIORITY_META} value={problem.priority} dot />
             <StatusBadge map={PROBLEM_STATUS_META} value={problem.status} />
+            <EditEntityDialog
+              action={updateProblemDetails}
+              idField="id"
+              id={problem.id}
+              title={problem.title}
+              description={problem.description}
+              entityLabel="problem"
+            />
           </div>
         </div>
 
@@ -146,6 +170,17 @@ export default async function ProblemDetailPage({
               ))}
             </div>
           ) : null}
+
+          {/* Comments & Activity */}
+          <div className="mt-8">
+            <CommentThread
+              idField="problemId"
+              entityId={problem.id}
+              comments={comments}
+              activity={activity}
+              addAction={addProblemComment}
+            />
+          </div>
         </div>
       </div>
 

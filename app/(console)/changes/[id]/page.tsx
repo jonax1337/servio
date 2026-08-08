@@ -11,6 +11,9 @@ import { LinkButton } from "@/components/link-button";
 import { StatusBadge } from "@/components/status-badge";
 import { ChangeProperties } from "@/components/changes/change-properties";
 import { ApprovalActions } from "@/components/changes/approval-actions";
+import { CommentThread } from "@/components/comments/comment-thread";
+import { EditEntityDialog } from "@/components/edit-entity-dialog";
+import { addChangeComment, updateChangeDetails } from "@/lib/actions/changes";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -44,7 +47,7 @@ export default async function ChangeDetailPage({
   const changeId = Number(id);
   if (!Number.isFinite(changeId)) notFound();
 
-  const [change, options] = await Promise.all([
+  const [change, options, audits] = await Promise.all([
     db.change.findUnique({
       where: { id: changeId },
       include: {
@@ -53,11 +56,24 @@ export default async function ChangeDetailPage({
         approvals: { include: { approver: true }, orderBy: { createdAt: "asc" } },
         assets: { include: { asset: true } },
         tickets: true,
+        comments: { include: { author: true }, orderBy: { createdAt: "asc" } },
       },
     }),
     getFormOptions(),
+    db.auditLog.findMany({
+      where: { entity: "Change", entityId: String(changeId) },
+      include: { user: true },
+      orderBy: { createdAt: "asc" },
+    }),
   ]);
   if (!change) notFound();
+
+  const comments = change.comments.map((c) => ({
+    id: c.id, author: c.author.name ?? c.author.email, body: c.body, isInternal: c.isInternal, createdAt: c.createdAt,
+  }));
+  const activity = audits
+    .filter((a) => a.summary && a.summary !== "Added a comment")
+    .map((a) => ({ id: a.id, who: a.user?.name ?? "System", summary: a.summary!, createdAt: a.createdAt }));
 
   return (
     <div className="grid gap-0 lg:grid-cols-[1fr_320px]">
@@ -72,6 +88,14 @@ export default async function ChangeDetailPage({
           </span>
           <StatusBadge map={CHANGE_TYPE_META} value={change.type} dot />
           <div className="ml-auto flex items-center gap-2">
+            <EditEntityDialog
+              action={updateChangeDetails}
+              idField="id"
+              id={change.id}
+              title={change.title}
+              description={change.description}
+              entityLabel="change"
+            />
             <StatusBadge map={RISK_META} value={change.risk} dot />
             <StatusBadge map={CHANGE_STATUS_META} value={change.status} />
           </div>
@@ -188,6 +212,17 @@ export default async function ChangeDetailPage({
               </div>
             </div>
           ) : null}
+
+          {/* Comments & Activity */}
+          <div className="mt-8">
+            <CommentThread
+              idField="changeId"
+              entityId={change.id}
+              comments={comments}
+              activity={activity}
+              addAction={addChangeComment}
+            />
+          </div>
         </div>
       </div>
 
