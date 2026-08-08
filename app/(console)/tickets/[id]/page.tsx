@@ -2,8 +2,8 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import {
-  ArrowLeft, Lock, Server, AlertTriangle, GitPullRequestArrow, Clock,
-  Flame, Link2, ListChecks, Activity as ActivityIcon, GitMerge,
+  ArrowLeft, Server, AlertTriangle, GitPullRequestArrow,
+  Flame, Link2, ListChecks, GitMerge,
 } from "lucide-react";
 import { db } from "@/lib/db";
 import { getFormOptions } from "@/lib/data/options";
@@ -11,10 +11,11 @@ import { getSessionUser } from "@/lib/session";
 import { LinkButton } from "@/components/link-button";
 import { StatusBadge, VipBadge } from "@/components/status-badge";
 import { TicketProperties } from "@/components/tickets/ticket-properties";
-import { CommentComposer } from "@/components/tickets/comment-composer";
+import { CommentThread } from "@/components/comments/comment-thread";
+import { EditEntityDialog } from "@/components/edit-entity-dialog";
+import { addTicketComment, updateTicketDetails } from "@/lib/actions/tickets";
 import { TicketActions } from "@/components/tickets/ticket-actions";
 import { TicketTasks } from "@/components/tickets/ticket-tasks";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   TICKET_STATUS_META, PRIORITY_META, TICKET_TYPE_META, SOURCE_META,
@@ -32,10 +33,6 @@ export async function generateMetadata({
   const { id } = await params;
   const t = await db.ticket.findUnique({ where: { id: Number(id) }, select: { title: true } });
   return { title: t ? t.title : "Ticket" };
-}
-
-function initials(s: string) {
-  return s.split(" ").map((p) => p[0]).slice(0, 2).join("").toUpperCase();
 }
 
 export default async function TicketDetailPage({
@@ -88,22 +85,12 @@ export default async function TicketDetailPage({
     label: `${ticketRef(c.id, c.type)} — ${c.title}`,
   }));
 
-  // Combined activity feed: comments + significant system events
-  type Feed =
-    | { kind: "comment"; at: Date; id: string; author: string; body: string; isInternal: boolean }
-    | { kind: "system"; at: Date; id: string; who: string; summary: string };
-  const feed: Feed[] = [
-    ...ticket.comments.map((c) => ({
-      kind: "comment" as const, at: c.createdAt, id: c.id,
-      author: c.author.name ?? c.author.email, body: c.body, isInternal: c.isInternal,
-    })),
-    ...audits
-      .filter((a) => a.summary && a.summary !== "Added a comment")
-      .map((a) => ({
-        kind: "system" as const, at: a.createdAt, id: a.id,
-        who: a.user?.name ?? "System", summary: a.summary!,
-      })),
-  ].sort((a, b) => a.at.getTime() - b.at.getTime());
+  const comments = ticket.comments.map((c) => ({
+    id: c.id, author: c.author.name ?? c.author.email, body: c.body, isInternal: c.isInternal, createdAt: c.createdAt,
+  }));
+  const activity = audits
+    .filter((a) => a.summary && a.summary !== "Added a comment")
+    .map((a) => ({ id: a.id, who: a.user?.name ?? "System", summary: a.summary!, createdAt: a.createdAt }));
 
   return (
     <div className="grid gap-0 lg:grid-cols-[1fr_340px]">
@@ -120,6 +107,14 @@ export default async function TicketDetailPage({
           <StatusBadge map={PRIORITY_META} value={ticket.priority} />
           <StatusBadge map={TICKET_STATUS_META} value={ticket.status} />
           <div className="ml-auto flex items-center gap-2">
+            <EditEntityDialog
+              action={updateTicketDetails}
+              idField="id"
+              id={ticket.id}
+              title={ticket.title}
+              description={ticket.description}
+              entityLabel="ticket"
+            />
             <TicketActions
               ticketId={ticket.id}
               isWatching={isWatching}
@@ -186,52 +181,15 @@ export default async function TicketDetailPage({
             </div>
           )}
 
-          {/* Activity feed */}
+          {/* Comments & Activity */}
           <div className="mt-8">
-            <h2 className="mb-4 flex items-center gap-2 text-sm font-semibold">
-              <Clock className="size-4 text-muted-foreground" /> Activity
-            </h2>
-            <div className="grid gap-4">
-              {feed.map((f) =>
-                f.kind === "comment" ? (
-                  <div key={f.id} className="flex gap-3">
-                    <Avatar className="size-8 shrink-0">
-                      <AvatarFallback className="text-xs">{initials(f.author)}</AvatarFallback>
-                    </Avatar>
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-medium">{f.author}</span>
-                        {f.isInternal ? (
-                          <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-medium text-amber-600 dark:text-amber-400">
-                            <Lock className="size-2.5" /> Internal
-                          </span>
-                        ) : null}
-                        <span className="text-xs text-muted-foreground">{formatDistanceToNow(f.at, { addSuffix: true })}</span>
-                      </div>
-                      <div className={`mt-1 rounded-lg border p-3 text-sm whitespace-pre-wrap ${f.isInternal ? "border-amber-500/20 bg-amber-500/5" : "bg-card"}`}>
-                        {f.body}
-                      </div>
-                    </div>
-                  </div>
-                ) : (
-                  <div key={f.id} className="flex items-center gap-3 pl-1 text-xs text-muted-foreground">
-                    <span className="grid size-6 shrink-0 place-items-center rounded-full border bg-muted">
-                      <ActivityIcon className="size-3" />
-                    </span>
-                    <span>
-                      <span className="font-medium text-foreground">{f.who}</span> {f.summary.toLowerCase()} · {formatDistanceToNow(f.at, { addSuffix: true })}
-                    </span>
-                  </div>
-                ),
-              )}
-              {feed.length === 0 ? (
-                <p className="text-sm text-muted-foreground">No activity yet. Add the first reply below.</p>
-              ) : null}
-            </div>
-
-            <div className="mt-4">
-              <CommentComposer ticketId={ticket.id} />
-            </div>
+            <CommentThread
+              idField="ticketId"
+              entityId={ticket.id}
+              comments={comments}
+              activity={activity}
+              addAction={addTicketComment}
+            />
           </div>
         </div>
       </div>

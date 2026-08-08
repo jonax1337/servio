@@ -321,3 +321,16 @@ export async function deleteTask(formData: FormData) {
   await db.task.delete({ where: { id: taskId } });
   revalidatePath(`/tickets/${task.ticketId}`);
 }
+
+export async function updateTicketDetails(formData: FormData) {
+  const me = await requireAgent();
+  if (!me) return;
+  const id = Number(formData.get("id"));
+  const title = String(formData.get("title") ?? "").trim();
+  const description = String(formData.get("description") ?? "");
+  if (!id || title.length < 3) return;
+  await db.ticket.update({ where: { id }, data: { title, description } });
+  await writeAudit({ userId: me.id, action: "UPDATE", entity: "Ticket", entityId: id, summary: "Edited details" });
+  revalidatePath(`/tickets/${id}`);
+  revalidatePath("/tickets");
+}

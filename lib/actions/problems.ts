@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { getSessionUser } from "@/lib/session";
+import { getSessionUser, isAgent, type Role } from "@/lib/session";
 import { writeAudit, notify } from "@/lib/audit";
 import {
   PROBLEM_STATUSES,
@@ -78,6 +78,39 @@ export async function updateProblemField(formData: FormData) {
 
   await db.problem.update({ where: { id }, data: patch });
   await writeAudit({ userId: me.id, action: "UPDATE", entity: "Problem", entityId: id, summary: `Updated ${field}` });
+  revalidatePath(`/problems/${id}`);
+  revalidatePath("/problems");
+}
+
+// ── Comments & edit ──────────────────────────────────────────────────────────
+
+async function requireAgentP() {
+  const me = await getSessionUser();
+  return me && isAgent(me.role as Role) ? me : null;
+}
+
+export async function addProblemComment(formData: FormData) {
+  const me = await requireAgentP();
+  if (!me) return;
+  const id = Number(formData.get("problemId"));
+  const body = String(formData.get("body") ?? "").trim();
+  const isInternal = formData.get("isInternal") === "on";
+  if (!id || !body) return;
+  await db.problemComment.create({ data: { problemId: id, authorId: me.id, body, isInternal } });
+  await db.problem.update({ where: { id }, data: { updatedAt: new Date() } });
+  await writeAudit({ userId: me.id, action: "UPDATE", entity: "Problem", entityId: id, summary: "Added a comment" });
+  revalidatePath(`/problems/${id}`);
+}
+
+export async function updateProblemDetails(formData: FormData) {
+  const me = await requireAgentP();
+  if (!me) return;
+  const id = Number(formData.get("id"));
+  const title = String(formData.get("title") ?? "").trim();
+  const description = String(formData.get("description") ?? "");
+  if (!id || title.length < 3) return;
+  await db.problem.update({ where: { id }, data: { title, description } });
+  await writeAudit({ userId: me.id, action: "UPDATE", entity: "Problem", entityId: id, summary: "Edited details" });
   revalidatePath(`/problems/${id}`);
   revalidatePath("/problems");
 }

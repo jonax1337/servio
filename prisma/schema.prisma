@@ -43,6 +43,8 @@ model User {
   requestedTickets Ticket[]   @relation("TicketRequester")
   assignedTickets  Ticket[]   @relation("TicketAssignee")
   comments        TicketComment[]
+  changeComments  ChangeComment[]
+  problemComments ProblemComment[]
   watching        TicketWatcher[]
   assignedTasks   Task[]
   assignedProblems Problem[]  @relation("ProblemAssignee")
@@ -382,8 +384,23 @@ model Problem {
   category Category? @relation(fields: [categoryId], references: [id])
   tickets  Ticket[]
   changes  Change[]
+  comments ProblemComment[]
 
   @@index([status])
+}
+
+model ProblemComment {
+  id         String   @id @default(cuid())
+  problemId  Int
+  authorId   String
+  body       String
+  isInternal Boolean  @default(false)
+  createdAt  DateTime @default(now())
+
+  problem Problem @relation(fields: [problemId], references: [id], onDelete: Cascade)
+  author  User    @relation(fields: [authorId], references: [id])
+
+  @@index([problemId])
 }
 
 // ---------------------------------------------------------------------------
@@ -420,8 +437,23 @@ model Change {
   approvals ChangeApproval[]
   assets    ChangeAsset[]
   tickets   Ticket[]
+  comments  ChangeComment[]
 
   @@index([status])
+}
+
+model ChangeComment {
+  id         String   @id @default(cuid())
+  changeId   Int
+  authorId   String
+  body       String
+  isInternal Boolean  @default(false)
+  createdAt  DateTime @default(now())
+
+  change Change @relation(fields: [changeId], references: [id], onDelete: Cascade)
+  author User   @relation(fields: [authorId], references: [id])
+
+  @@index([changeId])
 }
 
 model ChangeApproval {

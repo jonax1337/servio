@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { getSessionUser } from "@/lib/session";
+import { getSessionUser, isAgent, type Role } from "@/lib/session";
 import { writeAudit, notify } from "@/lib/audit";
 import {
   changeRef,
@@ -165,5 +165,38 @@ export async function decideApproval(formData: FormData) {
     summary: `Approval ${decision.toLowerCase()} on ${changeRef(approval.changeId)}`,
   });
   revalidatePath(`/changes/${approval.changeId}`);
+  revalidatePath("/changes");
+}
+
+// ── Comments & edit ──────────────────────────────────────────────────────────
+
+async function requireAgentC() {
+  const me = await getSessionUser();
+  return me && isAgent(me.role as Role) ? me : null;
+}
+
+export async function addChangeComment(formData: FormData) {
+  const me = await requireAgentC();
+  if (!me) return;
+  const id = Number(formData.get("changeId"));
+  const body = String(formData.get("body") ?? "").trim();
+  const isInternal = formData.get("isInternal") === "on";
+  if (!id || !body) return;
+  await db.changeComment.create({ data: { changeId: id, authorId: me.id, body, isInternal } });
+  await db.change.update({ where: { id }, data: { updatedAt: new Date() } });
+  await writeAudit({ userId: me.id, action: "UPDATE", entity: "Change", entityId: id, summary: "Added a comment" });
+  revalidatePath(`/changes/${id}`);
+}
+
+export async function updateChangeDetails(formData: FormData) {
+  const me = await requireAgentC();
+  if (!me) return;
+  const id = Number(formData.get("id"));
+  const title = String(formData.get("title") ?? "").trim();
+  const description = String(formData.get("description") ?? "");
+  if (!id || title.length < 3) return;
+  await db.change.update({ where: { id }, data: { title, description } });
+  await writeAudit({ userId: me.id, action: "UPDATE", entity: "Change", entityId: id, summary: "Edited details" });
+  revalidatePath(`/changes/${id}`);
   revalidatePath("/changes");
 }
