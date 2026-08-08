@@ -1,18 +1,14 @@
 "use client";
 
 import { useTransition } from "react";
-import { Loader2 } from "lucide-react";
+import { CircleCheck, Ban, Crown, User } from "lucide-react";
 import { updateUserField } from "@/lib/actions/people";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { Combobox, type ComboOption } from "@/components/combobox";
 import { ROLES, ROLE_META } from "@/lib/constants";
 
-function Row({
+type Field = "role" | "isActive" | "isVip";
+
+function Prop({
   label,
   userId,
   field,
@@ -21,41 +17,27 @@ function Row({
 }: {
   label: string;
   userId: string;
-  field: "role" | "isActive" | "isVip";
+  field: Field;
   value: string;
-  options: { value: string; label: string }[];
+  options: ComboOption[];
 }) {
   const [pending, start] = useTransition();
   return (
-    <div className="grid grid-cols-[100px_1fr] items-center gap-2">
+    <div className="grid gap-1.5">
       <span className="text-xs font-medium text-muted-foreground">{label}</span>
-      <div className="relative">
-        <Select
-          items={Object.fromEntries(options.map((o) => [o.value, o.label]))}
-          value={value}
-          onValueChange={(v) => {
-            const fd = new FormData();
-            fd.set("id", userId);
-            fd.set("field", field);
-            fd.set("value", (v as string | null) ?? "none");
-            start(() => updateUserField(fd));
-          }}
-        >
-          <SelectTrigger size="sm" className="w-full">
-            <SelectValue placeholder="—" />
-          </SelectTrigger>
-          <SelectContent>
-            {options.map((o) => (
-              <SelectItem key={o.value} value={o.value}>
-                {o.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        {pending ? (
-          <Loader2 className="absolute right-7 top-1/2 size-3.5 -translate-y-1/2 animate-spin text-muted-foreground" />
-        ) : null}
-      </div>
+      <Combobox
+        options={options}
+        value={value}
+        pending={pending}
+        searchPlaceholder="Filter…"
+        onChange={(v) => {
+          const fd = new FormData();
+          fd.set("id", userId);
+          fd.set("field", field);
+          fd.set("value", v);
+          start(() => updateUserField(fd));
+        }}
+      />
     </div>
   );
 }
@@ -65,34 +47,37 @@ export function UserProperties({
 }: {
   user: { id: string; role: string; isActive: boolean; isVip: boolean };
 }) {
+  const roleOpts: ComboOption[] = ROLES.map((r) => ({
+    value: r,
+    label: ROLE_META[r].label,
+    tone: ROLE_META[r].tone,
+    icon: ROLE_META[r].icon,
+  }));
+  const statusOpts: ComboOption[] = [
+    { value: "true", label: "Active", tone: "success", icon: CircleCheck },
+    { value: "false", label: "Inactive", tone: "neutral", icon: Ban },
+  ];
+  const vipOpts: ComboOption[] = [
+    { value: "true", label: "VIP — priority handling", tone: "warning", icon: Crown },
+    { value: "false", label: "Standard", tone: "neutral", icon: User },
+  ];
+
   return (
-    <div className="grid gap-2.5">
-      <Row
-        label="Role"
-        userId={user.id}
-        field="role"
-        value={user.role}
-        options={ROLES.map((r) => ({ value: r, label: ROLE_META[r].label }))}
-      />
-      <Row
+    <div className="grid gap-3">
+      <Prop label="Role" userId={user.id} field="role" value={user.role} options={roleOpts} />
+      <Prop
         label="Status"
         userId={user.id}
         field="isActive"
         value={user.isActive ? "true" : "false"}
-        options={[
-          { value: "true", label: "Active" },
-          { value: "false", label: "Inactive" },
-        ]}
+        options={statusOpts}
       />
-      <Row
+      <Prop
         label="VIP"
         userId={user.id}
         field="isVip"
         value={user.isVip ? "true" : "false"}
-        options={[
-          { value: "true", label: "VIP — priority handling" },
-          { value: "false", label: "Standard" },
-        ]}
+        options={vipOpts}
       />
     </div>
   );

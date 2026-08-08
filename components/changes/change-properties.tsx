@@ -1,15 +1,8 @@
 "use client";
 
 import { useTransition } from "react";
-import { Loader2 } from "lucide-react";
 import { updateChangeField } from "@/lib/actions/changes";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { Combobox, type ComboOption } from "@/components/combobox";
 import {
   CHANGE_STATUSES,
   CHANGE_TYPES,
@@ -24,56 +17,39 @@ import type { FormOptions } from "@/lib/data/options";
 
 type Field = "status" | "type" | "risk" | "priority" | "assigneeId" | "groupId" | "categoryId";
 
-function Row({
-  label,
-  changeId,
-  field,
-  value,
-  options,
-  includeNone,
+function initials(s: string) {
+  return s.split(" ").map((p) => p[0]).slice(0, 2).join("").toUpperCase();
+}
+
+function Prop({
+  label, changeId, field, value, options, searchable, placeholder,
 }: {
   label: string;
   changeId: number;
   field: Field;
   value: string | null;
-  options: { value: string; label: string }[];
-  includeNone?: boolean;
+  options: ComboOption[];
+  searchable?: boolean;
+  placeholder?: string;
 }) {
   const [pending, start] = useTransition();
   return (
-    <div className="grid grid-cols-[100px_1fr] items-center gap-2">
+    <div className="grid gap-1.5">
       <span className="text-xs font-medium text-muted-foreground">{label}</span>
-      <div className="relative">
-        <Select
-          items={{
-            ...(includeNone ? { none: "Unassigned" } : {}),
-            ...Object.fromEntries(options.map((o) => [o.value, o.label])),
-          }}
-          value={value ?? "none"}
-          onValueChange={(v) => {
-            const fd = new FormData();
-            fd.set("id", String(changeId));
-            fd.set("field", field);
-            fd.set("value", (v as string | null) ?? "none");
-            start(() => updateChangeField(fd));
-          }}
-        >
-          <SelectTrigger size="sm" className="w-full">
-            <SelectValue placeholder="—" />
-          </SelectTrigger>
-          <SelectContent>
-            {includeNone ? <SelectItem value="none">Unassigned</SelectItem> : null}
-            {options.map((o) => (
-              <SelectItem key={o.value} value={o.value}>
-                {o.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        {pending ? (
-          <Loader2 className="absolute right-7 top-1/2 size-3.5 -translate-y-1/2 animate-spin text-muted-foreground" />
-        ) : null}
-      </div>
+      <Combobox
+        options={options}
+        value={value ?? "none"}
+        pending={pending}
+        placeholder={placeholder}
+        searchPlaceholder={searchable ? `Search ${label.toLowerCase()}…` : "Filter…"}
+        onChange={(v) => {
+          const fd = new FormData();
+          fd.set("id", String(changeId));
+          fd.set("field", field);
+          fd.set("value", v);
+          start(() => updateChangeField(fd));
+        }}
+      />
     </div>
   );
 }
@@ -94,22 +70,37 @@ export function ChangeProperties({
   };
   options: FormOptions;
 }) {
+  const statusOpts: ComboOption[] = CHANGE_STATUSES.map((s) => ({
+    value: s, label: CHANGE_STATUS_META[s].label, tone: CHANGE_STATUS_META[s].tone, icon: CHANGE_STATUS_META[s].icon,
+  }));
+  const typeOpts: ComboOption[] = CHANGE_TYPES.map((t) => ({
+    value: t, label: CHANGE_TYPE_META[t].label, tone: CHANGE_TYPE_META[t].tone, icon: CHANGE_TYPE_META[t].icon,
+  }));
+  const riskOpts: ComboOption[] = RISKS.map((r) => ({
+    value: r, label: RISK_META[r].label, tone: RISK_META[r].tone, icon: RISK_META[r].icon,
+  }));
+  const prioOpts: ComboOption[] = PRIORITIES.map((p) => ({
+    value: p, label: PRIORITY_META[p].label, tone: PRIORITY_META[p].tone, icon: PRIORITY_META[p].icon,
+  }));
+  const none = (label: string): ComboOption => ({ value: "none", label });
+  const agentOpts: ComboOption[] = [
+    none("Unassigned"),
+    ...options.agents.map((a) => ({ value: a.id, label: a.name ?? a.email, avatar: initials(a.name ?? a.email), hint: a.email })),
+  ];
+  const groupOpts: ComboOption[] = [none("No group"), ...options.groups.map((g) => ({ value: g.id, label: g.name }))];
+  const catOpts: ComboOption[] = [none("No category"), ...options.categories.map((c) => ({ value: c.id, label: c.name }))];
+
   return (
-    <div className="grid gap-2.5">
-      <Row label="Status" changeId={change.id} field="status" value={change.status}
-        options={CHANGE_STATUSES.map((s) => ({ value: s, label: CHANGE_STATUS_META[s].label }))} />
-      <Row label="Type" changeId={change.id} field="type" value={change.type}
-        options={CHANGE_TYPES.map((t) => ({ value: t, label: CHANGE_TYPE_META[t].label }))} />
-      <Row label="Risk" changeId={change.id} field="risk" value={change.risk}
-        options={RISKS.map((r) => ({ value: r, label: RISK_META[r].label }))} />
-      <Row label="Priority" changeId={change.id} field="priority" value={change.priority}
-        options={PRIORITIES.map((p) => ({ value: p, label: PRIORITY_META[p].label }))} />
-      <Row label="Assignee" changeId={change.id} field="assigneeId" value={change.assigneeId} includeNone
-        options={options.agents.map((a) => ({ value: a.id, label: a.name ?? a.email }))} />
-      <Row label="Group" changeId={change.id} field="groupId" value={change.groupId} includeNone
-        options={options.groups.map((g) => ({ value: g.id, label: g.name }))} />
-      <Row label="Category" changeId={change.id} field="categoryId" value={change.categoryId} includeNone
-        options={options.categories.map((c) => ({ value: c.id, label: c.name }))} />
+    <div className="grid gap-3">
+      <Prop label="Status" changeId={change.id} field="status" value={change.status} options={statusOpts} />
+      <Prop label="Type" changeId={change.id} field="type" value={change.type} options={typeOpts} />
+      <div className="grid grid-cols-2 gap-3">
+        <Prop label="Risk" changeId={change.id} field="risk" value={change.risk} options={riskOpts} />
+        <Prop label="Priority" changeId={change.id} field="priority" value={change.priority} options={prioOpts} />
+      </div>
+      <Prop label="Assignee" changeId={change.id} field="assigneeId" value={change.assigneeId} options={agentOpts} searchable placeholder="Unassigned" />
+      <Prop label="Group" changeId={change.id} field="groupId" value={change.groupId} options={groupOpts} searchable placeholder="No group" />
+      <Prop label="Category" changeId={change.id} field="categoryId" value={change.categoryId} options={catOpts} searchable placeholder="No category" />
     </div>
   );
 }

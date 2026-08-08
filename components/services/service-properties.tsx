@@ -1,15 +1,8 @@
 "use client";
 
 import { useTransition } from "react";
-import { Loader2 } from "lucide-react";
 import { updateServiceField } from "@/lib/actions/services";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { Combobox, type ComboOption } from "@/components/combobox";
 import {
   SERVICE_STATUSES,
   CRITICALITIES,
@@ -20,56 +13,39 @@ import type { FormOptions } from "@/lib/data/options";
 
 type Field = "status" | "criticality" | "categoryId" | "ownerId" | "slaId";
 
-function Row({
-  label,
-  serviceId,
-  field,
-  value,
-  options,
-  includeNone,
+function initials(s: string) {
+  return s.split(" ").map((p) => p[0]).slice(0, 2).join("").toUpperCase();
+}
+
+function Prop({
+  label, serviceId, field, value, options, searchable, placeholder,
 }: {
   label: string;
   serviceId: string;
   field: Field;
   value: string | null;
-  options: { value: string; label: string }[];
-  includeNone?: boolean;
+  options: ComboOption[];
+  searchable?: boolean;
+  placeholder?: string;
 }) {
   const [pending, start] = useTransition();
   return (
-    <div className="grid grid-cols-[100px_1fr] items-center gap-2">
+    <div className="grid gap-1.5">
       <span className="text-xs font-medium text-muted-foreground">{label}</span>
-      <div className="relative">
-        <Select
-          items={{
-            ...(includeNone ? { none: "— None —" } : {}),
-            ...Object.fromEntries(options.map((o) => [o.value, o.label])),
-          }}
-          value={value ?? "none"}
-          onValueChange={(v) => {
-            const fd = new FormData();
-            fd.set("id", serviceId);
-            fd.set("field", field);
-            fd.set("value", (v as string | null) ?? "none");
-            start(() => updateServiceField(fd));
-          }}
-        >
-          <SelectTrigger size="sm" className="w-full">
-            <SelectValue placeholder="—" />
-          </SelectTrigger>
-          <SelectContent>
-            {includeNone ? <SelectItem value="none">— None —</SelectItem> : null}
-            {options.map((o) => (
-              <SelectItem key={o.value} value={o.value}>
-                {o.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        {pending ? (
-          <Loader2 className="absolute right-7 top-1/2 size-3.5 -translate-y-1/2 animate-spin text-muted-foreground" />
-        ) : null}
-      </div>
+      <Combobox
+        options={options}
+        value={value ?? "none"}
+        pending={pending}
+        placeholder={placeholder}
+        searchPlaceholder={searchable ? `Search ${label.toLowerCase()}…` : "Filter…"}
+        onChange={(v) => {
+          const fd = new FormData();
+          fd.set("id", serviceId);
+          fd.set("field", field);
+          fd.set("value", v);
+          start(() => updateServiceField(fd));
+        }}
+      />
     </div>
   );
 }
@@ -88,55 +64,27 @@ export function ServiceProperties({
   };
   options: FormOptions;
 }) {
+  const statusOpts: ComboOption[] = SERVICE_STATUSES.map((s) => ({
+    value: s, label: SERVICE_STATUS_META[s].label, tone: SERVICE_STATUS_META[s].tone, icon: SERVICE_STATUS_META[s].icon,
+  }));
+  const critOpts: ComboOption[] = CRITICALITIES.map((c) => ({
+    value: c, label: CRITICALITY_META[c].label, tone: CRITICALITY_META[c].tone, icon: CRITICALITY_META[c].icon,
+  }));
+  const none = (label: string): ComboOption => ({ value: "none", label });
+  const ownerOpts: ComboOption[] = [
+    none("No owner"),
+    ...options.agents.map((a) => ({ value: a.id, label: a.name ?? a.email, avatar: initials(a.name ?? a.email), hint: a.email })),
+  ];
+  const catOpts: ComboOption[] = [none("No category"), ...options.categories.map((c) => ({ value: c.id, label: c.name, hint: c.type }))];
+  const slaOpts: ComboOption[] = [none("No SLA"), ...options.slas.map((s) => ({ value: s.id, label: s.name }))];
+
   return (
-    <div className="grid gap-2.5">
-      <Row
-        label="Status"
-        serviceId={service.id}
-        field="status"
-        value={service.status}
-        options={SERVICE_STATUSES.map((s) => ({
-          value: s,
-          label: SERVICE_STATUS_META[s].label,
-        }))}
-      />
-      <Row
-        label="Criticality"
-        serviceId={service.id}
-        field="criticality"
-        value={service.criticality}
-        options={CRITICALITIES.map((c) => ({
-          value: c,
-          label: CRITICALITY_META[c].label,
-        }))}
-      />
-      <Row
-        label="Owner"
-        serviceId={service.id}
-        field="ownerId"
-        value={service.ownerId}
-        includeNone
-        options={options.agents.map((a) => ({
-          value: a.id,
-          label: a.name ?? a.email,
-        }))}
-      />
-      <Row
-        label="Category"
-        serviceId={service.id}
-        field="categoryId"
-        value={service.categoryId}
-        includeNone
-        options={options.categories.map((c) => ({ value: c.id, label: c.name }))}
-      />
-      <Row
-        label="SLA"
-        serviceId={service.id}
-        field="slaId"
-        value={service.slaId}
-        includeNone
-        options={options.slas.map((s) => ({ value: s.id, label: s.name }))}
-      />
+    <div className="grid gap-3">
+      <Prop label="Status" serviceId={service.id} field="status" value={service.status} options={statusOpts} />
+      <Prop label="Criticality" serviceId={service.id} field="criticality" value={service.criticality} options={critOpts} />
+      <Prop label="Owner" serviceId={service.id} field="ownerId" value={service.ownerId} options={ownerOpts} searchable placeholder="No owner" />
+      <Prop label="Category" serviceId={service.id} field="categoryId" value={service.categoryId} options={catOpts} searchable placeholder="No category" />
+      <Prop label="SLA" serviceId={service.id} field="slaId" value={service.slaId} options={slaOpts} searchable placeholder="No SLA" />
     </div>
   );
 }

@@ -1,72 +1,46 @@
 "use client";
 
 import { useTransition } from "react";
-import { Loader2 } from "lucide-react";
 import { updateAssetField } from "@/lib/actions/assets";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { Combobox, type ComboOption } from "@/components/combobox";
 import { ASSET_STATUSES, ASSET_STATUS_META } from "@/lib/constants";
 import type { FormOptions } from "@/lib/data/options";
 
 type Field = "status" | "ownerId" | "groupId";
 
-function Row({
-  label,
-  assetId,
-  field,
-  value,
-  options,
-  includeNone,
+function initials(s: string) {
+  return s.split(" ").map((p) => p[0]).slice(0, 2).join("").toUpperCase();
+}
+
+function Prop({
+  label, assetId, field, value, options, searchable, placeholder,
 }: {
   label: string;
   assetId: string;
   field: Field;
   value: string | null;
-  options: { value: string; label: string }[];
-  includeNone?: boolean;
+  options: ComboOption[];
+  searchable?: boolean;
+  placeholder?: string;
 }) {
   const [pending, start] = useTransition();
   return (
-    <div className="grid grid-cols-[100px_1fr] items-center gap-2">
+    <div className="grid gap-1.5">
       <span className="text-xs font-medium text-muted-foreground">{label}</span>
-      <div className="relative">
-        <Select
-          items={{
-            ...(includeNone ? { none: "Unassigned" } : {}),
-            ...Object.fromEntries(options.map((o) => [o.value, o.label])),
-          }}
-          value={value ?? "none"}
-          onValueChange={(v) => {
-            const fd = new FormData();
-            fd.set("id", assetId);
-            fd.set("field", field);
-            fd.set("value", (v as string | null) ?? "none");
-            start(() => updateAssetField(fd));
-          }}
-        >
-          <SelectTrigger size="sm" className="w-full">
-            <SelectValue placeholder="—" />
-          </SelectTrigger>
-          <SelectContent>
-            {includeNone ? (
-              <SelectItem value="none">Unassigned</SelectItem>
-            ) : null}
-            {options.map((o) => (
-              <SelectItem key={o.value} value={o.value}>
-                {o.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        {pending ? (
-          <Loader2 className="absolute right-7 top-1/2 size-3.5 -translate-y-1/2 animate-spin text-muted-foreground" />
-        ) : null}
-      </div>
+      <Combobox
+        options={options}
+        value={value ?? "none"}
+        pending={pending}
+        placeholder={placeholder}
+        searchPlaceholder={searchable ? `Search ${label.toLowerCase()}…` : "Filter…"}
+        onChange={(v) => {
+          const fd = new FormData();
+          fd.set("id", assetId);
+          fd.set("field", field);
+          fd.set("value", v);
+          start(() => updateAssetField(fd));
+        }}
+      />
     </div>
   );
 }
@@ -83,37 +57,21 @@ export function AssetProperties({
   };
   options: FormOptions;
 }) {
+  const statusOpts: ComboOption[] = ASSET_STATUSES.map((s) => ({
+    value: s, label: ASSET_STATUS_META[s].label, tone: ASSET_STATUS_META[s].tone, icon: ASSET_STATUS_META[s].icon,
+  }));
+  const none = (label: string): ComboOption => ({ value: "none", label });
+  const ownerOpts: ComboOption[] = [
+    none("Unassigned"),
+    ...options.agents.map((a) => ({ value: a.id, label: a.name ?? a.email, avatar: initials(a.name ?? a.email), hint: a.email })),
+  ];
+  const groupOpts: ComboOption[] = [none("No group"), ...options.groups.map((g) => ({ value: g.id, label: g.name }))];
+
   return (
-    <div className="grid gap-2.5">
-      <Row
-        label="Status"
-        assetId={asset.id}
-        field="status"
-        value={asset.status}
-        options={ASSET_STATUSES.map((s) => ({
-          value: s,
-          label: ASSET_STATUS_META[s].label,
-        }))}
-      />
-      <Row
-        label="Owner"
-        assetId={asset.id}
-        field="ownerId"
-        value={asset.ownerId}
-        includeNone
-        options={options.agents.map((a) => ({
-          value: a.id,
-          label: a.name ?? a.email,
-        }))}
-      />
-      <Row
-        label="Group"
-        assetId={asset.id}
-        field="groupId"
-        value={asset.groupId}
-        includeNone
-        options={options.groups.map((g) => ({ value: g.id, label: g.name }))}
-      />
+    <div className="grid gap-3">
+      <Prop label="Status" assetId={asset.id} field="status" value={asset.status} options={statusOpts} />
+      <Prop label="Owner" assetId={asset.id} field="ownerId" value={asset.ownerId} options={ownerOpts} searchable placeholder="Unassigned" />
+      <Prop label="Group" assetId={asset.id} field="groupId" value={asset.groupId} options={groupOpts} searchable placeholder="No group" />
     </div>
   );
 }
