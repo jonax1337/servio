@@ -6,13 +6,8 @@ import { createAsset, type ActionState } from "@/lib/actions/assets";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { ComboField } from "@/components/combo-field";
+import type { ComboOption } from "@/components/combobox";
 import {
   ASSET_TYPES,
   ASSET_STATUSES,
@@ -42,42 +37,7 @@ function Field({
   );
 }
 
-function SelectField({
-  name,
-  defaultValue,
-  placeholder,
-  options,
-  includeNone,
-}: {
-  name: string;
-  defaultValue?: string;
-  placeholder: string;
-  options: { value: string; label: string }[];
-  includeNone?: boolean;
-}) {
-  return (
-    <Select
-      name={name}
-      defaultValue={defaultValue}
-      items={{
-        ...(includeNone ? { none: "— None —" } : {}),
-        ...Object.fromEntries(options.map((o) => [o.value, o.label])),
-      }}
-    >
-      <SelectTrigger className="w-full">
-        <SelectValue placeholder={placeholder} />
-      </SelectTrigger>
-      <SelectContent>
-        {includeNone ? <SelectItem value="none">— None —</SelectItem> : null}
-        {options.map((o) => (
-          <SelectItem key={o.value} value={o.value}>
-            {o.label}
-          </SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
-  );
-}
+const initials = (s: string) => s.split(" ").map((p) => p[0]).slice(0, 2).join("").toUpperCase();
 
 export function AssetForm({ options }: { options: FormOptions }) {
   const [state, action, pending] = useActionState<ActionState, FormData>(
@@ -85,10 +45,11 @@ export function AssetForm({ options }: { options: FormOptions }) {
     undefined,
   );
   const fe = state?.fieldErrors ?? {};
-  const ownerOpts = options.agents.map((a) => ({
-    value: a.id,
-    label: a.name ?? a.email,
-  }));
+
+  const typeOpts: ComboOption[] = ASSET_TYPES.map((t) => ({ value: t, label: ASSET_TYPE_META[t].label, tone: ASSET_TYPE_META[t].tone, icon: ASSET_TYPE_META[t].icon }));
+  const statusOpts: ComboOption[] = ASSET_STATUSES.map((s) => ({ value: s, label: ASSET_STATUS_META[s].label, tone: ASSET_STATUS_META[s].tone, icon: ASSET_STATUS_META[s].icon }));
+  const ownerOpts: ComboOption[] = options.agents.map((a) => ({ value: a.id, label: a.name ?? a.email, avatar: initials(a.name ?? a.email), hint: a.email }));
+  const groupOpts: ComboOption[] = options.groups.map((g) => ({ value: g.id, label: g.name }));
 
   return (
     <form action={action} className="grid gap-5">
@@ -104,26 +65,10 @@ export function AssetForm({ options }: { options: FormOptions }) {
 
       <div className="grid gap-5 sm:grid-cols-2">
         <Field label="Type" error={fe.type}>
-          <SelectField
-            name="type"
-            defaultValue="SERVER"
-            placeholder="Type"
-            options={ASSET_TYPES.map((t) => ({
-              value: t,
-              label: ASSET_TYPE_META[t].label,
-            }))}
-          />
+          <ComboField name="type" defaultValue="SERVER" options={typeOpts} placeholder="Type" />
         </Field>
         <Field label="Status" error={fe.status}>
-          <SelectField
-            name="status"
-            defaultValue="IN_USE"
-            placeholder="Status"
-            options={ASSET_STATUSES.map((s) => ({
-              value: s,
-              label: ASSET_STATUS_META[s].label,
-            }))}
-          />
+          <ComboField name="status" defaultValue="IN_USE" options={statusOpts} placeholder="Status" />
         </Field>
         <Field label="Asset tag" error={fe.assetTag}>
           <Input name="assetTag" placeholder="e.g. AST-0001" />
@@ -150,23 +95,10 @@ export function AssetForm({ options }: { options: FormOptions }) {
 
       <div className="grid gap-5 sm:grid-cols-2">
         <Field label="Owner">
-          <SelectField
-            name="ownerId"
-            placeholder="Unassigned"
-            options={ownerOpts}
-            includeNone
-          />
+          <ComboField name="ownerId" options={ownerOpts} includeNone noneLabel="No owner" placeholder="Unassigned" />
         </Field>
         <Field label="Group">
-          <SelectField
-            name="groupId"
-            placeholder="No group"
-            includeNone
-            options={options.groups.map((g) => ({
-              value: g.id,
-              label: g.name,
-            }))}
-          />
+          <ComboField name="groupId" options={groupOpts} includeNone noneLabel="No group" placeholder="No group" />
         </Field>
       </div>
 

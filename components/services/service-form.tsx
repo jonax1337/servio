@@ -8,13 +8,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { ComboField } from "@/components/combo-field";
+import type { ComboOption } from "@/components/combobox";
 import {
   SERVICE_STATUSES,
   CRITICALITIES,
@@ -44,42 +39,8 @@ function Field({
   );
 }
 
-function SelectField({
-  name,
-  defaultValue,
-  placeholder,
-  options,
-  includeNone,
-}: {
-  name: string;
-  defaultValue?: string;
-  placeholder: string;
-  options: { value: string; label: string }[];
-  includeNone?: boolean;
-}) {
-  return (
-    <Select
-      name={name}
-      defaultValue={defaultValue}
-      items={{
-        ...(includeNone ? { none: "— None —" } : {}),
-        ...Object.fromEntries(options.map((o) => [o.value, o.label])),
-      }}
-    >
-      <SelectTrigger className="w-full">
-        <SelectValue placeholder={placeholder} />
-      </SelectTrigger>
-      <SelectContent>
-        {includeNone ? <SelectItem value="none">— None —</SelectItem> : null}
-        {options.map((o) => (
-          <SelectItem key={o.value} value={o.value}>
-            {o.label}
-          </SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
-  );
-}
+const initials = (s: string) =>
+  s.split(" ").map((p) => p[0]).slice(0, 2).join("").toUpperCase();
 
 export function ServiceForm({ options }: { options: FormOptions }) {
   const [state, action, pending] = useActionState<ActionState, FormData>(
@@ -87,6 +48,34 @@ export function ServiceForm({ options }: { options: FormOptions }) {
     undefined,
   );
   const fe = state?.fieldErrors ?? {};
+
+  const statusOpts: ComboOption[] = SERVICE_STATUSES.map((s) => ({
+    value: s,
+    label: SERVICE_STATUS_META[s].label,
+    tone: SERVICE_STATUS_META[s].tone,
+    icon: SERVICE_STATUS_META[s].icon,
+  }));
+  const critOpts: ComboOption[] = CRITICALITIES.map((c) => ({
+    value: c,
+    label: CRITICALITY_META[c].label,
+    tone: CRITICALITY_META[c].tone,
+    icon: CRITICALITY_META[c].icon,
+  }));
+  const ownerOpts: ComboOption[] = options.agents.map((a) => ({
+    value: a.id,
+    label: a.name ?? a.email,
+    avatar: initials(a.name ?? a.email),
+    hint: a.email,
+  }));
+  const catOpts: ComboOption[] = options.categories.map((c) => ({
+    value: c.id,
+    label: c.name,
+    hint: c.type,
+  }));
+  const slaOpts: ComboOption[] = options.slas.map((s) => ({
+    value: s.id,
+    label: s.name,
+  }));
 
   return (
     <form action={action} className="grid gap-5">
@@ -110,56 +99,29 @@ export function ServiceForm({ options }: { options: FormOptions }) {
 
       <div className="grid gap-5 sm:grid-cols-2">
         <Field label="Status">
-          <SelectField
-            name="status"
-            defaultValue="OPERATIONAL"
-            placeholder="Status"
-            options={SERVICE_STATUSES.map((s) => ({
-              value: s,
-              label: SERVICE_STATUS_META[s].label,
-            }))}
-          />
+          <ComboField name="status" defaultValue="OPERATIONAL" options={statusOpts} />
         </Field>
         <Field label="Criticality">
-          <SelectField
-            name="criticality"
-            defaultValue="MEDIUM"
-            placeholder="Criticality"
-            options={CRITICALITIES.map((c) => ({
-              value: c,
-              label: CRITICALITY_META[c].label,
-            }))}
-          />
+          <ComboField name="criticality" defaultValue="MEDIUM" options={critOpts} />
         </Field>
         <Field label="Owner">
-          <SelectField
+          <ComboField
             name="ownerId"
-            placeholder="No owner"
+            options={ownerOpts}
             includeNone
-            options={options.agents.map((a) => ({
-              value: a.id,
-              label: a.name ?? a.email,
-            }))}
+            noneLabel="No owner"
           />
         </Field>
         <Field label="Category">
-          <SelectField
+          <ComboField
             name="categoryId"
-            placeholder="No category"
+            options={catOpts}
             includeNone
-            options={options.categories.map((c) => ({
-              value: c.id,
-              label: c.name,
-            }))}
+            noneLabel="No category"
           />
         </Field>
         <Field label="SLA">
-          <SelectField
-            name="slaId"
-            placeholder="No SLA"
-            includeNone
-            options={options.slas.map((s) => ({ value: s.id, label: s.name }))}
-          />
+          <ComboField name="slaId" options={slaOpts} includeNone noneLabel="No SLA" />
         </Field>
       </div>
 

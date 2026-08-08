@@ -7,9 +7,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-} from "@/components/ui/select";
+import { ComboField } from "@/components/combo-field";
+import type { ComboOption } from "@/components/combobox";
 import {
   CHANGE_TYPES, RISKS, PRIORITIES, IMPACT_URGENCY,
   CHANGE_TYPE_META, RISK_META, PRIORITY_META, LEVEL_META,
@@ -29,36 +28,7 @@ function Field({
   );
 }
 
-function SelectField({
-  name, defaultValue, placeholder, options, includeNone,
-}: {
-  name: string;
-  defaultValue?: string;
-  placeholder: string;
-  options: { value: string; label: string }[];
-  includeNone?: boolean;
-}) {
-  return (
-    <Select
-      name={name}
-      defaultValue={defaultValue}
-      items={{
-        ...(includeNone ? { none: "— None —" } : {}),
-        ...Object.fromEntries(options.map((o) => [o.value, o.label])),
-      }}
-    >
-      <SelectTrigger className="w-full">
-        <SelectValue placeholder={placeholder} />
-      </SelectTrigger>
-      <SelectContent>
-        {includeNone ? <SelectItem value="none">— None —</SelectItem> : null}
-        {options.map((o) => (
-          <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
-  );
-}
+const initials = (s: string) => s.split(" ").map((p) => p[0]).slice(0, 2).join("").toUpperCase();
 
 export function ChangeForm({
   options, currentUserId,
@@ -68,7 +38,14 @@ export function ChangeForm({
 }) {
   const [state, action, pending] = useActionState<ActionState, FormData>(createChange, undefined);
   const fe = state?.fieldErrors ?? {};
-  const agentOpts = options.agents.map((a) => ({ value: a.id, label: a.name ?? a.email }));
+
+  const typeOpts: ComboOption[] = CHANGE_TYPES.map((t) => ({ value: t, label: CHANGE_TYPE_META[t].label, tone: CHANGE_TYPE_META[t].tone, icon: CHANGE_TYPE_META[t].icon }));
+  const riskOpts: ComboOption[] = RISKS.map((r) => ({ value: r, label: RISK_META[r].label, tone: RISK_META[r].tone, icon: RISK_META[r].icon }));
+  const prioOpts: ComboOption[] = PRIORITIES.map((p) => ({ value: p, label: PRIORITY_META[p].label, tone: PRIORITY_META[p].tone, icon: PRIORITY_META[p].icon }));
+  const impactOpts: ComboOption[] = IMPACT_URGENCY.map((l) => ({ value: l, label: LEVEL_META[l].label, tone: LEVEL_META[l].tone, icon: LEVEL_META[l].icon }));
+  const agentOpts: ComboOption[] = options.agents.map((a) => ({ value: a.id, label: a.name ?? a.email, avatar: initials(a.name ?? a.email), hint: a.email }));
+  const groupOpts: ComboOption[] = options.groups.map((g) => ({ value: g.id, label: g.name }));
+  const catOpts: ComboOption[] = options.categories.map((c) => ({ value: c.id, label: c.name, hint: c.type }));
 
   return (
     <form action={action} className="grid gap-5">
@@ -87,27 +64,21 @@ export function ChangeForm({
       </Field>
 
       <div className="grid gap-5 sm:grid-cols-2">
-        <Field label="Type"><SelectField name="type" defaultValue="NORMAL" placeholder="Type"
-          options={CHANGE_TYPES.map((t) => ({ value: t, label: CHANGE_TYPE_META[t].label }))} /></Field>
-        <Field label="Risk"><SelectField name="risk" defaultValue="MEDIUM" placeholder="Risk"
-          options={RISKS.map((r) => ({ value: r, label: RISK_META[r].label }))} /></Field>
-        <Field label="Priority"><SelectField name="priority" defaultValue="MEDIUM" placeholder="Priority"
-          options={PRIORITIES.map((p) => ({ value: p, label: PRIORITY_META[p].label }))} /></Field>
-        <Field label="Impact"><SelectField name="impact" defaultValue="MEDIUM" placeholder="Impact"
-          options={IMPACT_URGENCY.map((l) => ({ value: l, label: LEVEL_META[l].label }))} /></Field>
+        <Field label="Type"><ComboField name="type" defaultValue="NORMAL" options={typeOpts} /></Field>
+        <Field label="Risk"><ComboField name="risk" defaultValue="MEDIUM" options={riskOpts} /></Field>
+        <Field label="Priority"><ComboField name="priority" defaultValue="MEDIUM" options={prioOpts} /></Field>
+        <Field label="Impact"><ComboField name="impact" defaultValue="MEDIUM" options={impactOpts} /></Field>
       </div>
 
       <div className="grid gap-5 sm:grid-cols-2">
         <Field label="Assignee">
-          <SelectField name="assigneeId" defaultValue={currentUserId} placeholder="Unassigned" options={agentOpts} includeNone />
+          <ComboField name="assigneeId" defaultValue={currentUserId} options={agentOpts} includeNone noneLabel="Unassigned" />
         </Field>
         <Field label="Group">
-          <SelectField name="groupId" placeholder="No group" includeNone
-            options={options.groups.map((g) => ({ value: g.id, label: g.name }))} />
+          <ComboField name="groupId" options={groupOpts} includeNone noneLabel="No group" />
         </Field>
         <Field label="Category">
-          <SelectField name="categoryId" placeholder="No category" includeNone
-            options={options.categories.map((c) => ({ value: c.id, label: c.name }))} />
+          <ComboField name="categoryId" options={catOpts} includeNone noneLabel="No category" />
         </Field>
       </div>
 

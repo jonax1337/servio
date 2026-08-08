@@ -7,9 +7,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-} from "@/components/ui/select";
+import { ComboField } from "@/components/combo-field";
+import type { ComboOption } from "@/components/combobox";
 import { GROUP_TYPES, GROUP_TYPE_META } from "@/lib/constants";
 import type { FormOptions } from "@/lib/data/options";
 
@@ -26,41 +25,14 @@ function Field({
   );
 }
 
-function SelectField({
-  name, defaultValue, placeholder, options, includeNone,
-}: {
-  name: string;
-  defaultValue?: string;
-  placeholder: string;
-  options: { value: string; label: string }[];
-  includeNone?: boolean;
-}) {
-  return (
-    <Select
-      name={name}
-      defaultValue={defaultValue}
-      items={{
-        ...(includeNone ? { none: "— None —" } : {}),
-        ...Object.fromEntries(options.map((o) => [o.value, o.label])),
-      }}
-    >
-      <SelectTrigger className="w-full">
-        <SelectValue placeholder={placeholder} />
-      </SelectTrigger>
-      <SelectContent>
-        {includeNone ? <SelectItem value="none">— None —</SelectItem> : null}
-        {options.map((o) => (
-          <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
-  );
-}
+const initials = (s: string) => s.split(" ").map((p) => p[0]).slice(0, 2).join("").toUpperCase();
 
 export function GroupForm({ options }: { options: FormOptions }) {
   const [state, action, pending] = useActionState<ActionState, FormData>(createGroup, undefined);
   const fe = state?.fieldErrors ?? {};
-  const managerOpts = options.agents.map((a) => ({ value: a.id, label: a.name ?? a.email }));
+
+  const typeOpts: ComboOption[] = GROUP_TYPES.map((t) => ({ value: t, label: GROUP_TYPE_META[t].label, tone: GROUP_TYPE_META[t].tone, icon: GROUP_TYPE_META[t].icon }));
+  const managerOpts: ComboOption[] = options.agents.map((a) => ({ value: a.id, label: a.name ?? a.email, avatar: initials(a.name ?? a.email), hint: a.email }));
 
   return (
     <form action={action} className="grid gap-5">
@@ -76,11 +48,10 @@ export function GroupForm({ options }: { options: FormOptions }) {
 
       <div className="grid gap-5 sm:grid-cols-2">
         <Field label="Type" error={fe.type}>
-          <SelectField name="type" defaultValue="TEAM" placeholder="Type"
-            options={GROUP_TYPES.map((t) => ({ value: t, label: GROUP_TYPE_META[t].label }))} />
+          <ComboField name="type" defaultValue="TEAM" options={typeOpts} />
         </Field>
         <Field label="Manager">
-          <SelectField name="managerId" placeholder="No manager" includeNone options={managerOpts} />
+          <ComboField name="managerId" options={managerOpts} includeNone noneLabel="No manager" />
         </Field>
       </div>
 
