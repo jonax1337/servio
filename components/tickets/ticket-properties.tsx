@@ -1,15 +1,8 @@
 "use client";
 
 import { useTransition } from "react";
-import { Loader2 } from "lucide-react";
 import { updateTicketField } from "@/lib/actions/tickets";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { Combobox, type ComboOption } from "@/components/combobox";
 import {
   TICKET_STATUSES,
   PRIORITIES,
@@ -24,56 +17,39 @@ type Field =
   | "status" | "priority" | "impact" | "urgency"
   | "assigneeId" | "groupId" | "queueId" | "categoryId" | "serviceId";
 
-function Row({
-  label,
-  ticketId,
-  field,
-  value,
-  options,
-  includeNone,
+function initials(s: string) {
+  return s.split(" ").map((p) => p[0]).slice(0, 2).join("").toUpperCase();
+}
+
+function Prop({
+  label, ticketId, field, value, options, searchable, placeholder,
 }: {
   label: string;
   ticketId: number;
   field: Field;
   value: string | null;
-  options: { value: string; label: string }[];
-  includeNone?: boolean;
+  options: ComboOption[];
+  searchable?: boolean;
+  placeholder?: string;
 }) {
   const [pending, start] = useTransition();
   return (
-    <div className="grid grid-cols-[100px_1fr] items-center gap-2">
+    <div className="grid gap-1.5">
       <span className="text-xs font-medium text-muted-foreground">{label}</span>
-      <div className="relative">
-        <Select
-          items={{
-            ...(includeNone ? { none: "Unassigned" } : {}),
-            ...Object.fromEntries(options.map((o) => [o.value, o.label])),
-          }}
-          value={value ?? "none"}
-          onValueChange={(v) => {
-            const fd = new FormData();
-            fd.set("id", String(ticketId));
-            fd.set("field", field);
-            fd.set("value", (v as string | null) ?? "none");
-            start(() => updateTicketField(fd));
-          }}
-        >
-          <SelectTrigger size="sm" className="w-full">
-            <SelectValue placeholder="—" />
-          </SelectTrigger>
-          <SelectContent>
-            {includeNone ? <SelectItem value="none">Unassigned</SelectItem> : null}
-            {options.map((o) => (
-              <SelectItem key={o.value} value={o.value}>
-                {o.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        {pending ? (
-          <Loader2 className="absolute right-7 top-1/2 size-3.5 -translate-y-1/2 animate-spin text-muted-foreground" />
-        ) : null}
-      </div>
+      <Combobox
+        options={options}
+        value={value ?? "none"}
+        pending={pending}
+        placeholder={placeholder}
+        searchPlaceholder={searchable ? `Search ${label.toLowerCase()}…` : "Filter…"}
+        onChange={(v) => {
+          const fd = new FormData();
+          fd.set("id", String(ticketId));
+          fd.set("field", field);
+          fd.set("value", v);
+          start(() => updateTicketField(fd));
+        }}
+      />
     </div>
   );
 }
@@ -96,26 +72,38 @@ export function TicketProperties({
   };
   options: FormOptions;
 }) {
+  const statusOpts: ComboOption[] = TICKET_STATUSES.map((s) => ({
+    value: s, label: TICKET_STATUS_META[s].label, tone: TICKET_STATUS_META[s].tone, icon: TICKET_STATUS_META[s].icon,
+  }));
+  const prioOpts: ComboOption[] = PRIORITIES.map((p) => ({
+    value: p, label: PRIORITY_META[p].label, tone: PRIORITY_META[p].tone, icon: PRIORITY_META[p].icon,
+  }));
+  const levelOpts: ComboOption[] = IMPACT_URGENCY.map((l) => ({
+    value: l, label: LEVEL_META[l].label, tone: LEVEL_META[l].tone,
+  }));
+  const none = (label: string): ComboOption => ({ value: "none", label });
+  const agentOpts: ComboOption[] = [
+    none("Unassigned"),
+    ...options.agents.map((a) => ({ value: a.id, label: a.name ?? a.email, avatar: initials(a.name ?? a.email), hint: a.email })),
+  ];
+  const groupOpts: ComboOption[] = [none("No group"), ...options.groups.map((g) => ({ value: g.id, label: g.name }))];
+  const queueOpts: ComboOption[] = [none("No queue"), ...options.queues.map((q) => ({ value: q.id, label: q.name }))];
+  const catOpts: ComboOption[] = [none("No category"), ...options.categories.map((c) => ({ value: c.id, label: c.name, hint: c.type }))];
+  const svcOpts: ComboOption[] = [none("No service"), ...options.services.map((s) => ({ value: s.id, label: s.name }))];
+
   return (
-    <div className="grid gap-2.5">
-      <Row label="Status" ticketId={ticket.id} field="status" value={ticket.status}
-        options={TICKET_STATUSES.map((s) => ({ value: s, label: TICKET_STATUS_META[s].label }))} />
-      <Row label="Priority" ticketId={ticket.id} field="priority" value={ticket.priority}
-        options={PRIORITIES.map((p) => ({ value: p, label: PRIORITY_META[p].label }))} />
-      <Row label="Assignee" ticketId={ticket.id} field="assigneeId" value={ticket.assigneeId} includeNone
-        options={options.agents.map((a) => ({ value: a.id, label: a.name ?? a.email }))} />
-      <Row label="Group" ticketId={ticket.id} field="groupId" value={ticket.groupId} includeNone
-        options={options.groups.map((g) => ({ value: g.id, label: g.name }))} />
-      <Row label="Queue" ticketId={ticket.id} field="queueId" value={ticket.queueId} includeNone
-        options={options.queues.map((qq) => ({ value: qq.id, label: qq.name }))} />
-      <Row label="Category" ticketId={ticket.id} field="categoryId" value={ticket.categoryId} includeNone
-        options={options.categories.map((c) => ({ value: c.id, label: c.name }))} />
-      <Row label="Service" ticketId={ticket.id} field="serviceId" value={ticket.serviceId} includeNone
-        options={options.services.map((s) => ({ value: s.id, label: s.name }))} />
-      <Row label="Impact" ticketId={ticket.id} field="impact" value={ticket.impact}
-        options={IMPACT_URGENCY.map((l) => ({ value: l, label: LEVEL_META[l].label }))} />
-      <Row label="Urgency" ticketId={ticket.id} field="urgency" value={ticket.urgency}
-        options={IMPACT_URGENCY.map((l) => ({ value: l, label: LEVEL_META[l].label }))} />
+    <div className="grid gap-3">
+      <Prop label="Status" ticketId={ticket.id} field="status" value={ticket.status} options={statusOpts} />
+      <Prop label="Priority" ticketId={ticket.id} field="priority" value={ticket.priority} options={prioOpts} />
+      <Prop label="Assignee" ticketId={ticket.id} field="assigneeId" value={ticket.assigneeId} options={agentOpts} searchable placeholder="Unassigned" />
+      <Prop label="Group" ticketId={ticket.id} field="groupId" value={ticket.groupId} options={groupOpts} searchable placeholder="No group" />
+      <Prop label="Queue" ticketId={ticket.id} field="queueId" value={ticket.queueId} options={queueOpts} searchable placeholder="No queue" />
+      <Prop label="Category" ticketId={ticket.id} field="categoryId" value={ticket.categoryId} options={catOpts} searchable placeholder="No category" />
+      <Prop label="Service" ticketId={ticket.id} field="serviceId" value={ticket.serviceId} options={svcOpts} searchable placeholder="No service" />
+      <div className="grid grid-cols-2 gap-3">
+        <Prop label="Impact" ticketId={ticket.id} field="impact" value={ticket.impact} options={levelOpts} />
+        <Prop label="Urgency" ticketId={ticket.id} field="urgency" value={ticket.urgency} options={levelOpts} />
+      </div>
     </div>
   );
 }
