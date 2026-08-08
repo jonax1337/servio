@@ -15,6 +15,7 @@ import {
   KeyRound,
   Settings,
   LifeBuoy,
+  CheckSquare,
 } from "lucide-react";
 
 export type NavItem = {
@@ -38,6 +39,7 @@ export const consoleNav: NavGroup[] = [
       { title: "Queues", href: "/queues", icon: Inbox },
       { title: "Problems", href: "/problems", icon: AlertTriangle },
       { title: "Changes", href: "/changes", icon: GitPullRequestArrow },
+      { title: "Approvals", href: "/approvals", icon: CheckSquare },
     ],
   },
   {

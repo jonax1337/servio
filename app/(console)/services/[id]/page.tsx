@@ -1,12 +1,14 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
-import { ArrowLeft, LifeBuoy, Timer, Ticket as TicketIcon } from "lucide-react";
+import { ArrowLeft, LifeBuoy, Timer, Ticket as TicketIcon, ClipboardList } from "lucide-react";
 import { db } from "@/lib/db";
 import { getFormOptions } from "@/lib/data/options";
+import { parseFormSchema } from "@/lib/service-forms";
 import { LinkButton } from "@/components/link-button";
 import { StatusBadge } from "@/components/status-badge";
 import { ServiceProperties } from "@/components/services/service-properties";
+import { ServiceFormBuilder } from "@/components/services/form-builder";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   SERVICE_STATUS_META,
@@ -137,6 +139,26 @@ export default async function ServiceDetailPage({
                 ))}
               </div>
             )}
+          </div>
+
+          {/* Request form builder */}
+          <div className="mt-8">
+            <h2 className="mb-4 flex items-center gap-2 text-sm font-semibold">
+              <ClipboardList className="size-4 text-muted-foreground" />
+              Request form & approval
+            </h2>
+            <Card>
+              <CardContent className="pt-6">
+                <ServiceFormBuilder
+                  serviceId={service.id}
+                  initialFields={parseFormSchema(service.formSchema)}
+                  requiresApproval={service.requiresApproval}
+                  isRequestable={service.isRequestable}
+                  approverId={service.approverId}
+                  agents={options.agents}
+                />
+              </CardContent>
+            </Card>
           </div>
         </div>
       </div>

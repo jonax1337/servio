@@ -1,0 +1,98 @@
+"use client";
+
+import { useActionState } from "react";
+import { Loader2, Send, ShieldCheck } from "lucide-react";
+import { createServiceRequest, type CatalogState } from "@/lib/actions/catalog";
+import type { ServiceField } from "@/lib/service-forms";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from "@/components/ui/select";
+
+export function ServiceRequestForm({
+  serviceId,
+  fields,
+  requiresApproval,
+}: {
+  serviceId: string;
+  fields: ServiceField[];
+  requiresApproval: boolean;
+}) {
+  const [state, action, pending] = useActionState<CatalogState, FormData>(createServiceRequest, undefined);
+  const fe = state?.fieldErrors ?? {};
+
+  return (
+    <form action={action} className="grid gap-5">
+      <input type="hidden" name="serviceId" value={serviceId} />
+
+      {state?.error ? (
+        <p className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+          {state.error}
+        </p>
+      ) : null}
+
+      {fields.length === 0 ? (
+        <div className="grid gap-1.5">
+          <Label>Details</Label>
+          <Textarea name="f_details" placeholder="Describe what you need…" className="min-h-28" />
+        </div>
+      ) : (
+        fields.map((f) => (
+          <div key={f.key} className="grid gap-1.5">
+            <Label htmlFor={`f_${f.key}`}>
+              {f.label}
+              {f.required ? <span className="text-destructive"> *</span> : null}
+            </Label>
+
+            {f.type === "textarea" ? (
+              <Textarea id={`f_${f.key}`} name={`f_${f.key}`} placeholder={f.placeholder} className="min-h-24" />
+            ) : f.type === "select" ? (
+              <Select name={`f_${f.key}`} items={Object.fromEntries((f.options ?? []).map((o) => [o, o]))}>
+                <SelectTrigger className="w-full"><SelectValue placeholder="Choose…" /></SelectTrigger>
+                <SelectContent>
+                  {(f.options ?? []).map((o) => <SelectItem key={o} value={o}>{o}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            ) : f.type === "checkbox" ? (
+              <div className="flex items-center gap-2 pt-1">
+                <Checkbox id={`f_${f.key}`} name={`f_${f.key}`} />
+                <Label htmlFor={`f_${f.key}`} className="text-sm font-normal text-muted-foreground">
+                  {f.help ?? "Yes"}
+                </Label>
+              </div>
+            ) : (
+              <Input
+                id={`f_${f.key}`}
+                name={`f_${f.key}`}
+                type={f.type === "number" ? "number" : f.type === "date" ? "date" : "text"}
+                placeholder={f.placeholder}
+              />
+            )}
+
+            {f.help && f.type !== "checkbox" ? (
+              <p className="text-xs text-muted-foreground">{f.help}</p>
+            ) : null}
+            {fe[f.key] ? <p className="text-xs text-destructive">{fe[f.key]}</p> : null}
+          </div>
+        ))
+      )}
+
+      {requiresApproval ? (
+        <p className="flex items-center gap-2 rounded-lg border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-sm text-amber-600 dark:text-amber-400">
+          <ShieldCheck className="size-4" /> This request needs manager approval before it&apos;s actioned.
+        </p>
+      ) : null}
+
+      <div className="flex justify-end border-t pt-4">
+        <Button type="submit" size="lg" disabled={pending}>
+          {pending ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />}
+          Submit request
+        </Button>
+      </div>
+    </form>
+  );
+}

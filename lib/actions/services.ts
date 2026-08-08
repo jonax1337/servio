@@ -88,3 +88,33 @@ export async function updateServiceField(formData: FormData) {
   revalidatePath(`/services/${id}`);
   revalidatePath("/services");
 }
+
+export async function updateServiceForm(formData: FormData) {
+  const me = await getSessionUser();
+  if (!me) return;
+  const id = String(formData.get("id") ?? "");
+  if (!id) return;
+  const schema = String(formData.get("formSchema") ?? "[]");
+  // validate JSON
+  let normalized = "[]";
+  try {
+    const arr = JSON.parse(schema);
+    normalized = JSON.stringify(Array.isArray(arr) ? arr : []);
+  } catch {
+    normalized = "[]";
+  }
+  const requiresApproval = formData.get("requiresApproval") === "true";
+  const isRequestable = formData.get("isRequestable") === "true";
+  const approverId = String(formData.get("approverId") ?? "");
+  await db.service.update({
+    where: { id },
+    data: {
+      formSchema: normalized,
+      requiresApproval,
+      isRequestable,
+      approverId: approverId && approverId !== "none" ? approverId : null,
+    },
+  });
+  await writeAudit({ userId: me.id, action: "UPDATE", entity: "Service", entityId: id, summary: "Updated request form" });
+  revalidatePath(`/services/${id}`);
+}

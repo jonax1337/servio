@@ -50,6 +50,8 @@ model User {
   approvals       ChangeApproval[]
   ownedAssets     Asset[]     @relation("AssetOwner")
   ownedServices   Service[]   @relation("ServiceOwner")
+  approverServices Service[]  @relation("ServiceApprover")
+  ticketApprovals TicketApproval[] @relation("TicketApprover")
   managedGroups   Group[]     @relation("GroupManager")
   apiTokens       ApiToken[]
   auditLogs       AuditLog[]
@@ -190,6 +192,10 @@ model Service {
   criticality String  @default("MEDIUM") // LOW | MEDIUM | HIGH | CRITICAL
   icon        String?
   isPublic    Boolean @default(true) // shown in self-service catalog
+  isRequestable   Boolean @default(false) // can be ordered from the catalog
+  formSchema      String  @default("[]") // JSON: array of form field definitions
+  requiresApproval Boolean @default(false)
+  approverId      String?
   categoryId  String?
   ownerId     String?
   slaId       String?
@@ -198,6 +204,7 @@ model Service {
 
   category Category? @relation(fields: [categoryId], references: [id])
   owner    User?     @relation("ServiceOwner", fields: [ownerId], references: [id])
+  approver User?     @relation("ServiceApprover", fields: [approverId], references: [id])
   sla      SLA?      @relation(fields: [slaId], references: [id])
   tickets  Ticket[]
 }
@@ -229,6 +236,8 @@ model Ticket {
   problemId   Int?
   changeId    Int?
 
+  formData       String?   // JSON answers when submitted from a catalog form
+  approvalState  String?   // null | PENDING | APPROVED | REJECTED
   dueAt          DateTime?
   firstResponseAt DateTime?
   resolvedAt     DateTime?
@@ -252,6 +261,7 @@ model Ticket {
   assets      TicketAsset[]
   tags        TicketTag[]
   tasks       Task[]
+  approvals   TicketApproval[]
   mergedInto    Ticket?      @relation("TicketMerge", fields: [mergedIntoId], references: [id])
   mergedTickets Ticket[]     @relation("TicketMerge")
   linksFrom     TicketLink[] @relation("LinkSource")
@@ -305,6 +315,21 @@ model TicketLink {
   linked Ticket @relation("LinkTarget", fields: [linkedTicketId], references: [id], onDelete: Cascade)
 
   @@unique([ticketId, linkedTicketId])
+}
+
+model TicketApproval {
+  id         String    @id @default(cuid())
+  ticketId   Int
+  approverId String
+  status     String    @default("PENDING") // PENDING | APPROVED | REJECTED
+  comment    String?
+  decidedAt  DateTime?
+  createdAt  DateTime  @default(now())
+
+  ticket   Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  approver User   @relation("TicketApprover", fields: [approverId], references: [id])
+
+  @@index([approverId, status])
 }
 
 model TicketWatcher {
