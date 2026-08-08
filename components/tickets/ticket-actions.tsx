@@ -1,0 +1,134 @@
+"use client";
+
+import { useState } from "react";
+import {
+  Eye, EyeOff, ChevronsUp, Flame, Link2, GitMerge, MoreHorizontal,
+} from "lucide-react";
+import {
+  escalateTicket, toggleMajorIncident, toggleWatch, linkTicket, mergeTicket,
+} from "@/lib/actions/tickets";
+import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
+} from "@/components/ui/dialog";
+import { Combobox, type ComboOption } from "@/components/combobox";
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from "@/components/ui/select";
+
+type Candidate = { value: string; label: string };
+
+const LINK_TYPES = [
+  { value: "RELATED", label: "Related to" },
+  { value: "DUPLICATE", label: "Duplicate of" },
+  { value: "BLOCKS", label: "Blocks" },
+  { value: "CAUSED_BY", label: "Caused by" },
+];
+
+export function TicketActions({
+  ticketId, isWatching, isMajorIncident, candidates,
+}: {
+  ticketId: number;
+  isWatching: boolean;
+  isMajorIncident: boolean;
+  candidates: Candidate[];
+}) {
+  const [linkOpen, setLinkOpen] = useState(false);
+  const [mergeOpen, setMergeOpen] = useState(false);
+  const [linkTarget, setLinkTarget] = useState<string>("");
+  const [linkType, setLinkType] = useState("RELATED");
+  const [mergeTarget, setMergeTarget] = useState<string>("");
+  const opts: ComboOption[] = candidates;
+
+  return (
+    <>
+      {/* Watch */}
+      <form action={toggleWatch}>
+        <input type="hidden" name="id" value={ticketId} />
+        <Button type="submit" variant={isWatching ? "secondary" : "outline"} size="sm">
+          {isWatching ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+          {isWatching ? "Watching" : "Watch"}
+        </Button>
+      </form>
+
+      {/* Actions menu */}
+      <DropdownMenu>
+        <DropdownMenuTrigger render={<Button variant="outline" size="sm" />}>
+          <MoreHorizontal className="size-4" /> Actions
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="w-52">
+          <form action={escalateTicket}>
+            <input type="hidden" name="id" value={ticketId} />
+            <DropdownMenuItem nativeButton closeOnClick={false} render={<button type="submit" className="w-full" />}>
+              <ChevronsUp className="size-4" /> Escalate priority
+            </DropdownMenuItem>
+          </form>
+          <form action={toggleMajorIncident}>
+            <input type="hidden" name="id" value={ticketId} />
+            <DropdownMenuItem
+              nativeButton
+              closeOnClick={false}
+              variant={isMajorIncident ? "default" : "destructive"}
+              render={<button type="submit" className="w-full" />}
+            >
+              <Flame className="size-4" />
+              {isMajorIncident ? "Clear Major Incident" : "Declare Major Incident"}
+            </DropdownMenuItem>
+          </form>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem onClick={() => setLinkOpen(true)}>
+            <Link2 className="size-4" /> Link ticket…
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={() => setMergeOpen(true)}>
+            <GitMerge className="size-4" /> Merge into…
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+
+      {/* Link dialog */}
+      <Dialog open={linkOpen} onOpenChange={setLinkOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Link ticket</DialogTitle>
+            <DialogDescription>Connect this ticket to another related ticket.</DialogDescription>
+          </DialogHeader>
+          <form action={linkTicket} className="grid gap-3">
+            <input type="hidden" name="id" value={ticketId} />
+            <Select name="type" value={linkType} onValueChange={(v) => setLinkType((v as string) ?? "RELATED")} items={Object.fromEntries(LINK_TYPES.map((t) => [t.value, t.label]))}>
+              <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {LINK_TYPES.map((t) => <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>)}
+              </SelectContent>
+            </Select>
+            <Combobox options={opts} value={linkTarget} onChange={setLinkTarget} name="targetId" placeholder="Choose a ticket" searchPlaceholder="Search tickets…" />
+            <DialogFooter>
+              <Button type="submit" disabled={!linkTarget}>Link ticket</Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Merge dialog */}
+      <Dialog open={mergeOpen} onOpenChange={setMergeOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Merge ticket</DialogTitle>
+            <DialogDescription>
+              This ticket will be cancelled and merged into the ticket you choose. This can&apos;t be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <form action={mergeTicket} className="grid gap-3">
+            <input type="hidden" name="id" value={ticketId} />
+            <Combobox options={opts} value={mergeTarget} onChange={setMergeTarget} name="targetId" placeholder="Merge into…" searchPlaceholder="Search tickets…" />
+            <DialogFooter>
+              <Button type="submit" variant="destructive" disabled={!mergeTarget}>Merge ticket</Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}

@@ -3,16 +3,19 @@ import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import {
   ArrowLeft, Lock, Server, AlertTriangle, GitPullRequestArrow, Clock,
+  Flame, Link2, ListChecks, Activity as ActivityIcon, GitMerge,
 } from "lucide-react";
 import { db } from "@/lib/db";
 import { getFormOptions } from "@/lib/data/options";
+import { getSessionUser } from "@/lib/session";
 import { LinkButton } from "@/components/link-button";
 import { StatusBadge, VipBadge } from "@/components/status-badge";
 import { TicketProperties } from "@/components/tickets/ticket-properties";
 import { CommentComposer } from "@/components/tickets/comment-composer";
+import { TicketActions } from "@/components/tickets/ticket-actions";
+import { TicketTasks } from "@/components/tickets/ticket-tasks";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Separator } from "@/components/ui/separator";
 import {
   TICKET_STATUS_META, PRIORITY_META, TICKET_TYPE_META, SOURCE_META,
   ticketRef, problemRef, changeRef,
@@ -44,7 +47,8 @@ export default async function TicketDetailPage({
   const ticketId = Number(id);
   if (!Number.isFinite(ticketId)) notFound();
 
-  const [ticket, options] = await Promise.all([
+  const me = await getSessionUser();
+  const [ticket, options, audits, candidates] = await Promise.all([
     db.ticket.findUnique({
       where: { id: ticketId },
       include: {
@@ -54,33 +58,93 @@ export default async function TicketDetailPage({
         sla: true,
         problem: true,
         change: true,
+        mergedInto: true,
         comments: { include: { author: true }, orderBy: { createdAt: "asc" } },
         assets: { include: { asset: true } },
         tags: { include: { tag: true } },
         watchers: { include: { user: true } },
+        tasks: { orderBy: { order: "asc" } },
+        linksFrom: { include: { linked: true } },
       },
     }),
     getFormOptions(),
+    db.auditLog.findMany({
+      where: { entity: "Ticket", entityId: String(ticketId) },
+      include: { user: true },
+      orderBy: { createdAt: "asc" },
+    }),
+    db.ticket.findMany({
+      where: { id: { not: ticketId }, status: { notIn: ["CLOSED", "CANCELLED"] } },
+      select: { id: true, title: true, type: true },
+      orderBy: { updatedAt: "desc" },
+      take: 60,
+    }),
   ]);
   if (!ticket) notFound();
 
+  const isWatching = !!me && ticket.watchers.some((w) => w.userId === me.id);
+  const candidateOpts = candidates.map((c) => ({
+    value: String(c.id),
+    label: `${ticketRef(c.id, c.type)} — ${c.title}`,
+  }));
+
+  // Combined activity feed: comments + significant system events
+  type Feed =
+    | { kind: "comment"; at: Date; id: string; author: string; body: string; isInternal: boolean }
+    | { kind: "system"; at: Date; id: string; who: string; summary: string };
+  const feed: Feed[] = [
+    ...ticket.comments.map((c) => ({
+      kind: "comment" as const, at: c.createdAt, id: c.id,
+      author: c.author.name ?? c.author.email, body: c.body, isInternal: c.isInternal,
+    })),
+    ...audits
+      .filter((a) => a.summary && a.summary !== "Added a comment")
+      .map((a) => ({
+        kind: "system" as const, at: a.createdAt, id: a.id,
+        who: a.user?.name ?? "System", summary: a.summary!,
+      })),
+  ].sort((a, b) => a.at.getTime() - b.at.getTime());
+
   return (
-    <div className="grid gap-0 lg:grid-cols-[1fr_320px]">
+    <div className="grid gap-0 lg:grid-cols-[1fr_340px]">
       {/* Main column */}
       <div className="min-w-0 border-b lg:border-b-0 lg:border-r">
-        <div className="flex items-center gap-3 border-b px-4 py-3 sm:px-6">
+        <div className="flex flex-wrap items-center gap-3 border-b px-4 py-3 sm:px-6">
           <LinkButton href="/tickets" variant="ghost" size="icon-sm">
             <ArrowLeft className="size-4" />
           </LinkButton>
           <span className="font-mono text-sm text-muted-foreground">
             {ticketRef(ticket.id, ticket.type)}
           </span>
-          <StatusBadge map={TICKET_TYPE_META} value={ticket.type} dot />
+          <StatusBadge map={TICKET_TYPE_META} value={ticket.type} />
+          <StatusBadge map={PRIORITY_META} value={ticket.priority} />
+          <StatusBadge map={TICKET_STATUS_META} value={ticket.status} />
           <div className="ml-auto flex items-center gap-2">
-            <StatusBadge map={PRIORITY_META} value={ticket.priority} dot />
-            <StatusBadge map={TICKET_STATUS_META} value={ticket.status} />
+            <TicketActions
+              ticketId={ticket.id}
+              isWatching={isWatching}
+              isMajorIncident={ticket.isMajorIncident}
+              candidates={candidateOpts}
+            />
           </div>
         </div>
+
+        {ticket.isMajorIncident ? (
+          <div className="flex items-center gap-2 border-b border-destructive/30 bg-destructive/10 px-4 py-2.5 text-sm font-medium text-destructive sm:px-6">
+            <Flame className="size-4" /> Major Incident — all hands. Stakeholders are being notified.
+          </div>
+        ) : null}
+
+        {ticket.mergedInto ? (
+          <div className="flex items-center gap-2 border-b bg-muted/50 px-4 py-2.5 text-sm sm:px-6">
+            <GitMerge className="size-4 text-muted-foreground" />
+            This ticket was merged into{" "}
+            <Link href={`/tickets/${ticket.mergedInto.id}`} className="font-medium text-primary hover:underline">
+              {ticketRef(ticket.mergedInto.id, ticket.mergedInto.type)}
+            </Link>
+            .
+          </div>
+        ) : null}
 
         <div className="p-4 sm:p-6">
           <h1 className="font-display text-2xl font-semibold tracking-tight">
@@ -97,7 +161,7 @@ export default async function TicketDetailPage({
           </div>
 
           {/* Linked records */}
-          {(ticket.problem || ticket.change || ticket.assets.length > 0) && (
+          {(ticket.problem || ticket.change || ticket.assets.length > 0 || ticket.linksFrom.length > 0) && (
             <div className="mt-4 flex flex-wrap gap-2">
               {ticket.problem ? (
                 <Link href={`/problems/${ticket.problem.id}`} className="inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs hover:border-primary/40">
@@ -109,6 +173,11 @@ export default async function TicketDetailPage({
                   <GitPullRequestArrow className="size-3.5 text-primary" /> {changeRef(ticket.change.id)}
                 </Link>
               ) : null}
+              {ticket.linksFrom.map((l) => (
+                <Link key={l.id} href={`/tickets/${l.linkedTicketId}`} className="inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs hover:border-primary/40">
+                  <Link2 className="size-3.5 text-sky-500" /> {ticketRef(l.linked.id, l.linked.type)} · {l.linked.title}
+                </Link>
+              ))}
               {ticket.assets.map((a) => (
                 <Link key={a.assetId} href={`/assets/${a.assetId}`} className="inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs hover:border-primary/40">
                   <Server className="size-3.5 text-indigo-500" /> {a.asset.name}
@@ -117,39 +186,45 @@ export default async function TicketDetailPage({
             </div>
           )}
 
-          {/* Activity / comments */}
+          {/* Activity feed */}
           <div className="mt-8">
             <h2 className="mb-4 flex items-center gap-2 text-sm font-semibold">
-              <Clock className="size-4 text-muted-foreground" />
-              Activity · {ticket.comments.length}
+              <Clock className="size-4 text-muted-foreground" /> Activity
             </h2>
             <div className="grid gap-4">
-              {ticket.comments.map((c) => (
-                <div key={c.id} className="flex gap-3">
-                  <Avatar className="size-8 shrink-0">
-                    <AvatarFallback className="text-xs">
-                      {initials(c.author.name ?? c.author.email)}
-                    </AvatarFallback>
-                  </Avatar>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm font-medium">{c.author.name ?? c.author.email}</span>
-                      {c.isInternal ? (
-                        <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-medium text-amber-600 dark:text-amber-400">
-                          <Lock className="size-2.5" /> Internal
-                        </span>
-                      ) : null}
-                      <span className="text-xs text-muted-foreground">
-                        {formatDistanceToNow(c.createdAt, { addSuffix: true })}
-                      </span>
-                    </div>
-                    <div className={`mt-1 rounded-lg border p-3 text-sm whitespace-pre-wrap ${c.isInternal ? "border-amber-500/20 bg-amber-500/5" : "bg-card"}`}>
-                      {c.body}
+              {feed.map((f) =>
+                f.kind === "comment" ? (
+                  <div key={f.id} className="flex gap-3">
+                    <Avatar className="size-8 shrink-0">
+                      <AvatarFallback className="text-xs">{initials(f.author)}</AvatarFallback>
+                    </Avatar>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-medium">{f.author}</span>
+                        {f.isInternal ? (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-medium text-amber-600 dark:text-amber-400">
+                            <Lock className="size-2.5" /> Internal
+                          </span>
+                        ) : null}
+                        <span className="text-xs text-muted-foreground">{formatDistanceToNow(f.at, { addSuffix: true })}</span>
+                      </div>
+                      <div className={`mt-1 rounded-lg border p-3 text-sm whitespace-pre-wrap ${f.isInternal ? "border-amber-500/20 bg-amber-500/5" : "bg-card"}`}>
+                        {f.body}
+                      </div>
                     </div>
                   </div>
-                </div>
-              ))}
-              {ticket.comments.length === 0 ? (
+                ) : (
+                  <div key={f.id} className="flex items-center gap-3 pl-1 text-xs text-muted-foreground">
+                    <span className="grid size-6 shrink-0 place-items-center rounded-full border bg-muted">
+                      <ActivityIcon className="size-3" />
+                    </span>
+                    <span>
+                      <span className="font-medium text-foreground">{f.who}</span> {f.summary.toLowerCase()} · {formatDistanceToNow(f.at, { addSuffix: true })}
+                    </span>
+                  </div>
+                ),
+              )}
+              {feed.length === 0 ? (
                 <p className="text-sm text-muted-foreground">No activity yet. Add the first reply below.</p>
               ) : null}
             </div>
@@ -171,6 +246,13 @@ export default async function TicketDetailPage({
         </Card>
 
         <Card className="mt-4">
+          <CardHeader><CardTitle className="flex items-center gap-2 text-sm"><ListChecks className="size-4 text-muted-foreground" /> Tasks</CardTitle></CardHeader>
+          <CardContent>
+            <TicketTasks ticketId={ticket.id} tasks={ticket.tasks} />
+          </CardContent>
+        </Card>
+
+        <Card className="mt-4">
           <CardHeader><CardTitle className="text-sm">People</CardTitle></CardHeader>
           <CardContent className="grid gap-3 text-sm">
             <div className="flex items-center justify-between gap-2">
@@ -180,12 +262,10 @@ export default async function TicketDetailPage({
                 {ticket.requester.name ?? ticket.requester.email}
               </span>
             </div>
-            {ticket.watchers.length > 0 ? (
-              <div className="flex items-center justify-between">
-                <span className="text-muted-foreground">Watchers</span>
-                <span className="font-medium">{ticket.watchers.length}</span>
-              </div>
-            ) : null}
+            <div className="flex items-center justify-between">
+              <span className="text-muted-foreground">Watchers</span>
+              <span className="font-medium">{ticket.watchers.length}</span>
+            </div>
           </CardContent>
         </Card>
 

@@ -44,6 +44,7 @@ model User {
   assignedTickets  Ticket[]   @relation("TicketAssignee")
   comments        TicketComment[]
   watching        TicketWatcher[]
+  assignedTasks   Task[]
   assignedProblems Problem[]  @relation("ProblemAssignee")
   assignedChanges  Change[]   @relation("ChangeAssignee")
   approvals       ChangeApproval[]
@@ -215,6 +216,8 @@ model Ticket {
   impact      String   @default("MEDIUM") // LOW | MEDIUM | HIGH
   urgency     String   @default("MEDIUM") // LOW | MEDIUM | HIGH
   source      String   @default("PORTAL") // PORTAL | EMAIL | PHONE | API | AGENT
+  isMajorIncident Boolean @default(false)
+  mergedIntoId Int?
 
   requesterId String
   assigneeId  String?
@@ -248,6 +251,11 @@ model Ticket {
   attachments Attachment[]
   assets      TicketAsset[]
   tags        TicketTag[]
+  tasks       Task[]
+  mergedInto    Ticket?      @relation("TicketMerge", fields: [mergedIntoId], references: [id])
+  mergedTickets Ticket[]     @relation("TicketMerge")
+  linksFrom     TicketLink[] @relation("LinkSource")
+  linksTo       TicketLink[] @relation("LinkTarget")
 
   @@index([status])
   @@index([priority])
@@ -269,6 +277,34 @@ model TicketComment {
   attachments Attachment[]
 
   @@index([ticketId])
+}
+
+model Task {
+  id         String   @id @default(cuid())
+  ticketId   Int
+  title      String
+  done       Boolean  @default(false)
+  order      Int      @default(0)
+  assigneeId String?
+  createdAt  DateTime @default(now())
+
+  ticket   Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  assignee User?  @relation(fields: [assigneeId], references: [id])
+
+  @@index([ticketId])
+}
+
+model TicketLink {
+  id             String   @id @default(cuid())
+  ticketId       Int
+  linkedTicketId Int
+  type           String   @default("RELATED") // RELATED | DUPLICATE | BLOCKS | CAUSED_BY
+  createdAt      DateTime @default(now())
+
+  ticket Ticket @relation("LinkSource", fields: [ticketId], references: [id], onDelete: Cascade)
+  linked Ticket @relation("LinkTarget", fields: [linkedTicketId], references: [id], onDelete: Cascade)
+
+  @@unique([ticketId, linkedTicketId])
 }
 
 model TicketWatcher {
