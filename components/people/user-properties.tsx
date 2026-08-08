@@ -21,7 +21,7 @@ function Row({
 }: {
   label: string;
   userId: string;
-  field: "role" | "isActive";
+  field: "role" | "isActive" | "isVip";
   value: string;
   options: { value: string; label: string }[];
 }) {
@@ -63,7 +63,7 @@ function Row({
 export function UserProperties({
   user,
 }: {
-  user: { id: string; role: string; isActive: boolean };
+  user: { id: string; role: string; isActive: boolean; isVip: boolean };
 }) {
   return (
     <div className="grid gap-2.5">
@@ -82,6 +82,16 @@ export function UserProperties({
         options={[
           { value: "true", label: "Active" },
           { value: "false", label: "Inactive" },
+        ]}
+      />
+      <Row
+        label="VIP"
+        userId={user.id}
+        field="isVip"
+        value={user.isVip ? "true" : "false"}
+        options={[
+          { value: "true", label: "VIP — priority handling" },
+          { value: "false", label: "Standard" },
         ]}
       />
     </div>

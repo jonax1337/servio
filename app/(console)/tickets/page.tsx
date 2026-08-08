@@ -9,7 +9,7 @@ import { PageHeader, PageBody } from "@/components/page-header";
 import { LinkButton } from "@/components/link-button";
 import { ListToolbar, type FilterDef } from "@/components/list-toolbar";
 import { PaginationBar } from "@/components/pagination-bar";
-import { StatusBadge } from "@/components/status-badge";
+import { StatusBadge, VipBadge } from "@/components/status-badge";
 import { EmptyState } from "@/components/empty-state";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
@@ -153,7 +153,10 @@ export default async function TicketsPage({
                       </Link>
                     </TableCell>
                     <TableCell className="hidden lg:table-cell text-sm text-muted-foreground">
-                      {t.requester.name ?? t.requester.email}
+                      <span className="inline-flex items-center gap-1.5">
+                        {t.requester.isVip ? <VipBadge label={false} /> : null}
+                        {t.requester.name ?? t.requester.email}
+                      </span>
                     </TableCell>
                     <TableCell>
                       <StatusBadge map={PRIORITY_META} value={t.priority} dot />

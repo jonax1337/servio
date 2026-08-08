@@ -9,7 +9,7 @@ import { ROLES } from "@/lib/constants";
 
 const updateSchema = z.object({
   id: z.string().min(1),
-  field: z.enum(["role", "isActive"]),
+  field: z.enum(["role", "isActive", "isVip"]),
   value: z.string(),
 });
 
@@ -25,6 +25,8 @@ export async function updateUserField(formData: FormData) {
   if (field === "role") {
     if (!ROLES.includes(value as (typeof ROLES)[number])) return;
     patch.role = value;
+  } else if (field === "isVip") {
+    patch.isVip = value === "true";
   } else {
     patch.isActive = value === "true";
   }

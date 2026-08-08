@@ -7,7 +7,7 @@ import {
 import { db } from "@/lib/db";
 import { getFormOptions } from "@/lib/data/options";
 import { LinkButton } from "@/components/link-button";
-import { StatusBadge } from "@/components/status-badge";
+import { StatusBadge, VipBadge } from "@/components/status-badge";
 import { TicketProperties } from "@/components/tickets/ticket-properties";
 import { CommentComposer } from "@/components/tickets/comment-composer";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -86,10 +86,10 @@ export default async function TicketDetailPage({
           <h1 className="font-display text-2xl font-semibold tracking-tight">
             {ticket.title}
           </h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Opened by {ticket.requester.name ?? ticket.requester.email} ·{" "}
-            {formatDistanceToNow(ticket.createdAt, { addSuffix: true })} · via{" "}
-            {SOURCE_META[ticket.source]?.label ?? ticket.source}
+          <p className="mt-1 flex flex-wrap items-center gap-x-1.5 text-sm text-muted-foreground">
+            <span>Opened by {ticket.requester.name ?? ticket.requester.email}</span>
+            {ticket.requester.isVip ? <VipBadge className="align-middle" /> : null}
+            <span>· {formatDistanceToNow(ticket.createdAt, { addSuffix: true })} · via {SOURCE_META[ticket.source]?.label ?? ticket.source}</span>
           </p>
 
           <div className="mt-4 rounded-xl border bg-card p-4 text-sm leading-relaxed whitespace-pre-wrap">
@@ -173,9 +173,12 @@ export default async function TicketDetailPage({
         <Card className="mt-4">
           <CardHeader><CardTitle className="text-sm">People</CardTitle></CardHeader>
           <CardContent className="grid gap-3 text-sm">
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between gap-2">
               <span className="text-muted-foreground">Requester</span>
-              <span className="font-medium">{ticket.requester.name ?? ticket.requester.email}</span>
+              <span className="flex items-center gap-1.5 font-medium">
+                {ticket.requester.isVip ? <VipBadge label={false} /> : null}
+                {ticket.requester.name ?? ticket.requester.email}
+              </span>
             </div>
             {ticket.watchers.length > 0 ? (
               <div className="flex items-center justify-between">

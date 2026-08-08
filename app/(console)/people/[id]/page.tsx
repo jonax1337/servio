@@ -12,7 +12,7 @@ import {
 } from "lucide-react";
 import { db } from "@/lib/db";
 import { LinkButton } from "@/components/link-button";
-import { StatusBadge } from "@/components/status-badge";
+import { StatusBadge, VipBadge } from "@/components/status-badge";
 import { StatCard } from "@/components/stat-card";
 import { UserProperties } from "@/components/people/user-properties";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -102,9 +102,12 @@ export default async function PersonDetailPage({
               </AvatarFallback>
             </Avatar>
             <div className="min-w-0">
-              <h1 className="font-display text-2xl font-semibold tracking-tight">
-                {displayName}
-              </h1>
+              <div className="flex items-center gap-2">
+                <h1 className="font-display text-2xl font-semibold tracking-tight">
+                  {displayName}
+                </h1>
+                {user.isVip ? <VipBadge /> : null}
+              </div>
               <p className="mt-0.5 text-sm text-muted-foreground">
                 {user.jobTitle ?? "—"}
                 {user.department ? ` · ${user.department}` : ""}
@@ -153,6 +156,7 @@ export default async function PersonDetailPage({
                 id: user.id,
                 role: user.role,
                 isActive: user.isActive,
+                isVip: user.isVip,
               }}
             />
           </CardContent>

@@ -58,6 +58,12 @@ export async function createTicket(_prev: ActionState, formData: FormData): Prom
 
   await writeAudit({ userId: me.id, action: "CREATE", entity: "Ticket", entityId: ticket.id, summary: `Created ticket "${ticket.title}"` });
 
+  // VIP requesters get elevated handling
+  if (ticket.requester?.isVip && (ticket.priority === "LOW" || ticket.priority === "MEDIUM")) {
+    ticket.priority = "HIGH";
+    await db.ticket.update({ where: { id: ticket.id }, data: { priority: "HIGH" } });
+  }
+
   // Confirmation to the requester
   if (ticket.requester?.email) {
     await sendMail({ to: ticket.requester.email, toName: ticket.requester.name, entity: "Ticket", entityId: ticket.id, ...tplTicketReceived(ticket) });

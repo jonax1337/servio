@@ -7,7 +7,7 @@ import { getParam, getPage, PAGE_SIZE, type SearchParams } from "@/lib/query";
 import { PageHeader, PageBody } from "@/components/page-header";
 import { ListToolbar, type FilterDef } from "@/components/list-toolbar";
 import { PaginationBar } from "@/components/pagination-bar";
-import { StatusBadge } from "@/components/status-badge";
+import { StatusBadge, VipBadge } from "@/components/status-badge";
 import { EmptyState } from "@/components/empty-state";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
@@ -128,6 +128,7 @@ export default async function PeoplePage({
                         <span className="line-clamp-1 font-medium group-hover:text-primary">
                           {u.name ?? u.email}
                         </span>
+                        {u.isVip ? <VipBadge label={false} /> : null}
                       </Link>
                     </TableCell>
                     <TableCell className="hidden lg:table-cell text-sm text-muted-foreground">
