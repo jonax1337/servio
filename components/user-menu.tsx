@@ -7,7 +7,6 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
@@ -45,15 +44,23 @@ export function UserMenu({
         </Avatar>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-56">
-        <DropdownMenuLabel className="grid gap-0.5">
-          <span className="truncate font-medium">{name}</span>
-          <span className="truncate text-xs font-normal text-muted-foreground">
-            {email}
-          </span>
-          <span className="mt-1 text-xs text-primary">
+        <div className="grid gap-0.5 px-2 py-1.5">
+          <div className="flex items-center gap-2">
+            <Avatar className="size-7 border">
+              {image ? <AvatarImage src={image} alt={name} /> : null}
+              <AvatarFallback className="bg-primary/10 text-[10px] font-semibold text-primary">
+                {initials(name)}
+              </AvatarFallback>
+            </Avatar>
+            <div className="grid min-w-0">
+              <span className="truncate text-sm font-medium">{name}</span>
+              <span className="truncate text-xs text-muted-foreground">{email}</span>
+            </div>
+          </div>
+          <span className="mt-1 w-fit rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-medium text-primary">
             {ROLE_META[role as keyof typeof ROLE_META]?.label ?? role}
           </span>
-        </DropdownMenuLabel>
+        </div>
         <DropdownMenuSeparator />
         <DropdownMenuItem render={<Link href="/portal" />}>
           <LifeBuoy className="size-4" /> Self-service portal
@@ -66,6 +73,7 @@ export function UserMenu({
           <DropdownMenuItem
             variant="destructive"
             closeOnClick={false}
+            nativeButton
             render={<button type="submit" className="w-full" />}
           >
             <LogOut className="size-4" /> Sign out
