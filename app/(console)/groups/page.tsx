@@ -1,11 +1,12 @@
 import Link from "next/link";
-import { Users, Plus, Mail } from "lucide-react";
+import { Users, Mail } from "lucide-react";
 import type { Metadata } from "next";
 import type { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
+import { getFormOptions } from "@/lib/data/options";
 import { getParam, getPage, PAGE_SIZE, type SearchParams } from "@/lib/query";
 import { PageHeader, PageBody } from "@/components/page-header";
-import { LinkButton } from "@/components/link-button";
+import { CreateGroupDialog } from "@/components/groups/create-group-dialog";
 import { ListToolbar, type FilterDef } from "@/components/list-toolbar";
 import { PaginationBar } from "@/components/pagination-bar";
 import { StatusBadge } from "@/components/status-badge";
@@ -37,7 +38,7 @@ export default async function GroupsPage({
   if (q) where.name = { contains: q };
   if (type && type !== "all") where.type = type;
 
-  const [total, groups] = await Promise.all([
+  const [total, groups, options] = await Promise.all([
     db.group.count({ where }),
     db.group.findMany({
       where,
@@ -46,6 +47,7 @@ export default async function GroupsPage({
       skip: (page - 1) * PAGE_SIZE,
       take: PAGE_SIZE,
     }),
+    getFormOptions(),
   ]);
 
   const filters: FilterDef[] = [
@@ -63,9 +65,7 @@ export default async function GroupsPage({
         title="Groups"
         description="Teams, departments and vendors that own work across the service desk."
       >
-        <LinkButton href="/groups/new">
-          <Plus className="size-4" /> New group
-        </LinkButton>
+        <CreateGroupDialog options={options} />
       </PageHeader>
 
       <PageBody className="grid gap-4">
@@ -77,9 +77,7 @@ export default async function GroupsPage({
             title="No groups found"
             description="Try adjusting your filters, or create a new group to organise your teams."
           >
-            <LinkButton href="/groups/new" size="sm">
-              <Plus className="size-4" /> New group
-            </LinkButton>
+            <CreateGroupDialog options={options} size="sm" />
           </EmptyState>
         ) : (
           <div className="overflow-hidden rounded-xl border bg-card">

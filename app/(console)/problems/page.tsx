@@ -1,11 +1,13 @@
 import Link from "next/link";
-import { AlertTriangle, Plus } from "lucide-react";
+import { AlertTriangle } from "lucide-react";
 import type { Metadata } from "next";
 import type { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
+import { getFormOptions } from "@/lib/data/options";
+import { requireUser } from "@/lib/session";
 import { getParam, getPage, PAGE_SIZE, type SearchParams } from "@/lib/query";
 import { PageHeader, PageBody } from "@/components/page-header";
-import { LinkButton } from "@/components/link-button";
+import { CreateProblemDialog } from "@/components/problems/create-problem-dialog";
 import { ListToolbar, type FilterDef } from "@/components/list-toolbar";
 import { PaginationBar } from "@/components/pagination-bar";
 import { StatusBadge } from "@/components/status-badge";
@@ -41,6 +43,7 @@ export default async function ProblemsPage({
   searchParams: Promise<SearchParams>;
 }) {
   const sp = await searchParams;
+  const [me, options] = await Promise.all([requireUser(), getFormOptions()]);
   const page = getPage(sp);
   const q = getParam(sp, "q");
   const status = getParam(sp, "status");
@@ -78,9 +81,7 @@ export default async function ProblemsPage({
         title="Problems"
         description="Root-cause analysis for recurring incidents and known errors."
       >
-        <LinkButton href="/problems/new">
-          <Plus className="size-4" /> New problem
-        </LinkButton>
+        <CreateProblemDialog options={options} currentUserId={me.id} />
       </PageHeader>
 
       <PageBody className="grid gap-4">
@@ -92,9 +93,7 @@ export default async function ProblemsPage({
             title="No problems found"
             description="Try adjusting your filters, or create a new problem record to get started."
           >
-            <LinkButton href="/problems/new" size="sm">
-              <Plus className="size-4" /> New problem
-            </LinkButton>
+            <CreateProblemDialog options={options} currentUserId={me.id} size="sm" />
           </EmptyState>
         ) : (
           <div className="overflow-hidden rounded-xl border bg-card">

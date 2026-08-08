@@ -1,11 +1,12 @@
 import Link from "next/link";
-import { LifeBuoy, Plus, User } from "lucide-react";
+import { LifeBuoy, User } from "lucide-react";
 import type { Metadata } from "next";
 import type { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
+import { getFormOptions } from "@/lib/data/options";
 import { getParam, type SearchParams } from "@/lib/query";
 import { PageHeader, PageBody } from "@/components/page-header";
-import { LinkButton } from "@/components/link-button";
+import { CreateServiceDialog } from "@/components/services/create-service-dialog";
 import { ListToolbar, type FilterDef } from "@/components/list-toolbar";
 import { StatusBadge } from "@/components/status-badge";
 import { EmptyState } from "@/components/empty-state";
@@ -26,6 +27,7 @@ export default async function ServicesPage({
   searchParams: Promise<SearchParams>;
 }) {
   const sp = await searchParams;
+  const options = await getFormOptions();
   const q = getParam(sp, "q");
   const status = getParam(sp, "status");
   const criticality = getParam(sp, "criticality");
@@ -72,9 +74,7 @@ export default async function ServicesPage({
         title="Services"
         description="The catalog of business and IT services you support."
       >
-        <LinkButton href="/services/new">
-          <Plus className="size-4" /> New service
-        </LinkButton>
+        <CreateServiceDialog options={options} />
       </PageHeader>
 
       <PageBody className="grid gap-4">
@@ -86,9 +86,7 @@ export default async function ServicesPage({
             title="No services found"
             description="Try adjusting your filters, or add a new service to the catalog."
           >
-            <LinkButton href="/services/new" size="sm">
-              <Plus className="size-4" /> New service
-            </LinkButton>
+            <CreateServiceDialog options={options} size="sm" />
           </EmptyState>
         ) : (
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">

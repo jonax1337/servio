@@ -1,9 +1,9 @@
 import type { Metadata } from "next";
-import { FolderTree, Plus } from "lucide-react";
+import { FolderTree } from "lucide-react";
 import { db } from "@/lib/db";
 import { CATEGORY_TYPES } from "@/lib/constants";
 import { PageHeader, PageBody } from "@/components/page-header";
-import { LinkButton } from "@/components/link-button";
+import { CreateCategoryDialog } from "@/components/categories/create-category-dialog";
 import { EmptyState } from "@/components/empty-state";
 
 export const metadata: Metadata = { title: "Categories" };
@@ -67,6 +67,7 @@ export default async function CategoriesPage() {
     orderBy: { name: "asc" },
     include: { _count: { select: { tickets: true } } },
   });
+  const parents = categories.map((c) => ({ id: c.id, name: c.name, type: c.type }));
 
   const nodes: CategoryNode[] = categories.map((c) => ({
     id: c.id,
@@ -96,9 +97,7 @@ export default async function CategoriesPage() {
         title="Categories"
         description="Classification taxonomy for tickets, problems, changes and assets."
       >
-        <LinkButton href="/categories/new">
-          <Plus className="size-4" /> New category
-        </LinkButton>
+        <CreateCategoryDialog parents={parents} />
       </PageHeader>
 
       <PageBody className="grid gap-4">
@@ -108,9 +107,7 @@ export default async function CategoriesPage() {
             title="No categories yet"
             description="Create your first category to start organising tickets and other records."
           >
-            <LinkButton href="/categories/new" size="sm">
-              <Plus className="size-4" /> New category
-            </LinkButton>
+            <CreateCategoryDialog parents={parents} size="sm" />
           </EmptyState>
         ) : (
           <div className="grid gap-4 lg:grid-cols-2">
