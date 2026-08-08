@@ -1,8 +1,9 @@
 "use client";
 
-import { useTransition } from "react";
+import { useState, useTransition } from "react";
 import { updateTicketField } from "@/lib/actions/tickets";
 import { Combobox, type ComboOption } from "@/components/combobox";
+import { PendingReasonDialog } from "@/components/tickets/pending-reason-dialog";
 import {
   TICKET_STATUSES,
   PRIORITIES,
@@ -91,9 +92,33 @@ export function TicketProperties({
   const catOpts: ComboOption[] = [none("No category"), ...options.categories.map((c) => ({ value: c.id, label: c.name, hint: c.type }))];
   const svcOpts: ComboOption[] = [none("No service"), ...options.services.map((s) => ({ value: s.id, label: s.name }))];
 
+  const [statusPending, startStatus] = useTransition();
+  const [pendingDlg, setPendingDlg] = useState<{ open: boolean; status: string }>({ open: false, status: "PENDING" });
+
+  const changeStatus = (v: string) => {
+    if (v === "PENDING" || v === "ON_HOLD") {
+      setPendingDlg({ open: true, status: v });
+      return;
+    }
+    const fd = new FormData();
+    fd.set("id", String(ticket.id));
+    fd.set("field", "status");
+    fd.set("value", v);
+    startStatus(() => updateTicketField(fd));
+  };
+
   return (
     <div className="grid gap-3">
-      <Prop label="Status" ticketId={ticket.id} field="status" value={ticket.status} options={statusOpts} />
+      <div className="grid gap-1.5">
+        <span className="text-xs font-medium text-muted-foreground">Status</span>
+        <Combobox options={statusOpts} value={ticket.status} pending={statusPending} onChange={changeStatus} />
+      </div>
+      <PendingReasonDialog
+        ticketId={ticket.id}
+        status={pendingDlg.status}
+        open={pendingDlg.open}
+        onOpenChange={(o) => setPendingDlg((s) => ({ ...s, open: o }))}
+      />
       <Prop label="Priority" ticketId={ticket.id} field="priority" value={ticket.priority} options={prioOpts} />
       <Prop label="Assignee" ticketId={ticket.id} field="assigneeId" value={ticket.assigneeId} options={agentOpts} searchable placeholder="Unassigned" />
       <Prop label="Group" ticketId={ticket.id} field="groupId" value={ticket.groupId} options={groupOpts} searchable placeholder="No group" />

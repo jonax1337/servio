@@ -226,6 +226,8 @@ model Ticket {
   urgency     String   @default("MEDIUM") // LOW | MEDIUM | HIGH
   source      String   @default("PORTAL") // PORTAL | EMAIL | PHONE | API | AGENT
   isMajorIncident Boolean @default(false)
+  pendingReason String? // AWAITING_CUSTOMER | AWAITING_VENDOR | AWAITING_CHANGE | AWAITING_PARTS | SCHEDULED
+  pendingNote   String?
   mergedIntoId Int?
 
   requesterId String

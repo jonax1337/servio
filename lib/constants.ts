@@ -77,6 +77,23 @@ export const OPEN_TICKET_STATUSES = [
   "ON_HOLD",
 ] as const;
 
+// Statuses that require a pending reason
+export const PENDING_STATUSES = ["PENDING", "ON_HOLD"] as const;
+export const PENDING_REASONS = [
+  "AWAITING_CUSTOMER",
+  "AWAITING_VENDOR",
+  "AWAITING_CHANGE",
+  "AWAITING_PARTS",
+  "SCHEDULED",
+] as const;
+export const PENDING_REASON_META: Record<string, Meta> = {
+  AWAITING_CUSTOMER: { label: "Awaiting customer", tone: "info", icon: Clock },
+  AWAITING_VENDOR: { label: "Awaiting vendor", tone: "purple", icon: Clock },
+  AWAITING_CHANGE: { label: "Awaiting change", tone: "indigo", icon: Clock },
+  AWAITING_PARTS: { label: "Awaiting parts", tone: "warning", icon: Clock },
+  SCHEDULED: { label: "Scheduled", tone: "neutral", icon: CalendarClock },
+};
+
 export const PRIORITIES = ["LOW", "MEDIUM", "HIGH", "CRITICAL"] as const;
 export const PRIORITY_META: Record<string, Meta> = {
   LOW: { label: "Low", tone: "success", icon: ArrowDown },

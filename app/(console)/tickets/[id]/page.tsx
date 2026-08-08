@@ -9,7 +9,7 @@ import { db } from "@/lib/db";
 import { getFormOptions } from "@/lib/data/options";
 import { getSessionUser } from "@/lib/session";
 import { LinkButton } from "@/components/link-button";
-import { StatusBadge, VipBadge } from "@/components/status-badge";
+import { StatusBadge, VipBadge, ToneBadge } from "@/components/status-badge";
 import { TicketProperties } from "@/components/tickets/ticket-properties";
 import { CommentThread } from "@/components/comments/comment-thread";
 import { EditEntityDialog } from "@/components/edit-entity-dialog";
@@ -19,6 +19,7 @@ import { TicketTasks } from "@/components/tickets/ticket-tasks";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   TICKET_STATUS_META, PRIORITY_META, TICKET_TYPE_META, SOURCE_META,
+  PENDING_REASON_META, metaFor,
   ticketRef, problemRef, changeRef,
 } from "@/lib/constants";
 import { format, formatDistanceToNow } from "date-fns";
@@ -127,6 +128,13 @@ export default async function TicketDetailPage({
         {ticket.isMajorIncident ? (
           <div className="flex items-center gap-2 border-b border-destructive/30 bg-destructive/10 px-4 py-2.5 text-sm font-medium text-destructive sm:px-6">
             <Flame className="size-4" /> Major Incident — all hands. Stakeholders are being notified.
+          </div>
+        ) : null}
+
+        {ticket.pendingReason && (ticket.status === "PENDING" || ticket.status === "ON_HOLD") ? (
+          <div className="flex flex-wrap items-center gap-2 border-b bg-amber-500/5 px-4 py-2.5 text-sm sm:px-6">
+            <ToneBadge meta={metaFor(PENDING_REASON_META, ticket.pendingReason)} />
+            {ticket.pendingNote ? <span className="text-muted-foreground">{ticket.pendingNote}</span> : null}
           </div>
         ) : null}
 

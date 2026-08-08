@@ -115,6 +115,8 @@ export async function updateTicketField(formData: FormData) {
     if (value === "RESOLVED") patch.resolvedAt = new Date();
     if (value === "CLOSED") patch.closedAt = new Date();
     if (value === "OPEN" || value === "NEW") { patch.resolvedAt = null; patch.closedAt = null; }
+    // leaving a pending state clears the reason
+    if (value !== "PENDING" && value !== "ON_HOLD") { patch.pendingReason = null; patch.pendingNote = null; }
   }
 
   const ticket = await db.ticket.update({
@@ -336,6 +338,29 @@ export async function updateTicketDetails(formData: FormData) {
   if (!id || title.length < 3) return;
   await db.ticket.update({ where: { id }, data: { title, description } });
   await writeAudit({ userId: me.id, action: "UPDATE", entity: "Ticket", entityId: id, summary: "Edited details" });
+  revalidatePath(`/tickets/${id}`);
+  revalidatePath("/tickets");
+}
+
+export async function setTicketPending(formData: FormData) {
+  const me = await requireAgent();
+  if (!me) return;
+  const id = Number(formData.get("id"));
+  const status = String(formData.get("status") ?? "");
+  const reason = String(formData.get("reason") ?? "");
+  const note = String(formData.get("note") ?? "").trim() || null;
+  if (!id || !["PENDING", "ON_HOLD"].includes(status) || !reason) return;
+
+  await db.ticket.update({
+    where: { id },
+    data: { status, pendingReason: reason, pendingNote: note },
+  });
+  const reasonLabel = reason.replace(/_/g, " ").toLowerCase();
+  await db.ticketComment.create({
+    data: { ticketId: id, authorId: me.id, isInternal: true, body: `Set to ${status === "ON_HOLD" ? "on hold" : "pending"} — ${reasonLabel}${note ? `: ${note}` : ""}.` },
+  });
+  await writeAudit({ userId: me.id, action: "UPDATE", entity: "Ticket", entityId: id, summary: `Set ${status.toLowerCase()} (${reasonLabel})` });
+  await runAutomations("TICKET_UPDATED", id);
   revalidatePath(`/tickets/${id}`);
   revalidatePath("/tickets");
 }
