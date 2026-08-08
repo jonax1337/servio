@@ -6,6 +6,7 @@ import { db } from "@/lib/db";
 import { getSessionUser } from "@/lib/session";
 import { writeAudit, notify } from "@/lib/audit";
 import { sendMail, tplTicketReceived } from "@/lib/mail";
+import { runAutomations } from "@/lib/automations";
 import { parseFormSchema, validateAnswers, answersToText } from "@/lib/service-forms";
 import { ticketRef } from "@/lib/constants";
 
@@ -84,6 +85,8 @@ export async function createServiceRequest(
   if (me.email) {
     await sendMail({ to: me.email, toName: me.name, entity: "Ticket", entityId: ticket.id, ...tplTicketReceived(ticket) });
   }
+
+  await runAutomations("TICKET_CREATED", ticket.id);
 
   revalidatePath("/portal/tickets");
   redirect(`/portal/tickets/${ticket.id}`);

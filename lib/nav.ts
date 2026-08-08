@@ -16,6 +16,7 @@ import {
   Settings,
   LifeBuoy,
   CheckSquare,
+  Zap,
 } from "lucide-react";
 
 export type NavItem = {
@@ -62,6 +63,7 @@ export const consoleNav: NavGroup[] = [
   {
     label: "Administration",
     items: [
+      { title: "Automations", href: "/automations", icon: Zap, minRole: "MANAGER" },
       { title: "Syncs", href: "/syncs", icon: RefreshCw, minRole: "MANAGER" },
       { title: "API Tokens", href: "/settings/api", icon: KeyRound, minRole: "ADMIN" },
       { title: "Settings", href: "/settings", icon: Settings, minRole: "MANAGER" },

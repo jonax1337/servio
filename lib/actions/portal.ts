@@ -7,6 +7,7 @@ import { db } from "@/lib/db";
 import { getSessionUser } from "@/lib/session";
 import { writeAudit } from "@/lib/audit";
 import { sendMail, tplTicketReceived } from "@/lib/mail";
+import { runAutomations } from "@/lib/automations";
 import { TICKET_TYPES, PRIORITIES } from "@/lib/constants";
 
 export type PortalState = { error?: string; fieldErrors?: Record<string, string[]> } | undefined;
@@ -50,6 +51,8 @@ export async function createPortalTicket(_prev: PortalState, formData: FormData)
   if (me.email) {
     await sendMail({ to: me.email, toName: me.name, entity: "Ticket", entityId: ticket.id, ...tplTicketReceived(ticket) });
   }
+
+  await runAutomations("TICKET_CREATED", ticket.id);
 
   revalidatePath("/portal/tickets");
   redirect(`/portal/tickets/${ticket.id}`);

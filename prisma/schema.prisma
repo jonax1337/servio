@@ -676,6 +676,24 @@ model EmailMessage {
   @@index([createdAt])
 }
 
+model AutomationRule {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  trigger     String   @default("TICKET_CREATED") // TICKET_CREATED | TICKET_UPDATED
+  matchType   String   @default("ALL") // ALL | ANY
+  conditions  String   @default("[]") // JSON: [{ field, op, value }]
+  actions     String   @default("[]") // JSON: [{ type, value }]
+  isActive    Boolean  @default(true)
+  order       Int      @default(0)
+  runCount    Int      @default(0)
+  lastRunAt   DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([trigger, isActive])
+}
+
 model Article {
   id         String   @id @default(cuid())
   title      String

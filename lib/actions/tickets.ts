@@ -16,6 +16,7 @@ async function requireAgent() {
 import {
   sendMail, tplTicketReceived, tplTicketAssigned, tplTicketReply, tplTicketResolved,
 } from "@/lib/mail";
+import { runAutomations } from "@/lib/automations";
 import {
   TICKET_TYPES,
   TICKET_STATUSES,
@@ -84,6 +85,8 @@ export async function createTicket(_prev: ActionState, formData: FormData): Prom
     }
   }
 
+  await runAutomations("TICKET_CREATED", ticket.id);
+
   revalidatePath("/tickets");
   redirect(`/tickets/${ticket.id}`);
 }
@@ -128,6 +131,8 @@ export async function updateTicketField(formData: FormData) {
     await notify(ticket.assigneeId!, { type: "ASSIGNED", title: "Ticket assigned to you", body: ticket.title, entity: "Ticket", entityId: String(ticket.id) });
     await sendMail({ to: ticket.assignee.email, toName: ticket.assignee.name, entity: "Ticket", entityId: ticket.id, ...tplTicketAssigned(ticket, ticket.assignee.name ?? "there") });
   }
+
+  await runAutomations("TICKET_UPDATED", id);
 
   revalidatePath(`/tickets/${id}`);
   revalidatePath("/tickets");
