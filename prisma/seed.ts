@@ -73,7 +73,7 @@ async function main() {
     ["Sofia Rossi", "sofia@servio.dev", "USER", "Designer", "Product"],
   ] as const;
 
-  const users = [];
+  const users: Awaited<ReturnType<typeof db.user.create>>[] = [];
   for (const [name, email, role, title, dept] of people) {
     users.push(
       await db.user.create({
@@ -206,7 +206,7 @@ async function main() {
     ["CLOUD-K8S", "CLOUD", "AKS Cluster", "Microsoft", "Azure West Europe"],
     ["SW-ERP", "SOFTWARE", "ERP Suite 2025", "Acme", "SaaS"],
   ];
-  const assets = [];
+  const assets: Awaited<ReturnType<typeof db.asset.create>>[] = [];
   for (const [tag, type, model, manufacturer, location] of assetDefs) {
     assets.push(
       await db.asset.create({

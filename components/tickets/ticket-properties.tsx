@@ -54,7 +54,7 @@ function Row({
             const fd = new FormData();
             fd.set("id", String(ticketId));
             fd.set("field", field);
-            fd.set("value", v);
+            fd.set("value", (v as string | null) ?? "none");
             start(() => updateTicketField(fd));
           }}
         >

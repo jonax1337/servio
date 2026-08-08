@@ -80,7 +80,7 @@ export function ListToolbar({
             ...Object.fromEntries(f.options.map((o) => [o.value, o.label])),
           }}
           value={sp.get(f.key) ?? "all"}
-          onValueChange={(v) => setParam(f.key, v)}
+          onValueChange={(v) => setParam(f.key, (v as string | null) ?? "all")}
         >
           <SelectTrigger className="w-auto min-w-[9rem]" size="sm">
             <SelectValue placeholder={f.label} />

@@ -21,6 +21,8 @@ import { UserMenu } from "@/components/user-menu";
 
 function label(seg: string) {
   if (/^\d+$/.test(seg)) return `#${seg}`;
+  // cuid-like ids (e.g. cmskaeker0022v6l8mv61vvni) → friendly label
+  if (/^[a-z0-9]{18,}$/i.test(seg) && /\d/.test(seg)) return "Details";
   return seg
     .replace(/-/g, " ")
     .replace(/\b\w/g, (c) => c.toUpperCase());

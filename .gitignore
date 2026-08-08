@@ -45,3 +45,11 @@ dev.db
 dev.db-journal
 *.db
 .env
+
+# playwright mcp
+.playwright-mcp/
+ticket-detail*.png
+changes-detail.png
+sync-detail.png
+asset-detail.png
+portal-home.png
