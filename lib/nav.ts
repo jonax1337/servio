@@ -17,6 +17,7 @@ import {
   CheckSquare,
   Zap,
   MapPin,
+  ShoppingBag,
 } from "lucide-react";
 
 export type NavItem = {
@@ -47,6 +48,7 @@ export const consoleNav: NavGroup[] = [
     label: "Catalog & CMDB",
     items: [
       { title: "Services", href: "/services", icon: LifeBuoy },
+      { title: "Service Catalog", href: "/catalog", icon: ShoppingBag, minRole: "MANAGER" },
       { title: "Assets", href: "/assets", icon: Server },
       { title: "Locations", href: "/locations", icon: MapPin },
       { title: "Categories", href: "/categories", icon: FolderTree },

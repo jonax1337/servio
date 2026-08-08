@@ -14,24 +14,21 @@ export type CatalogState =
   | { error?: string; fieldErrors?: Record<string, string> }
   | undefined;
 
-export async function createServiceRequest(
+export async function createCatalogRequest(
   _prev: CatalogState,
   formData: FormData,
 ): Promise<CatalogState> {
   const me = await getSessionUser();
   if (!me) return { error: "Not authenticated" };
 
-  const serviceId = String(formData.get("serviceId") ?? "");
-  const service = await db.service.findUnique({ where: { id: serviceId } });
-  if (!service || !service.isPublic || !service.isRequestable) {
-    return { error: "This service can't be requested." };
-  }
-  // Fail closed: an approval-gated service without an approver must not be orderable.
-  if (service.requiresApproval && !service.approverId) {
-    return { error: "This service requires approval but has no approver configured. Please contact IT." };
+  const itemId = String(formData.get("catalogItemId") ?? "");
+  const item = await db.catalogItem.findUnique({ where: { id: itemId } });
+  if (!item || !item.isPublished) return { error: "This item can't be requested." };
+  if (item.requiresApproval && !item.approverId) {
+    return { error: "This item requires approval but has no approver configured. Please contact IT." };
   }
 
-  const fields = parseFormSchema(service.formSchema);
+  const fields = parseFormSchema(item.formSchema);
   const data: Record<string, string> = {};
   for (const [k, v] of formData.entries()) if (k.startsWith("f_")) data[k] = String(v);
   const { values, errors } = validateAnswers(fields, data);
@@ -40,44 +37,40 @@ export async function createServiceRequest(
   }
 
   const summary = answersToText(fields, values);
-  const triage = await db.queue.findFirst({ where: { name: "Triage" } });
+  const triage = await db.group.findFirst({ where: { name: "Service Desk" } });
+  const needsApproval = item.requiresApproval && !!item.approverId;
 
-  const needsApproval = service.requiresApproval && !!service.approverId;
   const ticket = await db.ticket.create({
     data: {
-      title: `${service.name} request`,
-      description: `Service request: ${service.name}\n\n${summary || "(no additional details)"}`,
+      title: `${item.name} request`,
+      description: `Catalog request: ${item.name}\n\n${summary || "(no additional details)"}`,
       type: "REQUEST",
       status: needsApproval ? "PENDING" : "NEW",
       source: "PORTAL",
       requesterId: me.id,
-      serviceId: service.id,
-      categoryId: service.categoryId,
-      slaId: service.slaId,
-      queueId: triage?.id ?? null,
+      catalogItemId: item.id,
+      categoryId: item.categoryId,
+      groupId: triage?.id ?? null,
       formData: JSON.stringify(values),
       approvalState: needsApproval ? "PENDING" : null,
     },
   });
 
-  await writeAudit({ userId: me.id, action: "CREATE", entity: "Ticket", entityId: ticket.id, summary: `Ordered "${service.name}" from the catalog` });
+  await writeAudit({ userId: me.id, action: "CREATE", entity: "Ticket", entityId: ticket.id, summary: `Ordered "${item.name}" from the catalog` });
 
-  if (needsApproval && service.approverId) {
-    await db.ticketApproval.create({ data: { ticketId: ticket.id, approverId: service.approverId } });
-    await notify(service.approverId, {
-      type: "APPROVAL",
-      title: "Approval needed",
-      body: `${me.name} requested ${service.name} (${ticketRef(ticket.id, "REQUEST")})`,
-      entity: "Ticket",
-      entityId: String(ticket.id),
+  if (needsApproval && item.approverId) {
+    await db.ticketApproval.create({ data: { ticketId: ticket.id, approverId: item.approverId } });
+    await notify(item.approverId, {
+      type: "APPROVAL", title: "Approval needed",
+      body: `${me.name} requested ${item.name} (${ticketRef(ticket.id, "REQUEST")})`,
+      entity: "Ticket", entityId: String(ticket.id),
     });
-    const approver = await db.user.findUnique({ where: { id: service.approverId } });
+    const approver = await db.user.findUnique({ where: { id: item.approverId } });
     if (approver?.email) {
       await sendMail({
-        to: approver.email, toName: approver.name, entity: "Ticket", entityId: ticket.id,
-        template: "approval_request",
-        subject: `[${ticketRef(ticket.id, "REQUEST")}] Approval needed: ${service.name}`,
-        body: `Hi ${approver.name ?? "there"},\n\n${me.name} has requested "${service.name}".\n\n${summary}\n\nPlease review and approve or reject it in Servio under Approvals.\n\n— Servio`,
+        to: approver.email, toName: approver.name, entity: "Ticket", entityId: ticket.id, template: "approval_request",
+        subject: `[${ticketRef(ticket.id, "REQUEST")}] Approval needed: ${item.name}`,
+        body: `Hi ${approver.name ?? "there"},\n\n${me.name} has requested "${item.name}".\n\n${summary}\n\nPlease review and approve or reject it in Servio under Approvals.\n\n— Servio`,
       });
     }
   }
@@ -85,8 +78,7 @@ export async function createServiceRequest(
   if (me.email) {
     await sendMail({ to: me.email, toName: me.name, entity: "Ticket", entityId: ticket.id, ...tplTicketReceived(ticket) });
   }
-
-  await runAutomations("TICKET_CREATED", ticket.id);
+  if (!needsApproval) await runAutomations("TICKET_CREATED", ticket.id);
 
   revalidatePath("/portal/tickets");
   redirect(`/portal/tickets/${ticket.id}`);

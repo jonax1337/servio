@@ -2,7 +2,7 @@
 
 import { useActionState } from "react";
 import { Loader2, Send, ShieldCheck } from "lucide-react";
-import { createServiceRequest, type CatalogState } from "@/lib/actions/catalog";
+import { createCatalogRequest, type CatalogState } from "@/lib/actions/catalog";
 import type { ServiceField } from "@/lib/service-forms";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -22,12 +22,12 @@ export function ServiceRequestForm({
   fields: ServiceField[];
   requiresApproval: boolean;
 }) {
-  const [state, action, pending] = useActionState<CatalogState, FormData>(createServiceRequest, undefined);
+  const [state, action, pending] = useActionState<CatalogState, FormData>(createCatalogRequest, undefined);
   const fe = state?.fieldErrors ?? {};
 
   return (
     <form action={action} className="grid gap-5">
-      <input type="hidden" name="serviceId" value={serviceId} />
+      <input type="hidden" name="catalogItemId" value={serviceId} />
 
       {state?.error ? (
         <p className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">

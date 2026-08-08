@@ -24,7 +24,6 @@ export async function GET(req: Request) {
       description: s.description,
       status: s.status,
       criticality: s.criticality,
-      is_public: s.isPublic,
       category: s.category?.name ?? null,
       sla: s.sla ? { name: s.sla.name, response_mins: s.sla.responseMins, resolve_mins: s.sla.resolveMins } : null,
     })),

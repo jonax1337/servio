@@ -4,17 +4,13 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { getSessionUser, isAgent, hasRole, type Role } from "@/lib/session";
+import { getSessionUser, isAgent, type Role } from "@/lib/session";
 import { writeAudit } from "@/lib/audit";
 import { SERVICE_STATUSES, CRITICALITIES } from "@/lib/constants";
 
 async function requireAgent() {
   const me = await getSessionUser();
   return me && isAgent(me.role as Role) ? me : null;
-}
-async function requireManager() {
-  const me = await getSessionUser();
-  return me && hasRole(me.role as Role, "MANAGER") ? me : null;
 }
 
 const optionalId = z
@@ -30,10 +26,6 @@ const createSchema = z.object({
   categoryId: optionalId,
   ownerId: optionalId,
   slaId: optionalId,
-  isPublic: z
-    .string()
-    .optional()
-    .transform((v) => v === "on"),
 });
 
 export type ActionState =
@@ -96,41 +88,4 @@ export async function updateServiceField(formData: FormData) {
   });
   revalidatePath(`/services/${id}`);
   revalidatePath("/services");
-}
-
-export async function updateServiceForm(formData: FormData) {
-  // Managing the request form (approver, schema, approval gate) is privileged.
-  const me = await requireManager();
-  if (!me) return;
-  const id = String(formData.get("id") ?? "");
-  if (!id) return;
-  const schema = String(formData.get("formSchema") ?? "[]");
-  // validate JSON
-  let normalized = "[]";
-  try {
-    const arr = JSON.parse(schema);
-    normalized = JSON.stringify(Array.isArray(arr) ? arr : []);
-  } catch {
-    normalized = "[]";
-  }
-  const requiresApproval = formData.get("requiresApproval") === "true";
-  const isRequestable = formData.get("isRequestable") === "true";
-  const approverIdRaw = String(formData.get("approverId") ?? "");
-  // Only an agent/manager/admin may be set as an approver.
-  let approverId: string | null = null;
-  if (approverIdRaw && approverIdRaw !== "none") {
-    const candidate = await db.user.findUnique({ where: { id: approverIdRaw }, select: { role: true } });
-    if (candidate && isAgent(candidate.role as Role)) approverId = approverIdRaw;
-  }
-  await db.service.update({
-    where: { id },
-    data: {
-      formSchema: normalized,
-      requiresApproval,
-      isRequestable,
-      approverId,
-    },
-  });
-  await writeAudit({ userId: me.id, action: "UPDATE", entity: "Service", entityId: id, summary: "Updated request form" });
-  revalidatePath(`/services/${id}`);
 }

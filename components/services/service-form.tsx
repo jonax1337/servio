@@ -7,7 +7,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Switch } from "@/components/ui/switch";
 import { ComboField } from "@/components/combo-field";
 import type { ComboOption } from "@/components/combobox";
 import {
@@ -122,16 +121,6 @@ export function ServiceForm({ options }: { options: FormOptions }) {
         <Field label="SLA">
           <ComboField name="slaId" options={slaOpts} includeNone noneLabel="No SLA" />
         </Field>
-      </div>
-
-      <div className="flex items-center justify-between rounded-lg border px-3 py-2.5">
-        <div className="grid gap-0.5">
-          <Label htmlFor="isPublic">Public in service catalog</Label>
-          <p className="text-xs text-muted-foreground">
-            Show this service to end users in the self-service portal.
-          </p>
-        </div>
-        <Switch id="isPublic" name="isPublic" defaultChecked />
       </div>
 
       <div className="flex items-center justify-end gap-2 border-t pt-4">

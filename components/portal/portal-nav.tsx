@@ -6,9 +6,9 @@ import { cn } from "@/lib/utils";
 
 const items = [
   { href: "/portal", label: "Home" },
-  { href: "/portal/new", label: "New request" },
+  { href: "/portal/catalog", label: "Catalog" },
+  { href: "/portal/new", label: "Report an issue" },
   { href: "/portal/tickets", label: "My tickets" },
-  { href: "/portal/services", label: "Services" },
   { href: "/portal/knowledge", label: "Knowledge" },
 ];
 

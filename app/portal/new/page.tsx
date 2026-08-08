@@ -22,7 +22,6 @@ export default async function PortalNewPage({
       orderBy: { name: "asc" },
     }),
     db.service.findMany({
-      where: { isPublic: true },
       select: { id: true, name: true },
       orderBy: { name: "asc" },
     }),

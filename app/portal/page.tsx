@@ -14,13 +14,13 @@ export const dynamic = "force-dynamic";
 
 export default async function PortalHome() {
   const me = await getSessionUser();
-  const [myTickets, services, articles] = await Promise.all([
+  const [myTickets, catalog, articles] = await Promise.all([
     db.ticket.findMany({
       where: { requesterId: me?.id, status: { notIn: ["CLOSED", "CANCELLED"] } },
       orderBy: { updatedAt: "desc" },
       take: 5,
     }),
-    db.service.findMany({ where: { isPublic: true }, orderBy: { name: "asc" }, take: 6 }),
+    db.catalogItem.findMany({ where: { isPublished: true }, orderBy: [{ order: "asc" }, { name: "asc" }], take: 6 }),
     db.article.findMany({ where: { published: true }, orderBy: { views: "desc" }, take: 5 }),
   ]);
 
@@ -41,8 +41,8 @@ export default async function PortalHome() {
             <LinkButton href="/portal/new?type=INCIDENT" size="lg">
               <AlertCircle className="size-4" /> Report an issue
             </LinkButton>
-            <LinkButton href="/portal/new?type=REQUEST" size="lg" variant="outline">
-              <Sparkles className="size-4" /> Request a service
+            <LinkButton href="/portal/catalog" size="lg" variant="outline">
+              <Sparkles className="size-4" /> Browse the catalog
             </LinkButton>
           </div>
         </div>
@@ -124,24 +124,24 @@ export default async function PortalHome() {
             <LifeBuoy className="size-4 text-muted-foreground" />
             <h2 className="font-display text-lg font-semibold">Service catalog</h2>
           </div>
-          <Link href="/portal/services" className="text-sm text-primary hover:underline">
+          <Link href="/portal/catalog" className="text-sm text-primary hover:underline">
             Browse all
           </Link>
         </div>
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {services.map((s) => (
-            <Link key={s.id} href={`/portal/new?service=${s.id}`}>
+          {catalog.map((it) => (
+            <Link key={it.id} href={`/portal/request/${it.id}`}>
               <Card className="h-full transition-colors hover:border-primary/40">
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2 text-base">
                     <span className="grid size-8 place-items-center rounded-lg bg-primary/10 text-primary">
                       <LifeBuoy className="size-4" />
                     </span>
-                    {s.name}
+                    {it.name}
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="text-sm text-muted-foreground">
-                  <p className="line-clamp-2">{s.description}</p>
+                  <p className="line-clamp-2">{it.shortDescription ?? it.description}</p>
                 </CardContent>
               </Card>
             </Link>

@@ -187,7 +187,7 @@ async function main() {
         data: {
           name: name as string, icon: icon as string, status: status as string,
           criticality: crit as string, categoryId: categoryId as string, slaId: slaId as string,
-          isPublic: true, ownerId: agents[i % agents.length].id,
+          ownerId: agents[i % agents.length].id,
           description: `${name} — provided by IT.`,
         },
       }),

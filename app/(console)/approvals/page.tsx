@@ -24,7 +24,7 @@ export default async function ApprovalsPage() {
     },
     orderBy: { createdAt: "asc" },
     include: {
-      ticket: { include: { requester: true, service: true } },
+      ticket: { include: { requester: true, catalogItem: true } },
     },
   });
 
@@ -45,7 +45,7 @@ export default async function ApprovalsPage() {
         ) : (
           pending.map((a) => {
             const t = a.ticket;
-            const fields = parseFormSchema(t.service?.formSchema);
+            const fields = parseFormSchema(t.catalogItem?.formSchema);
             let answers = "";
             try {
               answers = answersToText(fields, JSON.parse(t.formData ?? "{}"));
@@ -60,7 +60,7 @@ export default async function ApprovalsPage() {
                       <Link href={`/tickets/${t.id}`} className="font-mono text-xs text-muted-foreground hover:text-foreground">
                         {ticketRef(t.id, t.type)}
                       </Link>
-                      <span className="font-medium">{t.service?.name ?? t.title}</span>
+                      <span className="font-medium">{t.catalogItem?.name ?? t.title}</span>
                     </div>
                     <p className="mt-1 flex items-center gap-1.5 text-sm text-muted-foreground">
                       <User className="size-3.5" />

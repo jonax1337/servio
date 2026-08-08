@@ -52,7 +52,7 @@ model User {
   approvals       ChangeApproval[]
   ownedAssets     Asset[]     @relation("AssetOwner")
   ownedServices   Service[]   @relation("ServiceOwner")
-  approverServices Service[]  @relation("ServiceApprover")
+  catalogApprovals CatalogItem[] @relation("CatalogApprover")
   ticketApprovals TicketApproval[] @relation("TicketApprover")
   managedGroups   Group[]     @relation("GroupManager")
   apiTokens       ApiToken[]
@@ -167,6 +167,7 @@ model Category {
   changes  Change[]
   services Service[]
   articles Article[]
+  catalogItems CatalogItem[]
 
   @@unique([name, parentId])
   @@index([parentId])
@@ -192,11 +193,6 @@ model Service {
   status      String  @default("OPERATIONAL") // OPERATIONAL | DEGRADED | OUTAGE | MAINTENANCE | RETIRED
   criticality String  @default("MEDIUM") // LOW | MEDIUM | HIGH | CRITICAL
   icon        String?
-  isPublic    Boolean @default(true) // shown in self-service catalog
-  isRequestable   Boolean @default(false) // can be ordered from the catalog
-  formSchema      String  @default("[]") // JSON: array of form field definitions
-  requiresApproval Boolean @default(false)
-  approverId      String?
   categoryId  String?
   ownerId     String?
   slaId       String?
@@ -205,9 +201,31 @@ model Service {
 
   category Category? @relation(fields: [categoryId], references: [id])
   owner    User?     @relation("ServiceOwner", fields: [ownerId], references: [id])
-  approver User?     @relation("ServiceApprover", fields: [approverId], references: [id])
   sla      SLA?      @relation(fields: [slaId], references: [id])
   tickets  Ticket[]
+}
+
+model CatalogItem {
+  id               String   @id @default(cuid())
+  name             String
+  description      String?
+  shortDescription String?
+  icon             String?
+  categoryId       String?
+  formSchema       String   @default("[]") // JSON: array of form field definitions
+  requiresApproval Boolean  @default(false)
+  approverId       String?
+  estimatedDays    Int?
+  isPublished      Boolean  @default(true)
+  order            Int      @default(0)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  category Category? @relation(fields: [categoryId], references: [id])
+  approver User?     @relation("CatalogApprover", fields: [approverId], references: [id])
+  tickets  Ticket[]
+
+  @@index([isPublished])
 }
 
 // ---------------------------------------------------------------------------
@@ -237,6 +255,7 @@ model Ticket {
   queueId     String?
   categoryId  String?
   serviceId   String?
+  catalogItemId String?
   slaId       String?
   problemId   Int?
   changeId    Int?
@@ -256,6 +275,7 @@ model Ticket {
   queue     Queue?    @relation(fields: [queueId], references: [id])
   category  Category? @relation(fields: [categoryId], references: [id])
   service   Service?  @relation(fields: [serviceId], references: [id])
+  catalogItem CatalogItem? @relation(fields: [catalogItemId], references: [id])
   sla       SLA?      @relation(fields: [slaId], references: [id])
   problem   Problem?  @relation(fields: [problemId], references: [id])
   change    Change?   @relation(fields: [changeId], references: [id])
