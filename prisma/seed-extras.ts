@@ -29,9 +29,9 @@ async function main() {
   const approver = (await db.user.findFirst({ where: { role: "MANAGER" } })) ?? (await db.user.findFirst({ where: { role: "ADMIN" } }));
   const catId = async (name: string) => (await db.category.findFirst({ where: { name } }))?.id ?? null;
 
-  const items: Array<{ name: string; short: string; desc: string; cat: string; days: number; approval: boolean; order: number; fields: unknown }> = [
+  const items: Array<{ name: string; icon: string; short: string; desc: string; cat: string; days: number; approval: boolean; order: number; fields: unknown }> = [
     {
-      name: "New laptop", short: "Request a standard or specialised laptop.", desc: "Order a company laptop for a new starter or as a replacement.",
+      name: "New laptop", icon: "Laptop", short: "Request a standard or specialised laptop.", desc: "Order a company laptop for a new starter or as a replacement.",
       cat: "Laptop", days: 3, approval: true, order: 0,
       fields: [
         { key: "device", label: "Which device do you need?", type: "select", required: true, options: ["Standard laptop", "MacBook Pro 14\"", "Developer workstation"] },
@@ -40,7 +40,7 @@ async function main() {
       ],
     },
     {
-      name: "New employee onboarding", short: "Set up accounts & equipment for a new hire.", desc: "Kick off IT onboarding for a new team member.",
+      name: "New employee onboarding", icon: "UserPlus", short: "Set up accounts & equipment for a new hire.", desc: "Kick off IT onboarding for a new team member.",
       cat: "Account", days: 5, approval: true, order: 1,
       fields: [
         { key: "name", label: "New employee full name", type: "text", required: true },
@@ -50,7 +50,7 @@ async function main() {
       ],
     },
     {
-      name: "Access request", short: "Request access to a system or application.", desc: "Ask for access to an internal system with the right permission level.",
+      name: "Access request", icon: "KeyRound", short: "Request access to a system or application.", desc: "Ask for access to an internal system with the right permission level.",
       cat: "Permissions", days: 1, approval: true, order: 2,
       fields: [
         { key: "system", label: "System / application", type: "select", required: true, options: ["ERP System", "CRM", "Finance shared drive", "Admin console"] },
@@ -59,11 +59,11 @@ async function main() {
       ],
     },
     {
-      name: "VPN access", short: "Get connected to the corporate VPN.", desc: "Request VPN access so you can work securely from anywhere.",
+      name: "VPN access", icon: "ShieldCheck", short: "Get connected to the corporate VPN.", desc: "Request VPN access so you can work securely from anywhere.",
       cat: "VPN", days: 1, approval: false, order: 3, fields: [],
     },
     {
-      name: "Software installation", short: "Request software for your device.", desc: "Ask IT to install approved software on your machine.",
+      name: "Software installation", icon: "Package", short: "Request software for your device.", desc: "Ask IT to install approved software on your machine.",
       cat: "Software", days: 2, approval: false, order: 4,
       fields: [
         { key: "software", label: "Which software?", type: "text", required: true, placeholder: "e.g. Adobe Creative Cloud" },
@@ -71,7 +71,7 @@ async function main() {
       ],
     },
     {
-      name: "Monitor & peripherals", short: "Order a monitor, dock or accessories.", desc: "Request additional hardware for your desk.",
+      name: "Monitor & peripherals", icon: "Monitor", short: "Order a monitor, dock or accessories.", desc: "Request additional hardware for your desk.",
       cat: "Desktop", days: 3, approval: false, order: 5,
       fields: [
         { key: "item", label: "What do you need?", type: "select", required: true, options: ["External monitor", "Docking station", "Keyboard & mouse", "Headset"] },
@@ -82,7 +82,7 @@ async function main() {
   for (const it of items) {
     await db.catalogItem.create({
       data: {
-        name: it.name, shortDescription: it.short, description: it.desc,
+        name: it.name, icon: it.icon, shortDescription: it.short, description: it.desc,
         categoryId: await catId(it.cat), estimatedDays: it.days, order: it.order,
         isPublished: true, requiresApproval: it.approval, approverId: it.approval ? approver?.id : null,
         formSchema: JSON.stringify(it.fields),

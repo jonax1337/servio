@@ -8,6 +8,7 @@ import { ToneBadge } from "@/components/status-badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { CatalogEditor } from "@/components/catalog/catalog-editor";
+import { CatalogIcon } from "@/components/catalog/catalog-icon";
 import { PublishToggle } from "@/components/catalog/publish-toggle";
 import { deleteCatalogItem } from "@/lib/actions/catalog-admin";
 import { parseFormSchema } from "@/lib/service-forms";
@@ -47,6 +48,9 @@ export default async function CatalogAdminPage() {
               <CardContent className="flex flex-col gap-3 pt-6 sm:flex-row sm:items-start sm:justify-between">
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
+                    <span className="grid size-7 place-items-center rounded-md bg-primary/10 text-primary">
+                      <CatalogIcon name={it.icon} className="size-4" />
+                    </span>
                     <span className="font-medium">{it.name}</span>
                     {it.category ? <ToneBadge meta={{ label: it.category.name, tone: "indigo" }} icon={false} /> : null}
                     {it.requiresApproval ? <ToneBadge meta={{ label: "Approval", tone: "warning" }} icon={false} /> : null}

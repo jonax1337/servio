@@ -2,6 +2,7 @@ import Link from "next/link";
 import {
   AlertCircle, Sparkles, LifeBuoy, BookOpen, ArrowRight, Ticket as TicketIcon,
 } from "lucide-react";
+import { CatalogIcon } from "@/components/catalog/catalog-icon";
 import { db } from "@/lib/db";
 import { getSessionUser } from "@/lib/session";
 import { LinkButton } from "@/components/link-button";
@@ -135,7 +136,7 @@ export default async function PortalHome() {
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2 text-base">
                     <span className="grid size-8 place-items-center rounded-lg bg-primary/10 text-primary">
-                      <LifeBuoy className="size-4" />
+                      <CatalogIcon name={it.icon} className="size-4" />
                     </span>
                     {it.name}
                   </CardTitle>

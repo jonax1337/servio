@@ -1,9 +1,10 @@
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
-import { ArrowLeft, ShoppingBag, Clock } from "lucide-react";
+import { ArrowLeft, Clock } from "lucide-react";
 import { db } from "@/lib/db";
 import { requireUser } from "@/lib/session";
 import { parseFormSchema } from "@/lib/service-forms";
+import { CatalogIcon } from "@/components/catalog/catalog-icon";
 import { LinkButton } from "@/components/link-button";
 import { Card, CardContent } from "@/components/ui/card";
 import { ServiceRequestForm } from "@/components/portal/service-request-form";
@@ -39,8 +40,8 @@ export default async function CatalogRequestPage({
       </LinkButton>
 
       <div className="mb-6 flex items-start gap-3">
-        <span className="grid size-11 place-items-center rounded-xl bg-primary/10 text-primary">
-          <ShoppingBag className="size-5" />
+        <span className="grid size-11 place-items-center rounded-xl bg-gradient-to-br from-primary/20 to-primary/5 text-primary ring-1 ring-primary/10">
+          <CatalogIcon name={item.icon} className="size-5" />
         </span>
         <div>
           <h1 className="font-display text-2xl font-semibold tracking-tight">{item.name}</h1>

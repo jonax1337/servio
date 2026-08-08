@@ -18,6 +18,8 @@ import {
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger,
 } from "@/components/ui/dialog";
+import { CatalogIcon, CATALOG_ICON_NAMES } from "@/components/catalog/catalog-icon";
+import { cn } from "@/lib/utils";
 
 type Opt = { value: string; label: string }[];
 export type CatalogItemData = {
@@ -26,6 +28,27 @@ export type CatalogItemData = {
   isPublished: boolean; requiresApproval: boolean; approverId: string | null;
   fields: ServiceField[];
 };
+
+function IconPicker({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  return (
+    <div className="flex flex-wrap gap-1.5 rounded-lg border p-2">
+      {CATALOG_ICON_NAMES.map((n) => (
+        <button
+          key={n}
+          type="button"
+          aria-label={n}
+          onClick={() => onChange(n)}
+          className={cn(
+            "grid size-9 place-items-center rounded-md border transition-colors",
+            value === n ? "border-primary bg-primary/10 text-primary" : "border-transparent text-muted-foreground hover:bg-muted",
+          )}
+        >
+          <CatalogIcon name={n} className="size-4.5" />
+        </button>
+      ))}
+    </div>
+  );
+}
 
 function slug(s: string) {
   return s.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "") || "field";
@@ -45,6 +68,7 @@ export function CatalogEditor({
     undefined,
   );
 
+  const [icon, setIcon] = useState(item?.icon ?? "ShoppingBag");
   const [categoryId, setCategoryId] = useState(item?.categoryId ?? "none");
   const [approverId, setApproverId] = useState(item?.approverId ?? "none");
   const [isPublished, setIsPublished] = useState(item?.isPublished ?? true);
@@ -70,6 +94,7 @@ export function CatalogEditor({
 
         <form action={async (fd) => { await action(fd); setOpen(false); }} className="grid gap-5">
           {item ? <input type="hidden" name="id" value={item.id} /> : null}
+          <input type="hidden" name="icon" value={icon} />
           <input type="hidden" name="categoryId" value={categoryId} />
           <input type="hidden" name="approverId" value={approverId} />
           <input type="hidden" name="isPublished" value={String(isPublished)} />
@@ -90,6 +115,10 @@ export function CatalogEditor({
             <div className="grid gap-1.5 sm:col-span-2">
               <Label>Full description</Label>
               <Textarea name="description" defaultValue={item?.description ?? ""} className="min-h-20" />
+            </div>
+            <div className="grid gap-1.5 sm:col-span-2">
+              <Label>Icon</Label>
+              <IconPicker value={icon} onChange={setIcon} />
             </div>
             <div className="grid gap-1.5">
               <Label>Category</Label>
