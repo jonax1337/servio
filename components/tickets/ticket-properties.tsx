@@ -87,8 +87,7 @@ export function TicketProperties({
     none("Unassigned"),
     ...options.agents.map((a) => ({ value: a.id, label: a.name ?? a.email, avatar: initials(a.name ?? a.email), hint: a.email })),
   ];
-  const groupOpts: ComboOption[] = [none("No group"), ...options.groups.map((g) => ({ value: g.id, label: g.name }))];
-  const queueOpts: ComboOption[] = [none("No queue"), ...options.queues.map((q) => ({ value: q.id, label: q.name }))];
+  const groupOpts: ComboOption[] = [none("No team"), ...options.groups.map((g) => ({ value: g.id, label: g.name }))];
   const catOpts: ComboOption[] = [none("No category"), ...options.categories.map((c) => ({ value: c.id, label: c.name }))];
   const svcOpts: ComboOption[] = [none("No service"), ...options.services.map((s) => ({ value: s.id, label: s.name }))];
 
@@ -121,8 +120,7 @@ export function TicketProperties({
       />
       <Prop label="Priority" ticketId={ticket.id} field="priority" value={ticket.priority} options={prioOpts} />
       <Prop label="Assignee" ticketId={ticket.id} field="assigneeId" value={ticket.assigneeId} options={agentOpts} searchable placeholder="Unassigned" />
-      <Prop label="Group" ticketId={ticket.id} field="groupId" value={ticket.groupId} options={groupOpts} searchable placeholder="No group" />
-      <Prop label="Queue" ticketId={ticket.id} field="queueId" value={ticket.queueId} options={queueOpts} searchable placeholder="No queue" />
+      <Prop label="Team" ticketId={ticket.id} field="groupId" value={ticket.groupId} options={groupOpts} searchable placeholder="No team" />
       <Prop label="Category" ticketId={ticket.id} field="categoryId" value={ticket.categoryId} options={catOpts} searchable placeholder="No category" />
       <Prop label="Service" ticketId={ticket.id} field="serviceId" value={ticket.serviceId} options={svcOpts} searchable placeholder="No service" />
       <div className="grid grid-cols-2 gap-3">

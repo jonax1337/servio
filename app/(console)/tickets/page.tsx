@@ -50,7 +50,7 @@ export default async function TicketsPage({
   const status = getParam(sp, "status");
   const priority = getParam(sp, "priority");
   const type = getParam(sp, "type");
-  const queue = getParam(sp, "queue");
+  const group = getParam(sp, "group");
   const assignee = getParam(sp, "assignee");
   const opts = await getFormOptions();
 
@@ -60,7 +60,7 @@ export default async function TicketsPage({
   else if (status && status !== "all") where.status = status;
   if (priority && priority !== "all") where.priority = priority;
   if (type && type !== "all") where.type = type;
-  if (queue && queue !== "all") where.queueId = queue;
+  if (group && group !== "all") where.groupId = group;
   if (assignee === "unassigned") where.assigneeId = null;
   else if (assignee && assignee !== "all") where.assigneeId = assignee;
 
@@ -68,7 +68,7 @@ export default async function TicketsPage({
     db.ticket.count({ where }),
     db.ticket.findMany({
       where,
-      include: { assignee: true, requester: true, queue: true, category: true },
+      include: { assignee: true, requester: true, group: true, category: true },
       orderBy: [{ updatedAt: "desc" }],
       skip: (page - 1) * PAGE_SIZE,
       take: PAGE_SIZE,
@@ -86,7 +86,7 @@ export default async function TicketsPage({
     },
     { key: "priority", label: "Priority", options: PRIORITIES.map((p) => ({ value: p, label: PRIORITY_META[p].label })) },
     { key: "type", label: "Type", options: TICKET_TYPES.map((t) => ({ value: t, label: TICKET_TYPE_META[t].label })) },
-    { key: "queue", label: "Queue", options: opts.queues.map((qq) => ({ value: qq.id, label: qq.name })) },
+    { key: "group", label: "Team", options: opts.groups.map((g) => ({ value: g.id, label: g.name })) },
     {
       key: "assignee",
       label: "Assignee",
@@ -102,7 +102,7 @@ export default async function TicketsPage({
       <PageHeader
         icon={TicketIcon}
         title="Tickets"
-        description="Incidents and service requests across all queues."
+        description="Incidents and service requests across all teams."
       >
         <LinkButton href="/tickets/new">
           <Plus className="size-4" /> New ticket

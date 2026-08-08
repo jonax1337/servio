@@ -47,7 +47,6 @@ export function TicketForm({
   const userOpts: ComboOption[] = requesters.map((u) => ({ value: u.id, label: u.name ?? u.email, avatar: initials(u.name ?? u.email), hint: u.email }));
   const agentOpts: ComboOption[] = options.agents.map((a) => ({ value: a.id, label: a.name ?? a.email, avatar: initials(a.name ?? a.email), hint: a.email }));
   const groupOpts: ComboOption[] = options.groups.map((g) => ({ value: g.id, label: g.name }));
-  const queueOpts: ComboOption[] = options.queues.map((q) => ({ value: q.id, label: q.name }));
   const catOpts: ComboOption[] = options.categories.map((c) => ({ value: c.id, label: c.name }));
   const svcOpts: ComboOption[] = options.services.map((s) => ({ value: s.id, label: s.name }));
 
@@ -81,8 +80,7 @@ export function TicketForm({
         <Field label="Assignee">
           <ComboField name="assigneeId" defaultValue={currentUserId} options={agentOpts} includeNone noneLabel="Unassigned" />
         </Field>
-        <Field label="Group"><ComboField name="groupId" options={groupOpts} includeNone noneLabel="No group" /></Field>
-        <Field label="Queue"><ComboField name="queueId" options={queueOpts} includeNone noneLabel="No queue" /></Field>
+        <Field label="Team"><ComboField name="groupId" options={groupOpts} includeNone noneLabel="No team" /></Field>
         <Field label="Category"><ComboField name="categoryId" options={catOpts} includeNone noneLabel="No category" /></Field>
         <Field label="Service"><ComboField name="serviceId" options={svcOpts} includeNone noneLabel="No service" /></Field>
       </div>

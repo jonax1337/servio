@@ -38,7 +38,7 @@ export const consoleNav: NavGroup[] = [
     label: "Service Operations",
     items: [
       { title: "Tickets", href: "/tickets", icon: Ticket },
-      { title: "Queues", href: "/queues", icon: Inbox },
+      { title: "Board", href: "/queues", icon: Inbox },
       { title: "Problems", href: "/problems", icon: AlertTriangle },
       { title: "Changes", href: "/changes", icon: GitPullRequestArrow },
       { title: "Approvals", href: "/approvals", icon: CheckSquare },
