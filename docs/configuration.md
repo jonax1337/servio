@@ -6,8 +6,8 @@ config file. Copy [`../.env.example`](../.env.example) to `.env` and edit it.
 
 Servio is designed to run with **zero required setup for local development**:
 with a fresh checkout you only need `DATABASE_URL` and `AUTH_SECRET`. Every
-integration (SSO, SMTP, non-local storage) is optional and degrades gracefully
-when left unconfigured.
+integration (SSO, SMTP, AI/Vio, non-local storage) is optional and degrades
+gracefully when left unconfigured.
 
 See also: [development.md](development.md) for the local dev loop, and
 [deployment.md](deployment.md) for hardening these values in production.
@@ -52,6 +52,17 @@ _(not in `.env.example`)_ are real but undocumented in the sample file.
 | `STORAGE_DRIVER` | No | `fs` | Blob storage driver. Only `fs` is implemented; `s3` and `vercel-blob` are seams in [`../lib/storage.ts`](../lib/storage.ts). An unknown value throws at startup. |
 | `UPLOAD_DIR` | No | `./.uploads` | Filesystem root for the `fs` driver. **Must stay outside `./public`** — see [File storage](#file-storage--attachments). |
 | `MAX_UPLOAD_MB` | No | `15` | Per-file upload cap in MB. [`../lib/files.ts`](../lib/files.ts) derives `MAX_UPLOAD_BYTES` from it. |
+| `AI_PROVIDER` | No | `anthropic` | Vio's AI backend: `anthropic` \| `openai` \| `ollama` \| `claude-code`. See [AI service agent (Vio)](#ai-service-agent-vio). |
+| `AI_ALLOW_EXTERNAL` | No | `false` | **Privacy gate.** Must be exactly `"true"` to allow an external provider (`anthropic`/`openai`); `ollama`/`claude-code` are not gated. |
+| `AI_MODEL` | No | provider default | Explicit model id. Blank falls back to `claude-opus-4-8` / `gpt-4o` / `$OLLAMA_MODEL`. |
+| `AI_MAX_OUTPUT_TOKENS` | No | `1024` | Cap on AI output tokens per call. |
+| `AI_TEASER` | No | `false` | When AI is **off**, still show the AI buttons as a disabled preview (a "ask your admin" nudge). |
+| `ANTHROPIC_API_KEY` | No | — | Anthropic key. Secret — encrypted at rest when set via Settings. Only used when `AI_PROVIDER=anthropic` **and** the gate is open. |
+| `OPENAI_API_KEY` | No | — | OpenAI (compatible) key. Secret. Only used when `AI_PROVIDER=openai` **and** the gate is open. |
+| `OPENAI_BASE_URL` _(not in `.env.example`)_ | No | — | Override the OpenAI endpoint to reach any OpenAI-compatible cloud (OpenAI, OpenRouter, Moonshot/Kimi, Zhipu/GLM…). |
+| `OLLAMA_BASE_URL` | No | `http://localhost:11434/v1` | Local Ollama endpoint (OpenAI-compatible). No key required. |
+| `OLLAMA_MODEL` | No | `llama3.1` | Local Ollama model id. |
+| `SETTINGS_ENCRYPTION_KEY` | Recommended | — | 32-byte key (base64/hex) that encrypts secret settings (SMTP password, AI keys) stored in the DB. Bootstrap secret — `.env`-only. |
 | `API_CORS_ORIGIN` _(not in `.env.example`)_ | No | `*` | Allowed origin for the bearer-token REST API responses. Read in [`../lib/api.ts`](../lib/api.ts). Lock this down in production — see [rest-api.md](rest-api.md). |
 | `NODE_ENV` | No | — | Standard Node/Next env. Toggles Prisma query logging ([`../lib/db.ts`](../lib/db.ts)) and the HMR-safe singleton guards in `lib/db.ts` / `lib/storage.ts`. |
 
@@ -206,6 +217,53 @@ Details verified in code:
 
 ---
 
+## AI service agent (Vio)
+
+Vio, the built-in AI agent, is **optional and off by default**. Its behaviour is defined
+in [`../lib/ai.ts`](../lib/ai.ts) and resolved through `lib/settings` (a DB `AppSetting`
+row overrides `process.env`), so an admin can configure it entirely from
+**Settings › Vio (AI assistant)**. This page is the environment reference; for what Vio
+*does* (tools, the approve-first flow, the file map), see **[ai.md](ai.md)**.
+
+### Choosing a provider
+
+```dotenv
+AI_PROVIDER="anthropic"   # anthropic | openai | ollama | claude-code
+```
+
+| Provider | Runs | Key | Gated by `AI_ALLOW_EXTERNAL`? |
+| --- | --- | --- | --- |
+| `ollama` | **Local, on-box** | none | No (self-authorized) |
+| `anthropic` | External API | `ANTHROPIC_API_KEY` | **Yes** |
+| `openai` | External API | `OPENAI_API_KEY` | **Yes** |
+| `claude-code` | Local `claude` CLI (your Pro/Max login) | none | No (self-authorized) |
+
+### The privacy gate
+
+`AI_ALLOW_EXTERNAL` is a hard backstop. Unless it is exactly `"true"`, `assertPrivacy()`
+in `lib/ai.ts` **throws before any network call** for an external provider — so a
+misconfiguration can never send ticket data off-box. This mirrors SMTP "outbox" mode:
+keep an external provider selected without opening the gate and the AI features simply
+stay disabled (`aiConfigured()` is false and the buttons hide).
+
+```dotenv
+# Local & private — nothing leaves the machine (recommended for a first try):
+AI_PROVIDER="ollama"
+OLLAMA_BASE_URL="http://localhost:11434/v1"
+OLLAMA_MODEL="llama3.1"
+
+# Hosted model — must open the gate and supply a key:
+AI_PROVIDER="anthropic"        # or "openai"
+AI_ALLOW_EXTERNAL="true"
+ANTHROPIC_API_KEY="sk-ant-…"   # or OPENAI_API_KEY (+ optional OPENAI_BASE_URL)
+```
+
+Secrets (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`) are encrypted at rest with
+`SETTINGS_ENCRYPTION_KEY` when stored via Settings. `AI_TEASER="true"` shows the AI
+buttons as a preview even when AI is off. Full reference: **[ai.md](ai.md)**.
+
+---
+
 ## File storage / attachments
 
 Attachment storage is defined in [`../lib/storage.ts`](../lib/storage.ts) and
@@ -257,4 +315,5 @@ signatures, and oversized/empty/mismatched files are rejected. See
 - [development.md](development.md) — local setup, running the dev server, seeding.
 - [deployment.md](deployment.md) — production values, persistence, reverse-proxy.
 - [rest-api.md](rest-api.md) — API auth, CORS, and the upload endpoint.
+- [ai.md](ai.md) — Vio's tools, the approve-first flow, and its file map.
 - [architecture.md](architecture.md) — how these modules fit together.

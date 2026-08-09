@@ -15,16 +15,30 @@ import { getSetting, getBoolSetting, getNumberSetting } from "@/lib/settings";
  * `ollama` is a LOCAL, OpenAI-compatible endpoint — no key, data stays on-box.
  * `anthropic`/`openai` are EXTERNAL and require AI_ALLOW_EXTERNAL="true".
  */
-export type AiProvider = "anthropic" | "openai" | "ollama";
+export type AiProvider = "anthropic" | "openai" | "ollama" | "claude-code";
 
-/** The only local provider — never gated by AI_ALLOW_EXTERNAL. */
+/** The only truly-local provider (used for the ollama-specific structured-output flag). */
 const LOCAL_PROVIDERS: readonly AiProvider[] = ["ollama"];
+
+/**
+ * Providers that authorise themselves and are NOT gated by AI_ALLOW_EXTERNAL:
+ *  - ollama: local, data on-box.
+ *  - claude-code: drives the operator's own logged-in `claude` CLI (their Pro/Max
+ *    subscription). Selecting it IS the consent; data does leave the box (to
+ *    Anthropic), which is called out in the settings UI.
+ */
+const SELF_AUTHORIZED: readonly AiProvider[] = ["ollama", "claude-code"];
 
 async function provider(): Promise<AiProvider> {
   const p = ((await getSetting("AI_PROVIDER")) ?? "anthropic").toLowerCase();
   if (p === "openai") return "openai";
   if (p === "ollama") return "ollama";
+  if (p === "claude-code" || p === "claude-cli") return "claude-code";
   return "anthropic";
+}
+
+function isSelfAuthorized(p: AiProvider): boolean {
+  return SELF_AUTHORIZED.includes(p);
 }
 
 /** Privacy gate: true when external (non-local) providers are permitted. */
@@ -55,7 +69,8 @@ async function modelId(p: AiProvider): Promise<string> {
  */
 export async function aiConfigured(): Promise<boolean> {
   const p = await provider();
-  if (isLocal(p)) return true;
+  // ollama (local) and claude-code (operator's own subscription CLI) self-authorise.
+  if (isSelfAuthorized(p)) return true;
   if (!(await allowExternal())) return false; // privacy gate blocks external providers
   if (p === "anthropic") return Boolean(await getSetting("ANTHROPIC_API_KEY"));
   if (p === "openai") return Boolean(await getSetting("OPENAI_API_KEY"));
@@ -95,7 +110,7 @@ export async function aiStatus(): Promise<{
  * push ticket data off-box.
  */
 async function assertPrivacy(p: AiProvider): Promise<void> {
-  if (!isLocal(p) && !(await allowExternal())) {
+  if (!isSelfAuthorized(p) && !(await allowExternal())) {
     throw new Error(
       `AI provider "${p}" is external and AI_ALLOW_EXTERNAL is not "true". Refusing to send data off-box.`,
     );
@@ -106,6 +121,11 @@ async function assertPrivacy(p: AiProvider): Promise<void> {
 async function getModel() {
   const p = await provider();
   await assertPrivacy(p);
+  if (p === "claude-code") {
+    // claude-code has no ai-sdk model — it routes through the Agent SDK (CLI).
+    // The generate* wrappers branch before here; this guards any other caller.
+    throw new Error("The claude-code provider uses the CLI backend, not an ai-sdk model.");
+  }
   const id = await modelId(p);
 
   if (p === "anthropic") {
@@ -142,6 +162,21 @@ async function maxOutputTokens(): Promise<number> {
   return Number.isFinite(n) && n > 0 ? n : 1024;
 }
 
+/** Pull the first JSON object out of a text blob (tolerates code fences / prose). */
+function extractJson(text: string): unknown {
+  let t = text.trim();
+  const fence = t.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  if (fence) t = fence[1].trim();
+  const start = t.indexOf("{");
+  const end = t.lastIndexOf("}");
+  if (start === -1 || end === -1 || end <= start) return undefined;
+  try {
+    return JSON.parse(t.slice(start, end + 1));
+  } catch {
+    return undefined;
+  }
+}
+
 /** Thin wrapper over generateText. Returns trimmed text. */
 export async function generateAiText(input: {
   system?: string;
@@ -149,6 +184,15 @@ export async function generateAiText(input: {
   maxOutputTokens?: number;
   temperature?: number;
 }): Promise<string> {
+  if ((await provider()) === "claude-code") {
+    const { generateViaClaudeSdk } = await import("@/lib/claude-cli");
+    const { text } = await generateViaClaudeSdk({
+      system: input.system,
+      messages: [{ role: "user", content: input.prompt }],
+      aiSdkTools: {},
+    });
+    return text.trim();
+  }
   const { text } = await generateText({
     model: await getModel(),
     system: input.system,
@@ -170,7 +214,21 @@ export async function generateAiChat(input: {
   tools?: ToolSet;
   maxSteps?: number;
   temperature?: number;
-}): Promise<{ text: string; toolCalls: { name: string; input: unknown }[] }> {
+  /** Enable extended thinking (claude-code / reasoning-capable models); returns `reasoning`. */
+  maxThinkingTokens?: number;
+}): Promise<{ text: string; toolCalls: { name: string; input: unknown }[]; reasoning?: string }> {
+  // claude-code routes through the Agent SDK (subscription CLI), adapting the
+  // same ai-sdk tools into in-process SDK tools so tool use + proposals work
+  // identically to the built-in providers.
+  if ((await provider()) === "claude-code") {
+    const { generateViaClaudeSdk } = await import("@/lib/claude-cli");
+    return generateViaClaudeSdk({
+      system: input.system,
+      messages: input.messages,
+      aiSdkTools: input.tools ?? {},
+      maxThinkingTokens: input.maxThinkingTokens,
+    });
+  }
   const result = await generateText({
     model: await getModel(),
     system: input.system,
@@ -183,7 +241,9 @@ export async function generateAiChat(input: {
   const toolCalls = result.steps.flatMap((s) =>
     s.toolCalls.map((tc) => ({ name: tc.toolName, input: (tc as { input?: unknown }).input })),
   );
-  return { text: result.text.trim(), toolCalls };
+  // reasoning-capable models (e.g. Anthropic extended thinking) expose reasoningText.
+  const reasoning = (result as { reasoningText?: string }).reasoningText?.trim() || undefined;
+  return { text: result.text.trim(), toolCalls, reasoning };
 }
 
 /** Thin wrapper over generateObject. Returns the typed object. */
@@ -193,6 +253,27 @@ export async function generateAiObject<T>(input: {
   schema: z.ZodType<T>;
   maxOutputTokens?: number;
 }): Promise<T> {
+  if ((await provider()) === "claude-code") {
+    // No schema-constrained decoding via the CLI — instruct strict JSON, then
+    // parse + zod-validate (one retry). Callers already handle failures.
+    const { generateViaClaudeSdk } = await import("@/lib/claude-cli");
+    const system =
+      (input.system ? input.system + "\n\n" : "") +
+      "Respond with ONLY a single valid JSON object that satisfies the request. " +
+      "No markdown, no code fences, no commentary — just the JSON.";
+    let lastErr = "no output";
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const { text } = await generateViaClaudeSdk({
+        system,
+        messages: [{ role: "user", content: input.prompt }],
+        aiSdkTools: {},
+      });
+      const parsed = input.schema.safeParse(extractJson(text));
+      if (parsed.success) return parsed.data;
+      lastErr = parsed.error?.message ?? "invalid JSON";
+    }
+    throw new Error(`Claude did not return valid structured output: ${lastErr}`);
+  }
   const { object } = await generateObject({
     model: await getModel(),
     system: input.system,

@@ -9,7 +9,7 @@ alternative to legacy tools like GLPI. It is a single Next.js 16 application (Ap
 Router, React 19, Turbopack) backed by Prisma 6 and Auth.js v5.
 
 See also: [data-model.md](./data-model.md) · [rest-api.md](./rest-api.md) ·
-[design-system.md](./design-system.md) · [modules.md](./modules.md).
+[design-system.md](./design-system.md) · [modules.md](./modules.md) · [ai.md](./ai.md).
 
 ## 🎯 Design principles
 
@@ -58,13 +58,19 @@ There is one action module per domain:
 
 ```
 lib/actions/
-  approvals.ts   assets.ts       attachments.ts  auth.ts
-  automations.ts catalog.ts      catalog-admin.ts categories.ts
-  changes.ts     groups.ts       knowledge.ts    locations.ts
-  notifications.ts people.ts      portal.ts       problems.ts
-  services.ts    sla-admin.ts    syncs.ts        tags.ts
-  tickets.ts     tokens.ts
+  account.ts      ai.ts           ai-assistant.ts approvals.ts
+  assets.ts       attachments.ts  auth.ts         automations.ts
+  catalog.ts      catalog-admin.ts categories.ts  changes.ts
+  groups.ts       knowledge.ts    locations.ts    notifications.ts
+  people.ts       portal.ts       problems.ts     services.ts
+  settings.ts     sla-admin.ts    syncs.ts        tags.ts
+  tickets.ts      tokens.ts
 ```
+
+AI mutations are a special case: **Vio never writes directly**. Its write operations live in
+`lib/ai-operations/*` as RBAC-gated proposals, and `applyAssistantProposal` (in `ai-assistant.ts`)
+re-checks role/scope and re-validates arguments before running the real action. All AI runs
+server-side — provider keys never reach the client. See [ai.md](./ai.md).
 
 A representative action guards on role, validates, mutates, audits, and revalidates:
 

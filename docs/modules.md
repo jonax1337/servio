@@ -32,11 +32,35 @@ Enums, status/priority metadata, and reference helpers (`ticketRef`, `problemRef
 
 | Group | Modules |
 | --- | --- |
-| Overview | Dashboard (`/`) |
+| Overview | Dashboard (`/`), Vio (`/assistant`) |
 | Service Operations | Tickets, Board (`/queues`), Problems, Changes, Approvals |
 | Catalog & CMDB | Services, Service Catalog (MANAGER+), Assets, Locations, Categories, Knowledge Base |
 | Organisation | Groups, People, Tags |
 | Administration | Automations (MANAGER+), Syncs (MANAGER+), Settings (MANAGER+) |
+
+---
+
+## Overview
+
+### Vio (AI assistant)
+Servio's built-in AI service-desk agent — a standalone chat surface that can read the queue,
+search the app and the web, and **propose changes the user approves before anything is written**.
+Full write-up: [ai.md](./ai.md).
+
+| | |
+| --- | --- |
+| Routes | `app/(console)/assistant/page.tsx`, `layout.tsx` (route `/assistant`, AGENT+) |
+| Actions | `lib/actions/ai-assistant.ts` (`listConversations`, `createConversation`, `getConversation`, `renameConversation`, `archiveConversation`, `sendMessage`, `applyAssistantProposal`) |
+| Components | `components/assistant/` (`assistant-shell`, `chat-panel`, `message-list`, `conversation-list`, `proposal-card`, `vio-launcher`, `typing-dots`) |
+| Provider layer | `lib/ai.ts` (config + privacy gate), `lib/claude-cli.ts` (Claude Agent SDK adapter) |
+| Read tools | `lib/assistant-tools.ts`, `lib/ai-tools.ts`, `lib/ai-admin-tools.ts`, `lib/ai-stats.ts` |
+| Write operations | `lib/ai-operations/` (`registry.ts`, `types.ts`, `tools.ts`, `modules/*` — tickets, taxonomy, org, catalog-services, cmdb, knowledge, problems-changes, config) |
+| Settings | `app/(console)/settings/ai/page.tsx` (ADMIN) |
+| Data | `AiConversation`, `AiMessage` (`prisma/schema.prisma`) |
+
+Every write is an RBAC-gated `AiOperation` surfaced as a `propose_*` tool; `applyAssistantProposal`
+re-checks role/scope and re-validates args before running the real mutation. A top-bar launcher
+(`vio-launcher`) opens the same assistant from anywhere in the console.
 
 ---
 

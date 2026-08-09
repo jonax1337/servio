@@ -54,6 +54,7 @@ export default async function AiSettingsPage() {
                 { value: "anthropic", label: "Anthropic (external)" },
                 { value: "openai", label: "OpenAI-compatible (external)" },
                 { value: "ollama", label: "Ollama (local, on-box)" },
+                { value: "claude-code", label: "Claude subscription (local Claude CLI)" },
               ],
             },
             {
@@ -61,7 +62,7 @@ export default async function AiSettingsPage() {
               name: "AI_ALLOW_EXTERNAL",
               label: "Allow external providers",
               defaultChecked: allowExternal,
-              hint: "Required for Anthropic/OpenAI. Ollama stays on-box regardless.",
+              hint: "Required for Anthropic/OpenAI. Ollama stays on-box. “Claude subscription” drives your logged-in `claude` CLI (Pro/Max) — data leaves the box, and it's a grey area vs. Anthropic's terms.",
             },
             {
               type: "text",
@@ -69,6 +70,7 @@ export default async function AiSettingsPage() {
               label: "Model",
               defaultValue: model ?? "",
               placeholder: "Leave blank for the provider default",
+              hint: "For “Claude subscription”: use `claude-sonnet-5` or `claude-opus-5` for the latest models. The `sonnet`/`opus` aliases currently resolve to 4.x, so specify the full 5 id. Blank = sonnet.",
             },
             { type: "password", name: "ANTHROPIC_API_KEY", label: "Anthropic API key", isSet: anthropicSet },
             { type: "password", name: "OPENAI_API_KEY", label: "OpenAI API key", isSet: openaiSet },
