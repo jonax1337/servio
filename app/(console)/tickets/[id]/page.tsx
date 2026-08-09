@@ -12,7 +12,6 @@ import { LinkButton } from "@/components/link-button";
 import { StatusBadge, VipBadge, ToneBadge } from "@/components/status-badge";
 import { TicketProperties } from "@/components/tickets/ticket-properties";
 import { CommentThread } from "@/components/comments/comment-thread";
-import { TicketAiChat } from "@/components/tickets/ticket-ai-chat";
 import { aiConfigured, aiTeaserEnabled } from "@/lib/ai";
 import { EditEntityDialog } from "@/components/edit-entity-dialog";
 import { addTicketComment, updateTicketDetails, unlinkTicket, unlinkAsset, unlinkRelation } from "@/lib/actions/tickets";
@@ -330,8 +329,8 @@ export default async function TicketDetailPage({
         ) : null}
       </aside>
 
-      {/* Floating AI chat dock (fixed, viewport-anchored) */}
-      {aiVisible ? <TicketAiChat ticketId={ticket.id} teaser={aiTeaser} /> : null}
+      {/* Vio lives in the topbar launcher now (VioLauncher) — it detects this
+          ticket from the URL and opens the same assistant in a side sheet. */}
     </div>
   );
 }

@@ -55,16 +55,18 @@ const createSchema = z.object({
 
 export type ActionState = { error?: string; fieldErrors?: Record<string, string[]> } | undefined;
 
-export async function createTicket(_prev: ActionState, formData: FormData): Promise<ActionState> {
-  const me = await requireAgent();
-  if (!me) return { error: "Not authorised" };
-
-  const parsed = createSchema.safeParse(Object.fromEntries(formData));
-  if (!parsed.success) {
-    return { error: "Please fix the errors below.", fieldErrors: parsed.error.flatten().fieldErrors };
-  }
-  const data = parsed.data;
-
+/**
+ * Non-redirecting core of ticket creation. Runs the FULL pipeline —
+ * SLA deadline stamping, VIP repricing, requester/assignee mail, TICKET_CREATED
+ * automations and auto-assign — then returns the created ticket. `createTicket`
+ * (the form action) wraps this and adds revalidate + redirect; other callers
+ * (e.g. Vio's applyAssistantProposal, which must NOT redirect) call this directly
+ * so their tickets are first-class (SLA clock started, routed, notified).
+ */
+export async function createTicketCore(
+  data: z.infer<typeof createSchema>,
+  actorId: string,
+) {
   // Resolve the SLA and stamp response/resolve deadlines at creation time.
   const sla = await slaCreateData({ slaId: data.slaId, serviceId: data.serviceId, priority: data.priority });
   const ticket = await db.ticket.create({
@@ -72,7 +74,7 @@ export async function createTicket(_prev: ActionState, formData: FormData): Prom
     include: { requester: true, assignee: true },
   });
 
-  await writeAudit({ userId: me.id, action: "CREATE", entity: "Ticket", entityId: ticket.id, summary: `Created ticket "${ticket.title}"` });
+  await writeAudit({ userId: actorId, action: "CREATE", entity: "Ticket", entityId: ticket.id, summary: `Created ticket "${ticket.title}"` });
 
   // VIP requesters get elevated handling — reprice the SLA against the new priority.
   // If no HIGH SLA resolves, vipSla is {} and the original deadlines are kept.
@@ -87,7 +89,7 @@ export async function createTicket(_prev: ActionState, formData: FormData): Prom
     await sendMail({ to: ticket.requester.email, toName: ticket.requester.name, entity: "Ticket", entityId: ticket.id, ...tplTicketReceived(ticket) });
   }
   // Assignment notice
-  if (ticket.assignee && ticket.assigneeId !== me.id) {
+  if (ticket.assignee && ticket.assigneeId !== actorId) {
     await notify(ticket.assigneeId!, { type: "ASSIGNED", title: "Ticket assigned to you", body: ticket.title, entity: "Ticket", entityId: String(ticket.id) });
     if (ticket.assignee.email) {
       await sendMail({ to: ticket.assignee.email, toName: ticket.assignee.name, entity: "Ticket", entityId: ticket.id, ...tplTicketAssigned(ticket, ticket.assignee.name ?? "there") });
@@ -97,6 +99,20 @@ export async function createTicket(_prev: ActionState, formData: FormData): Prom
   await runAutomations("TICKET_CREATED", ticket.id);
   // Auto-assign from the group (after automations may have routed it to a team).
   await autoAssignTicket(ticket.id);
+
+  return ticket;
+}
+
+export async function createTicket(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  const me = await requireAgent();
+  if (!me) return { error: "Not authorised" };
+
+  const parsed = createSchema.safeParse(Object.fromEntries(formData));
+  if (!parsed.success) {
+    return { error: "Please fix the errors below.", fieldErrors: parsed.error.flatten().fieldErrors };
+  }
+
+  const ticket = await createTicketCore(parsed.data, me.id);
 
   revalidatePath("/tickets");
   redirect(`/tickets/${ticket.id}`);

@@ -18,6 +18,7 @@ import {
   Zap,
   MapPin,
   ShoppingBag,
+  Sparkles,
 } from "lucide-react";
 
 export type NavItem = {
@@ -32,7 +33,10 @@ export type NavGroup = { label: string; items: NavItem[] };
 export const consoleNav: NavGroup[] = [
   {
     label: "Overview",
-    items: [{ title: "Dashboard", href: "/", icon: LayoutDashboard }],
+    items: [
+      { title: "Dashboard", href: "/", icon: LayoutDashboard },
+      { title: "Vio", href: "/assistant", icon: Sparkles, minRole: "AGENT" },
+    ],
   },
   {
     label: "Service Operations",

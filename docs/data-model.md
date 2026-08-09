@@ -170,6 +170,17 @@ pauses while `PENDING`/`ON_HOLD`), `firstResponseAt`, `resolvedAt`, `closedAt`. 
 | --- | --- | --- |
 | `AutomationRule` | Condition→action rule run on ticket events | `trigger` (`TICKET_CREATED`/`TICKET_UPDATED`), `matchType` (`ALL`/`ANY`), `conditions` and `actions` (JSON arrays as TEXT), `isActive`, `order`, `runCount`, `lastRunAt` |
 
+### AI assistant (Vio)
+
+| Model | Purpose | Key fields / relations |
+| --- | --- | --- |
+| `AiConversation` | A persisted Vio chat (the `/assistant` surface) | `title` (auto-titled from the first message), `scope` (`GENERAL`/`ADMIN`), `archived`, `userId`; indexed `(userId, archived, updatedAt)` for the newest-first left rail |
+| `AiMessage` | One turn in a conversation | `role` (`user`/`assistant`), `content`, `html` (sanitized markdown, assistant turns), `toolCalls` (JSON as TEXT), `proposals` (JSON as TEXT); indexed `(conversationId, createdAt)`, cascades with its conversation |
+
+Vio's *actions* are not stored as models — its write operations are RBAC-gated proposals defined
+in code (`lib/ai-operations/*`) and applied through the normal server actions, which write their
+own `AuditLog` rows. See [ai.md](./ai.md).
+
 ## Enums
 
 Every "enum" is a `String` column whose allowed values are declared as a `readonly` tuple in

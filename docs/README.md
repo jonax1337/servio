@@ -10,13 +10,14 @@ against the code and kept in sync with the repository. New here? Start with
 | Doc | What it covers |
 | --- | --- |
 | [development.md](./development.md) | Local setup, quickstart, demo credentials/API token, project layout, and the core coding conventions. |
-| [configuration.md](./configuration.md) | Every environment variable, plus SSO/OIDC, SMTP, and file-storage configuration. |
+| [configuration.md](./configuration.md) | Every environment variable, plus SSO/OIDC, SMTP, AI (Vio), and file-storage configuration. |
 
 ## Reference
 
 | Doc | What it covers |
 | --- | --- |
 | [architecture.md](./architecture.md) | Runtime model, request paths (Server Components / Server Actions / Route Handlers), route groups, auth, RBAC, and the sync engine. |
+| [ai.md](./ai.md) | **Vio**, the built-in AI agent: providers (local Ollama / Anthropic / OpenAI / Claude CLI), the privacy gate, read tools, and the RBAC-gated approve-first write flow. |
 | [data-model.md](./data-model.md) | The Prisma schema by domain, the String-backed enum strategy, human reference numbers, and the migration workflow. |
 | [rest-api.md](./rest-api.md) | The versioned `/api/v1` Bearer-token REST API: auth, scopes, envelope, pagination, and every endpoint. |
 | [design-system.md](./design-system.md) | Theme tokens, typography, the base-ui/shadcn setup, primitive library, and shared composite components. |
