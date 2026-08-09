@@ -4,13 +4,7 @@ import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useState, useTransition } from "react";
 import { Search, X, Loader2 } from "lucide-react";
 import { Input } from "@/components/ui/input";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { Combobox, type ComboOption } from "@/components/combobox";
 import { Button } from "@/components/ui/button";
 
 export type FilterDef = {
@@ -72,29 +66,24 @@ export function ListToolbar({
         ) : null}
       </div>
 
-      {filters.map((f) => (
-        <Select
-          key={f.key}
-          items={{
-            all: `All ${f.label.toLowerCase()}`,
-            ...Object.fromEntries(f.options.map((o) => [o.value, o.label])),
-          }}
-          value={sp.get(f.key) ?? "all"}
-          onValueChange={(v) => setParam(f.key, (v as string | null) ?? "all")}
-        >
-          <SelectTrigger className="w-auto min-w-[9rem]" size="sm">
-            <SelectValue placeholder={f.label} />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All {f.label.toLowerCase()}</SelectItem>
-            {f.options.map((o) => (
-              <SelectItem key={o.value} value={o.value}>
-                {o.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      ))}
+      {filters.map((f) => {
+        const opts: ComboOption[] = [
+          { value: "all", label: `All ${f.label.toLowerCase()}` },
+          ...f.options,
+        ];
+        return (
+          <Combobox
+            key={f.key}
+            options={opts}
+            value={sp.get(f.key) ?? "all"}
+            onChange={(v) => setParam(f.key, v || "all")}
+            placeholder={f.label}
+            searchPlaceholder={`Search ${f.label.toLowerCase()}…`}
+            size="sm"
+            className="w-auto min-w-[9rem]"
+          />
+        );
+      })}
 
       {hasFilters ? (
         <Button

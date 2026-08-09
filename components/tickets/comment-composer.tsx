@@ -5,7 +5,7 @@ import { useFormStatus } from "react-dom";
 import { Send, Loader2 } from "lucide-react";
 import { addTicketComment } from "@/lib/actions/tickets";
 import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea";
+import { RichTextEditor } from "@/components/ui/rich-text-editor";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 
@@ -31,12 +31,7 @@ export function CommentComposer({ ticketId }: { ticketId: number }) {
       className="grid gap-2 rounded-xl border bg-card p-3"
     >
       <input type="hidden" name="ticketId" value={ticketId} />
-      <Textarea
-        name="body"
-        required
-        placeholder="Write a reply or add an internal note…"
-        className="min-h-20 resize-none border-0 bg-transparent p-0 shadow-none focus-visible:ring-0"
-      />
+      <RichTextEditor name="bodyHtml" required ariaLabel="Reply" placeholder="Write a reply or add an internal note…" />
       <div className="flex items-center justify-between border-t pt-2">
         <div className="flex items-center gap-2">
           <Checkbox id="isInternal" name="isInternal" />

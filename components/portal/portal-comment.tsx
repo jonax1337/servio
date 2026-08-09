@@ -5,7 +5,8 @@ import { useFormStatus } from "react-dom";
 import { Send, Loader2 } from "lucide-react";
 import { addPortalComment } from "@/lib/actions/portal";
 import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea";
+import { RichTextEditor } from "@/components/ui/rich-text-editor";
+import { ComposerAttachments } from "@/components/comments/composer-attachments";
 
 function SubmitButton() {
   const { pending } = useFormStatus();
@@ -29,12 +30,8 @@ export function PortalComment({ ticketId }: { ticketId: number }) {
       className="grid gap-2 rounded-xl border bg-card p-3"
     >
       <input type="hidden" name="ticketId" value={ticketId} />
-      <Textarea
-        name="body"
-        required
-        placeholder="Add more details or reply to the agent…"
-        className="min-h-20 resize-none border-0 bg-transparent p-0 shadow-none focus-visible:ring-0"
-      />
+      <RichTextEditor name="bodyHtml" required ariaLabel="Reply" placeholder="Add more details or reply to the agent…" />
+      <ComposerAttachments ticketId={ticketId} />
       <div className="flex justify-end border-t pt-2">
         <SubmitButton />
       </div>

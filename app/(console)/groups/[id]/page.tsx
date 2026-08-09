@@ -5,9 +5,10 @@ import { ArrowLeft, Users, Inbox, Mail, Ticket as TicketIcon } from "lucide-reac
 import { db } from "@/lib/db";
 import { LinkButton } from "@/components/link-button";
 import { StatusBadge } from "@/components/status-badge";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { UserAvatar } from "@/components/user-avatar";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { StatCard } from "@/components/stat-card";
+import { AutoAssignControl } from "@/components/groups/auto-assign-control";
 import { GROUP_TYPE_META, OPEN_TICKET_STATUSES } from "@/lib/constants";
 
 export const dynamic = "force-dynamic";
@@ -20,10 +21,6 @@ export async function generateMetadata({
   const { id } = await params;
   const g = await db.group.findUnique({ where: { id }, select: { name: true } });
   return { title: g ? g.name : "Group" };
-}
-
-function initials(s: string) {
-  return s.split(" ").map((p) => p[0]).slice(0, 2).join("").toUpperCase();
 }
 
 export default async function GroupDetailPage({
@@ -97,11 +94,11 @@ export default async function GroupDetailPage({
                       key={m.id}
                       className="flex items-center gap-3 rounded-lg px-2 py-2 hover:bg-accent/50"
                     >
-                      <Avatar className="size-8 shrink-0">
-                        <AvatarFallback className="text-xs">
-                          {initials(m.user.name ?? m.user.email)}
-                        </AvatarFallback>
-                      </Avatar>
+                      <UserAvatar
+                        name={m.user.name}
+                        email={m.user.email}
+                        className="shrink-0"
+                      />
                       <div className="min-w-0 flex-1">
                         <div className="line-clamp-1 text-sm font-medium">
                           {m.user.name ?? m.user.email}
@@ -148,6 +145,18 @@ export default async function GroupDetailPage({
                     <span className="font-medium">—</span>
                   )}
                 </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-sm">Auto-assignment</CardTitle>
+              </CardHeader>
+              <CardContent className="grid gap-2">
+                <AutoAssignControl groupId={group.id} value={group.autoAssign} />
+                <p className="text-xs text-muted-foreground">
+                  New tickets routed to this team are assigned automatically. Round-robin cycles through members; least busy picks the agent with the fewest open tickets.
+                </p>
               </CardContent>
             </Card>
 

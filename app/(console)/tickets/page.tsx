@@ -11,7 +11,7 @@ import { ListToolbar, type FilterDef } from "@/components/list-toolbar";
 import { PaginationBar } from "@/components/pagination-bar";
 import { StatusBadge, VipBadge } from "@/components/status-badge";
 import { EmptyState } from "@/components/empty-state";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { UserAvatar } from "@/components/user-avatar";
 import {
   Table,
   TableBody,
@@ -34,10 +34,6 @@ import { formatDistanceToNow } from "date-fns";
 
 export const metadata: Metadata = { title: "Tickets" };
 export const dynamic = "force-dynamic";
-
-function initials(s: string) {
-  return s.split(" ").map((p) => p[0]).slice(0, 2).join("").toUpperCase();
-}
 
 export default async function TicketsPage({
   searchParams,
@@ -167,11 +163,11 @@ export default async function TicketsPage({
                     <TableCell className="hidden md:table-cell">
                       {t.assignee ? (
                         <div className="flex items-center gap-2">
-                          <Avatar className="size-6">
-                            <AvatarFallback className="text-[10px]">
-                              {initials(t.assignee.name ?? t.assignee.email)}
-                            </AvatarFallback>
-                          </Avatar>
+                          <UserAvatar
+                            name={t.assignee.name}
+                            email={t.assignee.email}
+                            size="sm"
+                          />
                           <span className="text-sm text-muted-foreground">
                             {t.assignee.name?.split(" ")[0] ?? t.assignee.email}
                           </span>

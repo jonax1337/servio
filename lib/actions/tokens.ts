@@ -5,7 +5,7 @@ import { z } from "zod";
 import { nanoid } from "nanoid";
 import bcrypt from "bcryptjs";
 import { db } from "@/lib/db";
-import { getSessionUser } from "@/lib/session";
+import { getCurrentUser, hasRole, type Role } from "@/lib/session";
 import { writeAudit } from "@/lib/audit";
 
 const SCOPE_VALUES = ["read", "read,write", "read,write,admin"] as const;
@@ -23,8 +23,9 @@ export async function createApiToken(
   _prev: ActionState,
   formData: FormData,
 ): Promise<ActionState> {
-  const me = await getSessionUser();
-  if (!me) return { error: "Not authenticated" };
+  // DB-truth: a demoted/deactivated user with a live JWT must not mint tokens.
+  const me = await getCurrentUser();
+  if (!me || !me.isActive) return { error: "Not authenticated" };
 
   const parsed = createSchema.safeParse({
     name: formData.get("name"),
@@ -64,13 +65,23 @@ export async function createApiToken(
 }
 
 export async function revokeApiToken(formData: FormData) {
-  const me = await getSessionUser();
-  if (!me) return;
+  // DB-truth role, not the stale JWT: a demoted ex-admin must not keep the
+  // admin-wide revoke power, and a deactivated user must not revoke at all.
+  const me = await getCurrentUser();
+  if (!me || !me.isActive) return;
   const id = String(formData.get("id") ?? "");
   if (!id) return;
 
-  const token = await db.apiToken.update({
-    where: { id },
+  // Scope to the caller's own tokens (admins may revoke any). Prevents IDOR
+  // where any user could revoke another user's token by guessing its id.
+  const isAdmin = hasRole(me.role as Role, "ADMIN");
+  const token = await db.apiToken.findFirst({
+    where: isAdmin ? { id } : { id, userId: me.id },
+  });
+  if (!token) return;
+
+  await db.apiToken.update({
+    where: { id: token.id },
     data: { revoked: true },
   });
 

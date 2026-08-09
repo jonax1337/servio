@@ -13,15 +13,13 @@ import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Combobox, type ComboOption } from "@/components/combobox";
 import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-} from "@/components/ui/select";
-import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger,
 } from "@/components/ui/dialog";
 import { CatalogIcon, CATALOG_ICON_NAMES } from "@/components/catalog/catalog-icon";
 import { cn } from "@/lib/utils";
 
 type Opt = { value: string; label: string }[];
+const FIELD_TYPE_OPTIONS: ComboOption[] = FIELD_TYPES.map((t) => ({ value: t, label: t }));
 export type CatalogItemData = {
   id: string; name: string; description: string | null; shortDescription: string | null;
   icon: string | null; categoryId: string | null; estimatedDays: number | null;
@@ -158,10 +156,7 @@ export function CatalogEditor({
               fields.map((f, i) => (
                 <div key={i} className="grid gap-2 rounded-lg border bg-card p-3 sm:grid-cols-[1fr_10rem_auto_auto] sm:items-center">
                   <Input value={f.label} placeholder="Question / label" onChange={(e) => update(i, { label: e.target.value, key: slug(e.target.value) })} />
-                  <Select value={f.type} onValueChange={(v) => update(i, { type: (v as FieldType) ?? "text" })} items={Object.fromEntries(FIELD_TYPES.map((t) => [t, t]))}>
-                    <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
-                    <SelectContent>{FIELD_TYPES.map((t) => <SelectItem key={t} value={t}>{t}</SelectItem>)}</SelectContent>
-                  </Select>
+                  <Combobox options={FIELD_TYPE_OPTIONS} value={f.type} onChange={(v) => update(i, { type: (v as FieldType) || "text" })} searchPlaceholder="Search types…" />
                   <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
                     <Checkbox checked={!!f.required} onCheckedChange={(v) => update(i, { required: !!v })} /> req.
                   </label>

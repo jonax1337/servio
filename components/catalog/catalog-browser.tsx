@@ -24,6 +24,8 @@ export function CatalogBrowser({ items }: { items: CatalogCard[] }) {
   const chip = (label: string) => (
     <button
       key={label}
+      type="button"
+      aria-pressed={active === label}
       onClick={() => setActive(label)}
       className={cn(
         "inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border px-3.5 py-1.5 text-sm font-medium transition-colors",
@@ -43,7 +45,7 @@ export function CatalogBrowser({ items }: { items: CatalogCard[] }) {
   return (
     <div className="grid gap-6">
       {/* Category navigation */}
-      <div className="-mx-1 flex flex-wrap gap-2 px-1">
+      <div role="group" aria-label="Filter by category" className="-mx-1 flex flex-wrap gap-2 px-1">
         {chip("All")}
         {categories.map((c) => chip(c))}
       </div>

@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { BookOpen, Eye } from "lucide-react";
+import { BookOpen, Eye, Plus } from "lucide-react";
 import type { Metadata } from "next";
 import type { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
@@ -7,6 +7,11 @@ import { getParam, type SearchParams } from "@/lib/query";
 import { PageHeader, PageBody } from "@/components/page-header";
 import { ListToolbar } from "@/components/list-toolbar";
 import { EmptyState } from "@/components/empty-state";
+import { LinkButton } from "@/components/link-button";
+import { StatusBadge } from "@/components/status-badge";
+import {
+  ARTICLE_STATUSES, ARTICLE_STATUS_META, ARTICLE_VISIBILITIES, ARTICLE_VISIBILITY_META,
+} from "@/lib/constants";
 import { formatDistanceToNow } from "date-fns";
 
 export const metadata: Metadata = { title: "Knowledge Base" };
@@ -19,14 +24,19 @@ export default async function KnowledgePage({
 }) {
   const sp = await searchParams;
   const q = getParam(sp, "q");
+  const status = getParam(sp, "status");
+  const visibility = getParam(sp, "visibility");
 
-  const where: Prisma.ArticleWhereInput = { published: true };
+  // Console is agent-only: show every status, not just published.
+  const where: Prisma.ArticleWhereInput = {};
   if (q) where.title = { contains: q };
+  if (status && ARTICLE_STATUSES.includes(status as (typeof ARTICLE_STATUSES)[number])) where.status = status;
+  if (visibility && ARTICLE_VISIBILITIES.includes(visibility as (typeof ARTICLE_VISIBILITIES)[number])) where.visibility = visibility;
 
   const articles = await db.article.findMany({
     where,
     include: { category: true, author: true },
-    orderBy: [{ createdAt: "desc" }],
+    orderBy: [{ updatedAt: "desc" }],
   });
 
   return (
@@ -34,54 +44,55 @@ export default async function KnowledgePage({
       <PageHeader
         icon={BookOpen}
         title="Knowledge Base"
-        description="Guides, how-tos and known solutions for common requests."
-      />
+        description="Author, review and publish guides and known solutions."
+      >
+        <LinkButton href="/knowledge/new" size="sm">
+          <Plus className="size-4" /> New article
+        </LinkButton>
+      </PageHeader>
 
       <PageBody className="grid gap-4">
-        <ListToolbar searchPlaceholder="Search articles…" />
+        <ListToolbar
+          searchPlaceholder="Search articles…"
+          filters={[
+            { key: "status", label: "Status", options: ARTICLE_STATUSES.map((s) => ({ value: s, label: ARTICLE_STATUS_META[s].label })) },
+            { key: "visibility", label: "Visibility", options: ARTICLE_VISIBILITIES.map((v) => ({ value: v, label: ARTICLE_VISIBILITY_META[v].label })) },
+          ]}
+        />
 
         {articles.length === 0 ? (
           <EmptyState
             icon={BookOpen}
             title="No articles found"
-            description="Try adjusting your search, or check back later for published articles."
+            description="Adjust your filters, or create the first knowledge base article."
           />
         ) : (
-          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-            {articles.map((a) => (
-              <Link
-                key={a.id}
-                href={`/knowledge/${a.slug}`}
-                className="group flex flex-col gap-3 rounded-xl border bg-card p-5 transition-colors hover:border-primary/40"
-              >
-                <div className="flex items-center gap-2">
-                  {a.category ? (
-                    <span className="rounded-full border px-2 py-0.5 text-xs text-muted-foreground">
-                      {a.category.name}
-                    </span>
-                  ) : null}
-                  <span className="ml-auto inline-flex items-center gap-1 text-xs text-muted-foreground">
+          <div className="overflow-hidden rounded-xl border bg-card">
+            <div className="divide-y">
+              {articles.map((a) => (
+                <Link
+                  key={a.id}
+                  href={`/knowledge/${a.slug}`}
+                  className="flex items-center gap-3 px-4 py-3 transition-colors hover:bg-muted/50"
+                >
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-sm font-medium">{a.title}</div>
+                    <div className="mt-0.5 flex items-center gap-2 text-xs text-muted-foreground">
+                      <span>{a.category?.name ?? "General"}</span>
+                      <span>·</span>
+                      <span>{a.author?.name ?? a.author?.email ?? "Unknown"}</span>
+                      <span>·</span>
+                      <span>updated {formatDistanceToNow(a.updatedAt, { addSuffix: true })}</span>
+                    </div>
+                  </div>
+                  <StatusBadge map={ARTICLE_VISIBILITY_META} value={a.visibility} />
+                  <StatusBadge map={ARTICLE_STATUS_META} value={a.status} />
+                  <span className="hidden w-14 shrink-0 items-center justify-end gap-1 text-xs text-muted-foreground sm:flex">
                     <Eye className="size-3.5" /> {a.views}
                   </span>
-                </div>
-
-                <h3 className="line-clamp-2 font-medium leading-snug group-hover:text-primary">
-                  {a.title}
-                </h3>
-
-                {a.excerpt ? (
-                  <p className="line-clamp-3 text-sm text-muted-foreground">
-                    {a.excerpt}
-                  </p>
-                ) : null}
-
-                <div className="mt-auto flex items-center gap-2 pt-1 text-xs text-muted-foreground">
-                  <span>{a.author?.name ?? a.author?.email ?? "Unknown author"}</span>
-                  <span>·</span>
-                  <span>{formatDistanceToNow(a.createdAt, { addSuffix: true })}</span>
-                </div>
-              </Link>
-            ))}
+                </Link>
+              ))}
+            </div>
           </div>
         )}
       </PageBody>

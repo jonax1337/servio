@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
 import { Loader2, Send, ShieldCheck } from "lucide-react";
 import { createCatalogRequest, type CatalogState } from "@/lib/actions/catalog";
 import type { ServiceField } from "@/lib/service-forms";
@@ -9,9 +9,23 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
-import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-} from "@/components/ui/select";
+import { Combobox, type ComboOption } from "@/components/combobox";
+
+/** Select field for a dynamic catalog form: submits an empty value until chosen,
+ * matching the previous <Select name=…> (no auto-selected first option). */
+function SelectField({ name, options }: { name: string; options: ComboOption[] }) {
+  const [value, setValue] = useState("");
+  return (
+    <Combobox
+      name={name}
+      options={options}
+      value={value}
+      onChange={setValue}
+      placeholder="Choose…"
+      searchPlaceholder="Search…"
+    />
+  );
+}
 
 export function ServiceRequestForm({
   serviceId,
@@ -51,12 +65,7 @@ export function ServiceRequestForm({
             {f.type === "textarea" ? (
               <Textarea id={`f_${f.key}`} name={`f_${f.key}`} placeholder={f.placeholder} className="min-h-24" />
             ) : f.type === "select" ? (
-              <Select name={`f_${f.key}`} items={Object.fromEntries((f.options ?? []).map((o) => [o, o]))}>
-                <SelectTrigger className="w-full"><SelectValue placeholder="Choose…" /></SelectTrigger>
-                <SelectContent>
-                  {(f.options ?? []).map((o) => <SelectItem key={o} value={o}>{o}</SelectItem>)}
-                </SelectContent>
-              </Select>
+              <SelectField name={`f_${f.key}`} options={(f.options ?? []).map((o) => ({ value: o, label: o }))} />
             ) : f.type === "checkbox" ? (
               <div className="flex items-center gap-2 pt-1">
                 <Checkbox id={`f_${f.key}`} name={`f_${f.key}`} />

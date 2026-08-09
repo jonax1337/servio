@@ -7,6 +7,8 @@ import { getSessionUser } from "@/lib/session";
 import { writeAudit, notify } from "@/lib/audit";
 import { sendMail, tplTicketReceived } from "@/lib/mail";
 import { runAutomations } from "@/lib/automations";
+import { autoAssignTicket } from "@/lib/assignment";
+import { slaCreateData } from "@/lib/sla";
 import { parseFormSchema, validateAnswers, answersToText } from "@/lib/service-forms";
 import { ticketRef } from "@/lib/constants";
 
@@ -40,19 +42,28 @@ export async function createCatalogRequest(
   const triage = await db.group.findFirst({ where: { name: "Service Desk" } });
   const needsApproval = item.requiresApproval && !!item.approverId;
 
+  // Requests run at MEDIUM by default; pause the SLA clock while awaiting approval.
+  const sla = await slaCreateData({ priority: "MEDIUM" });
   const ticket = await db.ticket.create({
     data: {
       title: `${item.name} request`,
-      description: `Catalog request: ${item.name}\n\n${summary || "(no additional details)"}`,
+      // Answers are kept structured in formData and shown as a form on the ticket —
+      // not dumped into the body. The description stays a short one-liner.
+      description: `Catalog request: ${item.name}.`,
       type: "REQUEST",
       status: needsApproval ? "PENDING" : "NEW",
       source: "PORTAL",
+      priority: "MEDIUM",
       requesterId: me.id,
       catalogItemId: item.id,
       categoryId: item.categoryId,
       groupId: triage?.id ?? null,
       formData: JSON.stringify(values),
+      formSchema: item.formSchema, // snapshot so answers stay rendable if the item is later deleted
+
       approvalState: needsApproval ? "PENDING" : null,
+      ...sla,
+      ...(needsApproval ? { pendingSince: new Date() } : {}),
     },
   });
 
@@ -78,7 +89,10 @@ export async function createCatalogRequest(
   if (me.email) {
     await sendMail({ to: me.email, toName: me.name, entity: "Ticket", entityId: ticket.id, ...tplTicketReceived(ticket) });
   }
-  if (!needsApproval) await runAutomations("TICKET_CREATED", ticket.id);
+  if (!needsApproval) {
+    await runAutomations("TICKET_CREATED", ticket.id);
+    await autoAssignTicket(ticket.id);
+  }
 
   revalidatePath("/portal/tickets");
   redirect(`/portal/tickets/${ticket.id}`);

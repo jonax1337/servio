@@ -8,6 +8,7 @@ import {
   FileEdit, Send, ThumbsUp, CalendarClock, PlayCircle,
   TriangleAlert, CircleSlash, Crown,
   MapPin, Building2, Layers, DoorClosed, Server, Rows3,
+  Lock, Globe,
 } from "lucide-react";
 
 export type Tone =
@@ -55,6 +56,7 @@ export const TICKET_TYPE_META: Record<string, Meta> = {
 export const TICKET_STATUSES = [
   "NEW",
   "OPEN",
+  "IN_PROGRESS",
   "PENDING",
   "ON_HOLD",
   "RESOLVED",
@@ -64,6 +66,7 @@ export const TICKET_STATUSES = [
 export const TICKET_STATUS_META: Record<string, Meta> = {
   NEW: { label: "New", tone: "info", icon: Sparkle },
   OPEN: { label: "Open", tone: "indigo", icon: CircleDot },
+  IN_PROGRESS: { label: "In Progress", tone: "purple", icon: PlayCircle },
   PENDING: { label: "Pending", tone: "warning", icon: Clock },
   ON_HOLD: { label: "On Hold", tone: "warning", icon: PauseCircle },
   RESOLVED: { label: "Resolved", tone: "success", icon: CheckCircle2 },
@@ -73,6 +76,7 @@ export const TICKET_STATUS_META: Record<string, Meta> = {
 export const OPEN_TICKET_STATUSES = [
   "NEW",
   "OPEN",
+  "IN_PROGRESS",
   "PENDING",
   "ON_HOLD",
 ] as const;
@@ -218,6 +222,14 @@ export const SERVICE_STATUS_META: Record<string, Meta> = {
 export const CRITICALITIES = ["LOW", "MEDIUM", "HIGH", "CRITICAL"] as const;
 export const CRITICALITY_META: Record<string, Meta> = PRIORITY_META;
 
+// ---- Auto-assignment ------------------------------------------------------
+export const AUTO_ASSIGN_STRATEGIES = ["OFF", "ROUND_ROBIN", "LEAST_BUSY"] as const;
+export const AUTO_ASSIGN_META: Record<string, Meta> = {
+  OFF: { label: "Off", tone: "neutral" },
+  ROUND_ROBIN: { label: "Round-robin", tone: "indigo" },
+  LEAST_BUSY: { label: "Least busy", tone: "purple" },
+};
+
 // ---- Group ----------------------------------------------------------------
 export const GROUP_TYPES = ["TEAM", "DEPARTMENT", "VENDOR"] as const;
 export const GROUP_TYPE_META: Record<string, Meta> = {
@@ -327,6 +339,37 @@ export const SYNC_RUN_STATUS_META: Record<string, Meta> = {
 
 // VIP flag (for important requesters)
 export const VIP_META: Meta = { label: "VIP", tone: "warning", icon: Crown };
+
+// ---- SLA clock state ------------------------------------------------------
+export const SLA_STATES = ["ON_TRACK", "AT_RISK", "BREACHED", "MET", "PAUSED", "NONE"] as const;
+export const SLA_STATE_META: Record<string, Meta> = {
+  ON_TRACK: { label: "On track", tone: "success", icon: CheckCircle2 },
+  AT_RISK: { label: "At risk", tone: "warning", icon: TriangleAlert },
+  BREACHED: { label: "Breached", tone: "danger", icon: Flame },
+  MET: { label: "Met", tone: "success", icon: CircleCheck },
+  PAUSED: { label: "Paused", tone: "neutral", icon: PauseCircle },
+  NONE: { label: "No SLA", tone: "neutral" },
+};
+
+// ---- Knowledge base -------------------------------------------------------
+export const ARTICLE_STATUSES = [
+  "DRAFT",
+  "REVIEW",
+  "PUBLISHED",
+  "RETIRED",
+] as const;
+export const ARTICLE_STATUS_META: Record<string, Meta> = {
+  DRAFT: { label: "Draft", tone: "neutral", icon: FileEdit },
+  REVIEW: { label: "In Review", tone: "warning", icon: Search },
+  PUBLISHED: { label: "Published", tone: "success", icon: CircleCheck },
+  RETIRED: { label: "Retired", tone: "neutral", icon: CircleSlash },
+};
+
+export const ARTICLE_VISIBILITIES = ["INTERNAL", "PUBLIC"] as const;
+export const ARTICLE_VISIBILITY_META: Record<string, Meta> = {
+  INTERNAL: { label: "Internal", tone: "warning", icon: Lock },
+  PUBLIC: { label: "Public", tone: "info", icon: Globe },
+};
 
 // ---- Location ----
 export const LOCATION_TYPES = [

@@ -9,7 +9,7 @@ import { ListToolbar, type FilterDef } from "@/components/list-toolbar";
 import { PaginationBar } from "@/components/pagination-bar";
 import { StatusBadge, VipBadge } from "@/components/status-badge";
 import { EmptyState } from "@/components/empty-state";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { UserAvatar } from "@/components/user-avatar";
 import {
   Table,
   TableBody,
@@ -23,15 +23,6 @@ import { formatDistanceToNow } from "date-fns";
 
 export const metadata: Metadata = { title: "People" };
 export const dynamic = "force-dynamic";
-
-function initials(s: string) {
-  return s
-    .split(" ")
-    .map((p) => p[0])
-    .slice(0, 2)
-    .join("")
-    .toUpperCase();
-}
 
 export default async function PeoplePage({
   searchParams,
@@ -117,14 +108,11 @@ export default async function PeoplePage({
                         href={`/people/${u.id}`}
                         className="flex items-center gap-3"
                       >
-                        <Avatar className="size-8">
-                          {u.image ? (
-                            <AvatarImage src={u.image} alt={u.name ?? u.email} />
-                          ) : null}
-                          <AvatarFallback className="text-xs">
-                            {initials(u.name ?? u.email)}
-                          </AvatarFallback>
-                        </Avatar>
+                        <UserAvatar
+                          name={u.name}
+                          email={u.email}
+                          image={u.image}
+                        />
                         <span className="line-clamp-1 font-medium group-hover:text-primary">
                           {u.name ?? u.email}
                         </span>

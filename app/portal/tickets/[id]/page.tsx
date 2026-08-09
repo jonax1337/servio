@@ -6,8 +6,11 @@ import { requireUser } from "@/lib/session";
 import { LinkButton } from "@/components/link-button";
 import { StatusBadge } from "@/components/status-badge";
 import { PortalComment } from "@/components/portal/portal-comment";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { UserAvatar } from "@/components/user-avatar";
+import { AttachmentsCard } from "@/components/attachments/attachments-card";
+import { sanitizeCommentHtml } from "@/lib/markdown";
+import { iconForMime, formatBytes } from "@/lib/attachments-ui";
+import { FormAnswers } from "@/components/tickets/form-answers";
 import {
   TICKET_STATUS_META, PRIORITY_META, TICKET_TYPE_META, ticketRef,
 } from "@/lib/constants";
@@ -25,10 +28,6 @@ export async function generateMetadata({
   return { title: t?.title ?? "Ticket" };
 }
 
-function initials(s: string) {
-  return s.split(" ").map((p) => p[0]).slice(0, 2).join("").toUpperCase();
-}
-
 export default async function PortalTicketDetail({
   params,
 }: {
@@ -42,8 +41,10 @@ export default async function PortalTicketDetail({
     include: {
       assignee: true,
       service: true,
+      catalogItem: true,
       // only public (non-internal) comments are visible to the requester
-      comments: { where: { isInternal: false }, include: { author: true }, orderBy: { createdAt: "asc" } },
+      comments: { where: { isInternal: false }, include: { author: true, attachments: { orderBy: { createdAt: "asc" } } }, orderBy: { createdAt: "asc" } },
+      attachments: { orderBy: { createdAt: "desc" } },
     },
   });
   if (!ticket) notFound();
@@ -69,25 +70,65 @@ export default async function PortalTicketDetail({
           {ticket.service ? ` · ${ticket.service.name}` : ""}
           {ticket.assignee ? ` · Handled by ${ticket.assignee.name ?? "the Service Desk"}` : " · Awaiting assignment"}
         </p>
-        <div className="mt-4 whitespace-pre-wrap rounded-xl border bg-background p-4 text-sm leading-relaxed">
-          {ticket.description || "No description provided."}
+        <div className="mt-4 rounded-xl border bg-background p-4 text-sm leading-relaxed">
+          {ticket.descriptionHtml ? (
+            <div
+              className="prose prose-sm dark:prose-invert max-w-none"
+              dangerouslySetInnerHTML={{ __html: sanitizeCommentHtml(ticket.descriptionHtml) }}
+            />
+          ) : (
+            <div className="whitespace-pre-wrap">{ticket.description || "No description provided."}</div>
+          )}
         </div>
       </div>
+
+      {ticket.formData ? (
+        <FormAnswers className="mt-6" formSchema={ticket.formSchema ?? ticket.catalogItem?.formSchema} formData={ticket.formData} />
+      ) : null}
+
+      {ticket.attachments.length > 0 ? (
+        <AttachmentsCard
+          className="mt-6"
+          attachments={ticket.attachments}
+          target={{ ticketId: ticket.id }}
+          canUpload={false}
+          currentUserId={me.id}
+        />
+      ) : null}
 
       <div className="mt-6">
         <h2 className="mb-4 text-sm font-semibold">Conversation</h2>
         <div className="grid gap-4">
           {ticket.comments.map((c) => (
             <div key={c.id} className="flex gap-3">
-              <Avatar className="size-8 shrink-0">
-                <AvatarFallback className="text-xs">{initials(c.author.name ?? c.author.email)}</AvatarFallback>
-              </Avatar>
+              <UserAvatar name={c.author.name} email={c.author.email} className="shrink-0" />
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
                   <span className="text-sm font-medium">{c.author.name ?? c.author.email}</span>
                   <span className="text-xs text-muted-foreground">{format(c.createdAt, "PP p")}</span>
                 </div>
-                <div className="mt-1 whitespace-pre-wrap rounded-lg border bg-card p-3 text-sm">{c.body}</div>
+                {c.bodyHtml ? (
+                  <div
+                    className="mt-1 rounded-lg border bg-card p-3 text-sm prose prose-sm dark:prose-invert max-w-none [&_[data-mention-id]]:rounded [&_[data-mention-id]]:bg-primary/10 [&_[data-mention-id]]:px-1 [&_[data-mention-id]]:font-medium [&_[data-mention-id]]:text-primary"
+                    dangerouslySetInnerHTML={{ __html: sanitizeCommentHtml(c.bodyHtml) }}
+                  />
+                ) : (
+                  <div className="mt-1 whitespace-pre-wrap rounded-lg border bg-card p-3 text-sm">{c.body}</div>
+                )}
+                {c.attachments.length > 0 ? (
+                  <div className="mt-1.5 flex flex-wrap gap-1.5">
+                    {c.attachments.map((a) => {
+                      const Icon = iconForMime(a.mime);
+                      return (
+                        <a key={a.id} href={`/api/files/${a.id}`} download className="inline-flex items-center gap-1.5 rounded-md border bg-background px-2 py-1 text-xs hover:border-primary/40 hover:text-primary">
+                          <Icon className="size-3.5 shrink-0 text-muted-foreground" />
+                          <span className="max-w-48 truncate font-medium">{a.filename}</span>
+                          <span className="text-muted-foreground">{formatBytes(a.size)}</span>
+                        </a>
+                      );
+                    })}
+                  </div>
+                ) : null}
               </div>
             </div>
           ))}

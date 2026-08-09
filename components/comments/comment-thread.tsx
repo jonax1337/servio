@@ -5,24 +5,48 @@ import { useFormStatus } from "react-dom";
 import { Lock, Send, Loader2, MessageSquare, Activity as ActivityIcon } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { UserAvatar } from "@/components/user-avatar";
+import { RichTextEditor, type MentionUser } from "@/components/ui/rich-text-editor";
+import { ComposerAttachments } from "@/components/comments/composer-attachments";
+import { sanitizeCommentHtml } from "@/lib/markdown";
+import { iconForMime, formatBytes, type AttachmentRow } from "@/lib/attachments-ui";
 import { formatDistanceToNow } from "date-fns";
 
 export type ThreadComment = {
   id: string;
   author: string;
   body: string;
+  bodyHtml: string | null;
   isInternal: boolean;
   createdAt: Date;
+  attachments: AttachmentRow[];
 };
-export type ThreadEvent = { id: string; who: string; summary: string; createdAt: Date };
 
-function initials(s: string) {
-  return s.split(" ").map((p) => p[0]).slice(0, 2).join("").toUpperCase();
+function CommentAttachments({ attachments }: { attachments: AttachmentRow[] }) {
+  if (attachments.length === 0) return null;
+  return (
+    <div className="mt-1.5 flex flex-wrap gap-1.5">
+      {attachments.map((a) => {
+        const Icon = iconForMime(a.mime);
+        return (
+          <a
+            key={a.id}
+            href={`/api/files/${a.id}`}
+            download
+            className="inline-flex items-center gap-1.5 rounded-md border bg-background px-2 py-1 text-xs hover:border-primary/40 hover:text-primary"
+          >
+            <Icon className="size-3.5 shrink-0 text-muted-foreground" />
+            <span className="max-w-48 truncate font-medium">{a.filename}</span>
+            <span className="text-muted-foreground">{formatBytes(a.size)}</span>
+          </a>
+        );
+      })}
+    </div>
+  );
 }
+export type ThreadEvent = { id: string; who: string; summary: string; createdAt: Date };
 
 function SubmitButton() {
   const { pending } = useFormStatus();
@@ -42,6 +66,8 @@ export function CommentThread({
   addAction,
   allowInternal = true,
   placeholder = "Write a reply…",
+  mentionUsers,
+  attachTarget,
 }: {
   idField: string;
   entityId: number;
@@ -50,6 +76,8 @@ export function CommentThread({
   addAction: (formData: FormData) => void | Promise<void>;
   allowInternal?: boolean;
   placeholder?: string;
+  mentionUsers?: MentionUser[];
+  attachTarget?: { ticketId: number };
 }) {
   const ref = useRef<HTMLFormElement>(null);
 
@@ -70,9 +98,7 @@ export function CommentThread({
         <div className="grid gap-4">
           {comments.map((c) => (
             <div key={c.id} className="flex gap-3">
-              <Avatar className="size-8 shrink-0">
-                <AvatarFallback className="text-xs">{initials(c.author)}</AvatarFallback>
-              </Avatar>
+              <UserAvatar name={c.author} className="shrink-0" />
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
                   <span className="text-sm font-medium">{c.author}</span>
@@ -83,9 +109,17 @@ export function CommentThread({
                   ) : null}
                   <span className="text-xs text-muted-foreground">{formatDistanceToNow(c.createdAt, { addSuffix: true })}</span>
                 </div>
-                <div className={`mt-1 rounded-lg border p-3 text-sm whitespace-pre-wrap ${c.isInternal ? "border-amber-500/20 bg-amber-500/5" : "bg-card"}`}>
-                  {c.body}
+                <div className={`mt-1 rounded-lg border p-3 text-sm ${c.isInternal ? "border-amber-500/20 bg-amber-500/5" : "bg-card"}`}>
+                  {c.bodyHtml ? (
+                    <div
+                      className="prose prose-sm dark:prose-invert max-w-none [&_[data-mention-id]]:rounded [&_[data-mention-id]]:bg-primary/10 [&_[data-mention-id]]:px-1 [&_[data-mention-id]]:font-medium [&_[data-mention-id]]:text-primary"
+                      dangerouslySetInnerHTML={{ __html: sanitizeCommentHtml(c.bodyHtml) }}
+                    />
+                  ) : (
+                    <div className="whitespace-pre-wrap">{c.body}</div>
+                  )}
                 </div>
+                <CommentAttachments attachments={c.attachments} />
               </div>
             </div>
           ))}
@@ -99,7 +133,8 @@ export function CommentThread({
             className="mt-1 grid gap-2 rounded-xl border bg-card p-3"
           >
             <input type="hidden" name={idField} value={entityId} />
-            <Textarea name="body" required placeholder={placeholder} className="min-h-20 resize-none border-0 bg-transparent p-0 shadow-none focus-visible:ring-0" />
+            <RichTextEditor name="bodyHtml" required placeholder={placeholder} ariaLabel="Reply" mentionUsers={mentionUsers} />
+            {attachTarget ? <ComposerAttachments ticketId={attachTarget.ticketId} /> : null}
             <div className="flex items-center justify-between border-t pt-2">
               {allowInternal ? (
                 <div className="flex items-center gap-2">

@@ -7,7 +7,7 @@ import {
 } from "lucide-react";
 import { db } from "@/lib/db";
 import { getFormOptions } from "@/lib/data/options";
-import { getSessionUser } from "@/lib/session";
+import { getSessionUser, isAgent, type Role } from "@/lib/session";
 import { LinkButton } from "@/components/link-button";
 import { StatusBadge, VipBadge, ToneBadge } from "@/components/status-badge";
 import { TicketProperties } from "@/components/tickets/ticket-properties";
@@ -16,6 +16,12 @@ import { EditEntityDialog } from "@/components/edit-entity-dialog";
 import { addTicketComment, updateTicketDetails, unlinkTicket, unlinkAsset, unlinkRelation } from "@/lib/actions/tickets";
 import { TicketActions } from "@/components/tickets/ticket-actions";
 import { TicketTasks } from "@/components/tickets/ticket-tasks";
+import { SlaBadge } from "@/components/tickets/sla-badge";
+import { DueDatePicker } from "@/components/tickets/due-date-picker";
+import { FormAnswers } from "@/components/tickets/form-answers";
+import { WorkLog } from "@/components/tickets/work-log";
+import { AttachmentsCard } from "@/components/attachments/attachments-card";
+import { sanitizeCommentHtml } from "@/lib/markdown";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   TICKET_STATUS_META, PRIORITY_META, TICKET_TYPE_META, SOURCE_META,
@@ -54,14 +60,17 @@ export default async function TicketDetailPage({
         assignee: true,
         service: true,
         sla: true,
+        catalogItem: true,
         problem: true,
         change: true,
         mergedInto: true,
-        comments: { include: { author: true }, orderBy: { createdAt: "asc" } },
+        comments: { include: { author: true, attachments: { orderBy: { createdAt: "asc" } } }, orderBy: { createdAt: "asc" } },
         assets: { include: { asset: true } },
         tags: { include: { tag: true } },
         watchers: { include: { user: true } },
         tasks: { orderBy: { order: "asc" } },
+        worklogs: { include: { user: true }, orderBy: { loggedAt: "desc" } },
+        attachments: { orderBy: { createdAt: "desc" } },
         linksFrom: { include: { linked: true } },
       },
     }),
@@ -87,7 +96,7 @@ export default async function TicketDetailPage({
   }));
 
   const comments = ticket.comments.map((c) => ({
-    id: c.id, author: c.author.name ?? c.author.email, body: c.body, isInternal: c.isInternal, createdAt: c.createdAt,
+    id: c.id, author: c.author.name ?? c.author.email, body: c.body, bodyHtml: c.bodyHtml, isInternal: c.isInternal, createdAt: c.createdAt, attachments: c.attachments,
   }));
   const activity = audits
     .filter((a) => a.summary && a.summary !== "Added a comment")
@@ -114,6 +123,7 @@ export default async function TicketDetailPage({
               id={ticket.id}
               title={ticket.title}
               description={ticket.description}
+              descriptionHtml={ticket.descriptionHtml}
               entityLabel="ticket"
             />
             <TicketActions
@@ -122,6 +132,9 @@ export default async function TicketDetailPage({
               isMajorIncident={ticket.isMajorIncident}
               candidates={candidateOpts}
               watchers={ticket.watchers.map((w) => w.user.name ?? w.user.email)}
+              people={options.agents
+                .filter((a) => a.id !== me?.id)
+                .map((a) => ({ value: a.id, label: a.name ?? a.email }))}
             />
           </div>
         </div>
@@ -171,9 +184,33 @@ export default async function TicketDetailPage({
             <span>· {formatDistanceToNow(ticket.createdAt, { addSuffix: true })} · via {SOURCE_META[ticket.source]?.label ?? ticket.source}</span>
           </p>
 
-          <div className="mt-4 rounded-xl border bg-card p-4 text-sm leading-relaxed whitespace-pre-wrap">
-            {ticket.description || <span className="text-muted-foreground">No description provided.</span>}
+          <div className="mt-4 rounded-xl border bg-card p-4 text-sm leading-relaxed">
+            {ticket.descriptionHtml ? (
+              <div
+                className="prose prose-sm dark:prose-invert max-w-none"
+                dangerouslySetInnerHTML={{ __html: sanitizeCommentHtml(ticket.descriptionHtml) }}
+              />
+            ) : ticket.description ? (
+              <div className="whitespace-pre-wrap">{ticket.description}</div>
+            ) : (
+              <span className="text-muted-foreground">No description provided.</span>
+            )}
           </div>
+
+          {ticket.formData ? (
+            <FormAnswers className="mt-4" formSchema={ticket.formSchema ?? ticket.catalogItem?.formSchema} formData={ticket.formData} />
+          ) : null}
+
+          {ticket.attachments.length > 0 ? (
+            <AttachmentsCard
+              className="mt-4"
+              attachments={ticket.attachments}
+              target={{ ticketId: ticket.id }}
+              canUpload={false}
+              canDeleteAll={!!me && isAgent(me.role as Role)}
+              currentUserId={me?.id}
+            />
+          ) : null}
 
           {/* Linked records (with unlink) */}
           {(ticket.problem || ticket.change || ticket.assets.length > 0 || ticket.linksFrom.length > 0) && (
@@ -205,6 +242,8 @@ export default async function TicketDetailPage({
               comments={comments}
               activity={activity}
               addAction={addTicketComment}
+              mentionUsers={options.agents}
+              attachTarget={{ ticketId: ticket.id }}
             />
           </div>
         </div>
@@ -216,6 +255,13 @@ export default async function TicketDetailPage({
           <CardHeader><CardTitle className="text-sm">Properties</CardTitle></CardHeader>
           <CardContent>
             <TicketProperties ticket={ticket} options={options} />
+          </CardContent>
+        </Card>
+
+        <Card className="mt-4">
+          <CardHeader><CardTitle className="text-sm">Due date</CardTitle></CardHeader>
+          <CardContent>
+            <DueDatePicker ticketId={ticket.id} dueDate={ticket.dueDate} />
           </CardContent>
         </Card>
 
@@ -246,13 +292,25 @@ export default async function TicketDetailPage({
         <Card className="mt-4">
           <CardHeader><CardTitle className="text-sm">Timeline & SLA</CardTitle></CardHeader>
           <CardContent className="grid gap-2.5 text-sm">
+            <div className="flex items-center justify-between">
+              <span className="text-muted-foreground">SLA status</span>
+              <SlaBadge ticket={ticket} />
+            </div>
             <Meta label="Created" value={format(ticket.createdAt, "PP p")} />
-            {ticket.dueAt ? <Meta label="Due" value={format(ticket.dueAt, "PP p")} /> : null}
+            {ticket.responseDueAt && !ticket.firstResponseAt ? <Meta label="Respond by" value={format(ticket.responseDueAt, "PP p")} /> : null}
+            {ticket.dueAt ? <Meta label="Resolve by" value={format(ticket.dueAt, "PP p")} /> : null}
             {ticket.firstResponseAt ? <Meta label="First response" value={format(ticket.firstResponseAt, "PP p")} /> : null}
             {ticket.resolvedAt ? <Meta label="Resolved" value={format(ticket.resolvedAt, "PP p")} /> : null}
             {ticket.sla ? <Meta label="SLA" value={ticket.sla.name} /> : null}
           </CardContent>
         </Card>
+
+        <WorkLog
+          ticketId={ticket.id}
+          logs={ticket.worklogs}
+          meId={me?.id ?? ""}
+          isAdmin={me?.role === "ADMIN"}
+        />
 
         {ticket.tags.length > 0 ? (
           <div className="mt-4 flex flex-wrap gap-1.5">

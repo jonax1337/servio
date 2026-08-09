@@ -18,7 +18,12 @@ export default async function PortalKnowledge({
   const sp = await searchParams;
   const q = getParam(sp, "q");
   const articles = await db.article.findMany({
-    where: { published: true, ...(q ? { title: { contains: q } } : {}) },
+    // End users only ever see published, public-facing articles.
+    where: {
+      status: "PUBLISHED",
+      visibility: "PUBLIC",
+      ...(q ? { OR: [{ title: { contains: q } }, { excerpt: { contains: q } }] } : {}),
+    },
     orderBy: { views: "desc" },
     include: { category: true },
   });

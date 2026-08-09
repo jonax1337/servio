@@ -30,7 +30,12 @@ export const getCurrentUser = cache(async () => {
 export async function requireUser() {
   const user = await getSessionUser();
   if (!user) redirect("/login");
-  return user;
+  // Rehydrate against the DB: the JWT freezes role/isActive at login, so a
+  // deactivated or demoted user would otherwise keep their old access until the
+  // token expires. getCurrentUser is cached per request, so this is one query.
+  const row = await getCurrentUser();
+  if (!row || !row.isActive) redirect("/login");
+  return { ...user, role: row.role as Role };
 }
 
 export function hasRole(role: Role, min: Role) {

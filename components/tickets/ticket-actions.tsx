@@ -1,13 +1,18 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useTransition } from "react";
 import {
-  Eye, EyeOff, ChevronsUp, Flame, Link2, GitMerge, MoreHorizontal,
+  Eye, EyeOff, ChevronsUp, Flame, Link2, GitMerge, MoreHorizontal, UserPlus, Forward, Loader2,
 } from "lucide-react";
 import {
   escalateTicket, toggleMajorIncident, toggleWatch, linkTicket, mergeTicket,
+  addParticipant, forwardTicketExternal, type ForwardState,
 } from "@/lib/actions/tickets";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Label } from "@/components/ui/label";
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
@@ -16,34 +21,46 @@ import {
 } from "@/components/ui/dialog";
 import { Combobox, type ComboOption } from "@/components/combobox";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-} from "@/components/ui/select";
 
 type Candidate = { value: string; label: string };
 
-const LINK_TYPES = [
-  { value: "RELATED", label: "Related to" },
-  { value: "DUPLICATE", label: "Duplicate of" },
-  { value: "BLOCKS", label: "Blocks" },
-  { value: "CAUSED_BY", label: "Caused by" },
+const LINK_TYPES: ComboOption[] = [
+  { value: "RELATED", label: "Related to", tone: "info" },
+  { value: "DUPLICATE", label: "Duplicate of", tone: "warning" },
+  { value: "BLOCKS", label: "Blocks", tone: "danger" },
+  { value: "CAUSED_BY", label: "Caused by", tone: "purple" },
 ];
 
 export function TicketActions({
-  ticketId, isWatching, isMajorIncident, candidates, watchers = [],
+  ticketId, isWatching, isMajorIncident, candidates, watchers = [], people = [],
 }: {
   ticketId: number;
   isWatching: boolean;
   isMajorIncident: boolean;
   candidates: Candidate[];
   watchers?: string[];
+  people?: Candidate[];
 }) {
   const [linkOpen, setLinkOpen] = useState(false);
   const [mergeOpen, setMergeOpen] = useState(false);
+  const [participantOpen, setParticipantOpen] = useState(false);
+  const [forwardOpen, setForwardOpen] = useState(false);
   const [linkTarget, setLinkTarget] = useState<string>("");
   const [linkType, setLinkType] = useState("RELATED");
   const [mergeTarget, setMergeTarget] = useState<string>("");
+  const [participantTarget, setParticipantTarget] = useState<string>("");
+  const [forwardState, setForwardState] = useState<ForwardState>();
+  const [forwardPending, startForward] = useTransition();
   const opts: ComboOption[] = candidates;
+  const peopleOpts: ComboOption[] = people;
+
+  const submitForward = (fd: FormData) => {
+    startForward(async () => {
+      const res = await forwardTicketExternal(undefined, fd);
+      setForwardState(res);
+      if (res?.ok) { setForwardOpen(false); setForwardState(undefined); }
+    });
+  };
 
   return (
     <>
@@ -100,6 +117,13 @@ export function TicketActions({
             </DropdownMenuItem>
           </form>
           <DropdownMenuSeparator />
+          <DropdownMenuItem onClick={() => setParticipantOpen(true)}>
+            <UserPlus className="size-4" /> Add participant…
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={() => setForwardOpen(true)}>
+            <Forward className="size-4" /> Forward to external…
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
           <DropdownMenuItem onClick={() => setLinkOpen(true)}>
             <Link2 className="size-4" /> Link ticket…
           </DropdownMenuItem>
@@ -108,6 +132,63 @@ export function TicketActions({
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
+
+      {/* Add participant — notify someone without an @mention */}
+      <Dialog open={participantOpen} onOpenChange={setParticipantOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Add participant</DialogTitle>
+            <DialogDescription>Add someone to this ticket and notify them — no @mention needed.</DialogDescription>
+          </DialogHeader>
+          <form action={async (fd) => { await addParticipant(fd); setParticipantOpen(false); setParticipantTarget(""); }} className="grid gap-3">
+            <input type="hidden" name="ticketId" value={ticketId} />
+            <Combobox options={peopleOpts} value={participantTarget} onChange={setParticipantTarget} name="userId" placeholder="Choose a person" searchPlaceholder="Search people…" />
+            <Textarea name="note" placeholder="Optional note for them…" className="min-h-16" />
+            <label className="flex items-center gap-2 text-sm">
+              <Checkbox name="notifyByEmail" /> Also send them an email
+            </label>
+            <DialogFooter>
+              <Button type="submit" disabled={!participantTarget}>Add participant</Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Forward to external — internal action, requester never sees it */}
+      <Dialog open={forwardOpen} onOpenChange={setForwardOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Forward to external</DialogTitle>
+            <DialogDescription>
+              Send this ticket to an external email. This is internal — the requester is not notified.
+            </DialogDescription>
+          </DialogHeader>
+          <form action={submitForward} className="grid gap-3">
+            <input type="hidden" name="ticketId" value={ticketId} />
+            {forwardState?.error ? (
+              <p className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">{forwardState.error}</p>
+            ) : null}
+            <div className="grid gap-1.5">
+              <Label htmlFor="fwd-email">External email</Label>
+              <Input id="fwd-email" name="email" type="email" placeholder="vendor@example.com" required />
+            </div>
+            <div className="grid gap-1.5">
+              <Label htmlFor="fwd-name">Recipient name (optional)</Label>
+              <Input id="fwd-name" name="toName" placeholder="Jane at Vendor Co." />
+            </div>
+            <Textarea name="note" placeholder="Optional cover note…" className="min-h-16" />
+            <label className="flex items-center gap-2 text-sm">
+              <Checkbox name="includeComments" /> Include public correspondence
+            </label>
+            <DialogFooter>
+              <Button type="submit" disabled={forwardPending}>
+                {forwardPending ? <Loader2 className="size-4 animate-spin" /> : <Forward className="size-4" />}
+                Forward
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
 
       {/* Link dialog */}
       <Dialog open={linkOpen} onOpenChange={setLinkOpen}>
@@ -118,12 +199,7 @@ export function TicketActions({
           </DialogHeader>
           <form action={linkTicket} className="grid gap-3">
             <input type="hidden" name="id" value={ticketId} />
-            <Select name="type" value={linkType} onValueChange={(v) => setLinkType((v as string) ?? "RELATED")} items={Object.fromEntries(LINK_TYPES.map((t) => [t.value, t.label]))}>
-              <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                {LINK_TYPES.map((t) => <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>)}
-              </SelectContent>
-            </Select>
+            <Combobox name="type" options={LINK_TYPES} value={linkType} onChange={(v) => setLinkType(v || "RELATED")} placeholder="Link type" searchPlaceholder="Search link types…" />
             <Combobox options={opts} value={linkTarget} onChange={setLinkTarget} name="targetId" placeholder="Choose a ticket" searchPlaceholder="Search tickets…" />
             <DialogFooter>
               <Button type="submit" disabled={!linkTarget}>Link ticket</Button>

@@ -46,6 +46,9 @@ dev.db-journal
 *.db
 .env
 
+# uploaded attachment blobs (kept outside public/)
+.uploads/
+
 # playwright mcp
 .playwright-mcp/
 ticket-detail*.png

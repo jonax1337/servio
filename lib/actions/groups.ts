@@ -4,9 +4,9 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { getSessionUser } from "@/lib/session";
+import { getCurrentUser, hasRole, type Role } from "@/lib/session";
 import { writeAudit } from "@/lib/audit";
-import { GROUP_TYPES } from "@/lib/constants";
+import { GROUP_TYPES, AUTO_ASSIGN_STRATEGIES } from "@/lib/constants";
 
 const optionalId = z
   .string()
@@ -25,6 +25,7 @@ const createSchema = z.object({
     .optional()
     .transform((v) => (v && v.trim() !== "" ? v.trim() : null)),
   managerId: optionalId,
+  autoAssign: z.enum(AUTO_ASSIGN_STRATEGIES).default("OFF"),
 });
 
 export type ActionState =
@@ -35,8 +36,9 @@ export async function createGroup(
   _prev: ActionState,
   formData: FormData,
 ): Promise<ActionState> {
-  const me = await getSessionUser();
-  if (!me) return { error: "Not authenticated" };
+  // DB-truth manager gate, consistent with setGroupAutoAssign (same config field).
+  const me = await getCurrentUser();
+  if (!me || !me.isActive || !hasRole(me.role as Role, "MANAGER")) return { error: "Not authorised" };
 
   const parsed = createSchema.safeParse(Object.fromEntries(formData));
   if (!parsed.success) {
@@ -67,4 +69,18 @@ export async function createGroup(
 
   revalidatePath("/groups");
   redirect(`/groups/${group.id}`);
+}
+
+/** Change a group's auto-assignment strategy (manager+). */
+export async function setGroupAutoAssign(formData: FormData) {
+  const me = await getCurrentUser();
+  if (!me || !me.isActive || !hasRole(me.role as Role, "MANAGER")) return;
+  const id = String(formData.get("id") ?? "");
+  const strategy = String(formData.get("autoAssign") ?? "");
+  if (!AUTO_ASSIGN_STRATEGIES.includes(strategy as (typeof AUTO_ASSIGN_STRATEGIES)[number])) return;
+  const group = await db.group.findUnique({ where: { id }, select: { id: true } });
+  if (!group) return;
+  await db.group.update({ where: { id }, data: { autoAssign: strategy } });
+  await writeAudit({ userId: me.id, action: "UPDATE", entity: "Group", entityId: id, summary: `Auto-assign set to ${strategy}` });
+  revalidatePath(`/groups/${id}`);
 }

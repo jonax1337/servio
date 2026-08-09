@@ -15,7 +15,7 @@ import {
   CommandList,
 } from "@/components/ui/command";
 import { ToneBadge } from "@/components/status-badge";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { UserAvatar } from "@/components/user-avatar";
 import type { Tone } from "@/lib/constants";
 
 export type ComboOption = {
@@ -28,14 +28,26 @@ export type ComboOption = {
   hint?: string;
 };
 
-function OptionInner({ o }: { o: ComboOption }) {
+function OptionInner({ o, stacked }: { o: ComboOption; stacked?: boolean }) {
   const Icon = o.icon;
+  // People options get a taller two-line row: name on top, email/hint below.
+  if (stacked && o.avatar) {
+    return (
+      <span className="flex min-w-0 items-center gap-2.5 py-0.5 text-left">
+        <UserAvatar name={o.label} email={o.hint} size="default" />
+        <span className="flex min-w-0 flex-col text-left leading-tight">
+          <span className="truncate text-sm font-medium">{o.label}</span>
+          {o.hint ? (
+            <span className="truncate text-xs text-muted-foreground">{o.hint}</span>
+          ) : null}
+        </span>
+      </span>
+    );
+  }
   return (
-    <span className="flex min-w-0 items-center gap-2">
+    <span className="flex min-w-0 items-center gap-2 text-left">
       {o.avatar ? (
-        <Avatar className="size-5">
-          <AvatarFallback className="text-[9px]">{o.avatar}</AvatarFallback>
-        </Avatar>
+        <UserAvatar name={o.label} email={o.hint} size="sm" />
       ) : Icon ? (
         <Icon className="size-4 text-muted-foreground" />
       ) : null}
@@ -88,7 +100,9 @@ export function Combobox({
               aria-expanded={open}
               data-pending={pending ? "" : undefined}
               className={cn(
-                "w-full justify-between gap-2 rounded-md font-normal data-[pending]:opacity-70",
+                // h-auto + min-h keeps single-line rows compact but lets a two-line
+                // person (name over email) grow the trigger.
+                "h-auto min-h-8 w-full justify-between gap-2 rounded-md py-1 font-normal data-[pending]:opacity-70",
                 !selected && "text-muted-foreground",
                 className,
               )}
@@ -102,7 +116,7 @@ export function Combobox({
                 className="border-0 bg-transparent px-0"
               />
             ) : (
-              <OptionInner o={selected} />
+              <OptionInner o={selected} stacked />
             )
           ) : (
             <span className="truncate">{placeholder}</span>
@@ -131,7 +145,7 @@ export function Combobox({
                         className="border-0 bg-transparent px-0"
                       />
                     ) : (
-                      <OptionInner o={o} />
+                      <OptionInner o={o} stacked />
                     )}
                   </CommandItem>
                 ))}

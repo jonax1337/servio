@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import { ArrowLeft, Eye } from "lucide-react";
 import { db } from "@/lib/db";
 import { LinkButton } from "@/components/link-button";
+import { renderMarkdown, sanitizeCommentHtml } from "@/lib/markdown";
 import { format } from "date-fns";
 
 export const dynamic = "force-dynamic";
@@ -27,9 +28,14 @@ export default async function PortalArticle({
     where: { slug },
     include: { author: true, category: true },
   });
-  if (!article || !article.published) notFound();
+  // Portal readers only get published, public articles — internal ones 404.
+  if (!article || article.status !== "PUBLISHED" || article.visibility !== "PUBLIC") notFound();
 
   await db.article.update({ where: { id: article.id }, data: { views: { increment: 1 } } });
+  const html =
+    article.bodyFormat === "html"
+      ? sanitizeCommentHtml(article.body)
+      : renderMarkdown(article.body, article.bodyFormat);
 
   return (
     <article className="mx-auto max-w-2xl">
@@ -47,9 +53,10 @@ export default async function PortalArticle({
         <span>·</span>
         <span className="flex items-center gap-1"><Eye className="size-3.5" /> {article.views + 1}</span>
       </div>
-      <div className="prose prose-invert mt-6 max-w-none whitespace-pre-wrap text-sm leading-relaxed">
-        {article.body}
-      </div>
+      <div
+        className="prose prose-sm prose-invert mt-6 max-w-none leading-relaxed dark:prose-invert"
+        dangerouslySetInnerHTML={{ __html: html }}
+      />
     </article>
   );
 }

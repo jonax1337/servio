@@ -47,6 +47,7 @@ model User {
   problemComments ProblemComment[]
   watching        TicketWatcher[]
   assignedTasks   Task[]
+  workLogs        WorkLog[]
   assignedProblems Problem[]  @relation("ProblemAssignee")
   assignedChanges  Change[]   @relation("ChangeAssignee")
   approvals       ChangeApproval[]
@@ -59,6 +60,8 @@ model User {
   auditLogs       AuditLog[]
   notifications   Notification[]
   articles        Article[]
+  articleRevisions ArticleRevision[]
+  attachments     Attachment[] @relation("AttachmentUploader")
   syncSource      SyncSource? @relation(fields: [syncSourceId], references: [id])
 
   @@index([role])
@@ -111,6 +114,8 @@ model Group {
   email       String?
   color       String   @default("#6366f1")
   managerId   String?
+  autoAssign         String  @default("OFF") // OFF | ROUND_ROBIN | LEAST_BUSY
+  lastAssignedUserId String? // round-robin cursor
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
@@ -235,7 +240,8 @@ model CatalogItem {
 model Ticket {
   id          Int      @id @default(autoincrement())
   title       String
-  description String   @default("")
+  description String   @default("") // plaintext twin
+  descriptionHtml String? // sanitized rich-text HTML; null = plaintext-only
   type        String   @default("INCIDENT") // INCIDENT | REQUEST
   status      String   @default("NEW") // NEW | OPEN | PENDING | ON_HOLD | RESOLVED | CLOSED | CANCELLED
   priority    String   @default("MEDIUM") // LOW | MEDIUM | HIGH | CRITICAL
@@ -261,8 +267,17 @@ model Ticket {
   changeId    Int?
 
   formData       String?   // JSON answers when submitted from a catalog form
+  formSchema     String?   // snapshot of the catalog form schema at submit time (survives item deletion)
   approvalState  String?   // null | PENDING | APPROVED | REJECTED
-  dueAt          DateTime?
+  dueDate        DateTime? // manual due date set by an agent (distinct from the SLA clock)
+  // ---- SLA clock (resolved from SLA/service/priority at create) ----
+  dueAt          DateTime? // mirror of resolveDueAt (kept for existing views)
+  responseDueAt  DateTime?
+  resolveDueAt   DateTime?
+  responseBreached Boolean @default(false)
+  resolveBreached  Boolean @default(false)
+  pendingSince   DateTime? // set while PENDING/ON_HOLD so the clock can pause
+  pausedMs       Int       @default(0) // accumulated paused time
   firstResponseAt DateTime?
   resolvedAt     DateTime?
   closedAt       DateTime?
@@ -286,6 +301,7 @@ model Ticket {
   assets      TicketAsset[]
   tags        TicketTag[]
   tasks       Task[]
+  worklogs    WorkLog[]
   approvals   TicketApproval[]
   mergedInto    Ticket?      @relation("TicketMerge", fields: [mergedIntoId], references: [id])
   mergedTickets Ticket[]     @relation("TicketMerge")
@@ -303,7 +319,8 @@ model TicketComment {
   id         String   @id @default(cuid())
   ticketId   Int
   authorId   String
-  body       String
+  body       String   // plaintext twin (search / notifications / mentions)
+  bodyHtml   String?  // sanitized rich-text HTML; null = legacy plaintext row
   isInternal Boolean  @default(false)
   createdAt  DateTime @default(now())
 
@@ -325,6 +342,23 @@ model Task {
 
   ticket   Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
   assignee User?  @relation(fields: [assigneeId], references: [id])
+
+  @@index([ticketId])
+}
+
+// Time/effort logged against a ticket (drives effort reporting).
+model WorkLog {
+  id        String   @id @default(cuid())
+  ticketId  Int
+  userId    String
+  minutes   Int
+  note      String?
+  billable  Boolean  @default(false)
+  loggedAt  DateTime @default(now())
+  createdAt DateTime @default(now())
+
+  ticket Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id])
 
   @@index([ticketId])
 }
@@ -389,7 +423,8 @@ model TicketTag {
 model Problem {
   id          Int      @id @default(autoincrement())
   title       String
-  description String   @default("")
+  description String   @default("") // plaintext twin
+  descriptionHtml String? // sanitized rich-text HTML
   status      String   @default("NEW") // NEW | INVESTIGATING | KNOWN_ERROR | RESOLVED | CLOSED
   priority    String   @default("MEDIUM")
   impact      String   @default("MEDIUM")
@@ -417,6 +452,7 @@ model ProblemComment {
   problemId  Int
   authorId   String
   body       String
+  bodyHtml   String?
   isInternal Boolean  @default(false)
   createdAt  DateTime @default(now())
 
@@ -433,7 +469,8 @@ model ProblemComment {
 model Change {
   id          Int      @id @default(autoincrement())
   title       String
-  description String   @default("")
+  description String   @default("") // plaintext twin
+  descriptionHtml String? // sanitized rich-text HTML
   type        String   @default("NORMAL") // STANDARD | NORMAL | EMERGENCY
   status      String   @default("DRAFT") // DRAFT | SUBMITTED | APPROVAL | APPROVED | SCHEDULED | IN_PROGRESS | REVIEW | CLOSED | REJECTED | FAILED
   risk        String   @default("MEDIUM") // LOW | MEDIUM | HIGH
@@ -470,6 +507,7 @@ model ChangeComment {
   changeId   Int
   authorId   String
   body       String
+  bodyHtml   String?
   isInternal Boolean  @default(false)
   createdAt  DateTime @default(now())
 
@@ -595,17 +633,29 @@ model ChangeAsset {
 // ---------------------------------------------------------------------------
 
 model Attachment {
-  id         String   @id @default(cuid())
-  filename   String
-  url        String
-  mime       String   @default("application/octet-stream")
-  size       Int      @default(0)
-  ticketId   Int?
-  commentId  String?
-  createdAt  DateTime @default(now())
+  id           String   @id @default(cuid())
+  filename     String
+  url          String?  // legacy/external only; new uploads use storageKey
+  storageKey   String?  // driver-agnostic blob key (YYYY/MM/<id>-<name>)
+  checksum     String?  // hex sha256 of the blob
+  mime         String   @default("application/octet-stream")
+  size         Int      @default(0)
+  ticketId     Int?
+  commentId    String?
+  articleId    String?
+  uploadedById String?
+  createdAt    DateTime @default(now())
 
-  ticket  Ticket?        @relation(fields: [ticketId], references: [id], onDelete: Cascade)
-  comment TicketComment? @relation(fields: [commentId], references: [id], onDelete: Cascade)
+  ticket     Ticket?        @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  comment    TicketComment? @relation(fields: [commentId], references: [id], onDelete: Cascade)
+  article    Article?       @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  uploadedBy User?          @relation("AttachmentUploader", fields: [uploadedById], references: [id])
+
+  @@index([ticketId])
+  @@index([commentId])
+  @@index([articleId])
+  @@index([uploadedById])
+  @@index([storageKey])
 }
 
 // ---------------------------------------------------------------------------
@@ -739,18 +789,45 @@ model AutomationRule {
 }
 
 model Article {
-  id         String   @id @default(cuid())
-  title      String
-  slug       String   @unique
-  excerpt    String?
-  body       String
-  categoryId String?
-  authorId   String?
-  published  Boolean  @default(true)
-  views      Int      @default(0)
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  id          String    @id @default(cuid())
+  title       String
+  slug        String    @unique
+  excerpt     String?
+  body        String
+  bodyFormat  String    @default("markdown") // markdown | plain
+  status      String    @default("DRAFT")    // DRAFT | REVIEW | PUBLISHED | RETIRED
+  visibility  String    @default("INTERNAL") // INTERNAL (agents only) | PUBLIC (end-user portal)
+  published   Boolean   @default(false)      // denormalized mirror of (status === PUBLISHED)
+  categoryId  String?
+  authorId    String?
+  views       Int       @default(0)
+  publishedAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
 
-  category Category? @relation(fields: [categoryId], references: [id])
-  author   User?     @relation(fields: [authorId], references: [id])
+  category    Category?         @relation(fields: [categoryId], references: [id])
+  author      User?             @relation(fields: [authorId], references: [id])
+  revisions   ArticleRevision[]
+  attachments Attachment[]
+
+  @@index([status, visibility])
+}
+
+// Append-only snapshot of an article's content, written on every save/publish.
+model ArticleRevision {
+  id        String   @id @default(cuid())
+  articleId String
+  version   Int
+  title     String
+  excerpt   String?
+  body      String
+  note      String?
+  editorId  String?
+  createdAt DateTime @default(now())
+
+  article Article @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  editor  User?   @relation(fields: [editorId], references: [id])
+
+  @@unique([articleId, version])
+  @@index([articleId])
 }

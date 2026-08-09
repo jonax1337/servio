@@ -6,7 +6,15 @@ export type ApiPrincipal = {
   tokenId: string;
   userId: string;
   scopes: string[];
+  /** Acting user's role — used to scope object access (agents see all). */
+  role: string;
 };
+
+/** Agents (AGENT/MANAGER/ADMIN) may act org-wide; USERs are scoped to their own objects. */
+const AGENT_RANK: Record<string, number> = { USER: 0, AGENT: 1, MANAGER: 2, ADMIN: 3 };
+export function principalIsAgent(principal: ApiPrincipal) {
+  return (AGENT_RANK[principal.role] ?? 0) >= AGENT_RANK.AGENT;
+}
 
 /** Authenticate a request via `Authorization: Bearer <token>`. */
 export async function authenticateApi(req: Request): Promise<ApiPrincipal | null> {
@@ -26,11 +34,22 @@ export async function authenticateApi(req: Request): Promise<ApiPrincipal | null
   for (const t of pool) {
     if (t.expiresAt && t.expiresAt.getTime() < Date.now()) continue;
     if (await bcrypt.compare(raw, t.tokenHash)) {
+      // Resolve the acting user; reject tokens whose owner is deactivated.
+      const user = await db.user.findUnique({
+        where: { id: t.userId },
+        select: { isActive: true, role: true },
+      });
+      if (!user || !user.isActive) return null;
       await db.apiToken.update({
         where: { id: t.id },
         data: { lastUsedAt: new Date() },
       });
-      return { tokenId: t.id, userId: t.userId, scopes: t.scopes.split(",").map((s) => s.trim()) };
+      return {
+        tokenId: t.id,
+        userId: t.userId,
+        scopes: t.scopes.split(",").map((s) => s.trim()),
+        role: user.role,
+      };
     }
   }
   return null;
@@ -40,8 +59,10 @@ export function requireScope(principal: ApiPrincipal, scope: string) {
   return principal.scopes.includes(scope) || principal.scopes.includes("admin");
 }
 
+// Bearer-token APIs don't use cookies, but keep the origin configurable rather
+// than hard-wiring a wildcard so deployments can lock it down.
 const CORS = {
-  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Origin": process.env.API_CORS_ORIGIN ?? "*",
   "Access-Control-Allow-Methods": "GET, POST, PATCH, OPTIONS",
   "Access-Control-Allow-Headers": "Authorization, Content-Type",
 };

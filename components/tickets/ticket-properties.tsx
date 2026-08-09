@@ -114,6 +114,7 @@ export function TicketProperties({
 
   return (
     <div className="grid gap-3">
+      {/* Status — the primary action */}
       <div className="grid gap-1.5">
         <span className="text-xs font-medium text-muted-foreground">Status</span>
         <Combobox options={statusOpts} value={ticket.status} pending={statusPending} onChange={changeStatus} />
@@ -130,14 +131,26 @@ export function TicketProperties({
         open={resDlg.open}
         onOpenChange={(o) => setResDlg((s) => ({ ...s, open: o }))}
       />
-      <Prop label="Priority" ticketId={ticket.id} field="priority" value={ticket.priority} options={prioOpts} />
-      <Prop label="Assignee" ticketId={ticket.id} field="assigneeId" value={ticket.assigneeId} options={agentOpts} searchable placeholder="Unassigned" />
-      <Prop label="Team" ticketId={ticket.id} field="groupId" value={ticket.groupId} options={groupOpts} searchable placeholder="No team" />
-      <Prop label="Category" ticketId={ticket.id} field="categoryId" value={ticket.categoryId} options={catOpts} searchable placeholder="No category" />
-      <Prop label="Service" ticketId={ticket.id} field="serviceId" value={ticket.serviceId} options={svcOpts} searchable placeholder="No service" />
-      <div className="grid grid-cols-2 gap-3">
-        <Prop label="Impact" ticketId={ticket.id} field="impact" value={ticket.impact} options={levelOpts} />
-        <Prop label="Urgency" ticketId={ticket.id} field="urgency" value={ticket.urgency} options={levelOpts} />
+
+      {/* Who owns it */}
+      <div className="grid gap-3 border-t pt-3">
+        <Prop label="Assignee" ticketId={ticket.id} field="assigneeId" value={ticket.assigneeId} options={agentOpts} searchable placeholder="Unassigned" />
+        <Prop label="Team" ticketId={ticket.id} field="groupId" value={ticket.groupId} options={groupOpts} searchable placeholder="No team" />
+      </div>
+
+      {/* How severe it is */}
+      <div className="grid gap-3 border-t pt-3">
+        <Prop label="Priority" ticketId={ticket.id} field="priority" value={ticket.priority} options={prioOpts} />
+        <div className="grid grid-cols-2 gap-3">
+          <Prop label="Impact" ticketId={ticket.id} field="impact" value={ticket.impact} options={levelOpts} />
+          <Prop label="Urgency" ticketId={ticket.id} field="urgency" value={ticket.urgency} options={levelOpts} />
+        </div>
+      </div>
+
+      {/* How it's classified */}
+      <div className="grid gap-3 border-t pt-3">
+        <Prop label="Category" ticketId={ticket.id} field="categoryId" value={ticket.categoryId} options={catOpts} searchable placeholder="No category" />
+        <Prop label="Service" ticketId={ticket.id} field="serviceId" value={ticket.serviceId} options={svcOpts} searchable placeholder="No service" />
       </div>
     </div>
   );

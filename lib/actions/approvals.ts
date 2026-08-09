@@ -5,6 +5,8 @@ import { db } from "@/lib/db";
 import { getSessionUser } from "@/lib/session";
 import { writeAudit, notify } from "@/lib/audit";
 import { sendMail } from "@/lib/mail";
+import { resumeData } from "@/lib/sla";
+import { autoAssignTicket } from "@/lib/assignment";
 import { ticketRef } from "@/lib/constants";
 
 export async function decideApproval(formData: FormData) {
@@ -32,12 +34,15 @@ export async function decideApproval(formData: FormData) {
 
   const approved = decision === "APPROVED";
   const t = approval.ticket;
+  // Approval resumes the SLA clock (it was paused while PENDING approval).
+  const resume = approved && t.pendingSince ? resumeData(t) : {};
   await db.ticket.update({
     where: { id: t.id },
     data: {
       approvalState: decision,
       status: approved ? "NEW" : "CANCELLED",
       ...(approved ? {} : { closedAt: new Date() }),
+      ...resume,
     },
   });
   await db.ticketComment.create({
@@ -47,6 +52,9 @@ export async function decideApproval(formData: FormData) {
     },
   });
   await writeAudit({ userId: me.id, action: "UPDATE", entity: "Ticket", entityId: t.id, summary: approved ? "Approved request" : "Rejected request" });
+
+  // Once approved, the request is live work — auto-assign it from its group.
+  if (approved) await autoAssignTicket(t.id);
 
   await notify(t.requesterId, {
     type: "APPROVAL_RESULT",

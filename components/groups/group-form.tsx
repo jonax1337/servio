@@ -9,7 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { ComboField } from "@/components/combo-field";
 import type { ComboOption } from "@/components/combobox";
-import { GROUP_TYPES, GROUP_TYPE_META } from "@/lib/constants";
+import { GROUP_TYPES, GROUP_TYPE_META, AUTO_ASSIGN_STRATEGIES, AUTO_ASSIGN_META } from "@/lib/constants";
 import type { FormOptions } from "@/lib/data/options";
 
 function Field({
@@ -33,6 +33,7 @@ export function GroupForm({ options }: { options: FormOptions }) {
 
   const typeOpts: ComboOption[] = GROUP_TYPES.map((t) => ({ value: t, label: GROUP_TYPE_META[t].label, tone: GROUP_TYPE_META[t].tone, icon: GROUP_TYPE_META[t].icon }));
   const managerOpts: ComboOption[] = options.agents.map((a) => ({ value: a.id, label: a.name ?? a.email, avatar: initials(a.name ?? a.email), hint: a.email }));
+  const autoAssignOpts: ComboOption[] = AUTO_ASSIGN_STRATEGIES.map((s) => ({ value: s, label: AUTO_ASSIGN_META[s].label, tone: AUTO_ASSIGN_META[s].tone }));
 
   return (
     <form action={action} className="grid gap-5">
@@ -55,9 +56,14 @@ export function GroupForm({ options }: { options: FormOptions }) {
         </Field>
       </div>
 
-      <Field label="Email" error={fe.email} hint="Shared inbox or distribution list for this group.">
-        <Input name="email" type="email" placeholder="team@example.com" />
-      </Field>
+      <div className="grid gap-5 sm:grid-cols-2">
+        <Field label="Email" error={fe.email} hint="Shared inbox or distribution list for this group.">
+          <Input name="email" type="email" placeholder="team@example.com" />
+        </Field>
+        <Field label="Auto-assignment" hint="Automatically assign new tickets to a member of this team.">
+          <ComboField name="autoAssign" defaultValue="OFF" options={autoAssignOpts} />
+        </Field>
+      </div>
 
       <Field label="Description" error={fe.description}>
         <Textarea name="description" placeholder="What this group is responsible for…" className="min-h-28" />

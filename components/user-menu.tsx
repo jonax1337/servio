@@ -10,17 +10,8 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { UserAvatar } from "@/components/user-avatar";
 import { ROLE_META } from "@/lib/constants";
-
-function initials(name: string) {
-  return name
-    .split(" ")
-    .map((p) => p[0])
-    .slice(0, 2)
-    .join("")
-    .toUpperCase();
-}
 
 export function UserMenu({
   name,
@@ -36,22 +27,12 @@ export function UserMenu({
   return (
     <DropdownMenu>
       <DropdownMenuTrigger className="flex items-center gap-2 rounded-full outline-none focus-visible:ring-2 focus-visible:ring-ring">
-        <Avatar className="size-8 border">
-          {image ? <AvatarImage src={image} alt={name} /> : null}
-          <AvatarFallback className="bg-primary/10 text-xs font-semibold text-primary">
-            {initials(name)}
-          </AvatarFallback>
-        </Avatar>
+        <UserAvatar name={name} email={email} image={image} className="border" />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-56">
         <div className="grid gap-0.5 px-2 py-1.5">
           <div className="flex items-center gap-2">
-            <Avatar className="size-7 border">
-              {image ? <AvatarImage src={image} alt={name} /> : null}
-              <AvatarFallback className="bg-primary/10 text-[10px] font-semibold text-primary">
-                {initials(name)}
-              </AvatarFallback>
-            </Avatar>
+            <UserAvatar name={name} email={email} image={image} size="sm" className="border" />
             <div className="grid min-w-0">
               <span className="truncate text-sm font-medium">{name}</span>
               <span className="truncate text-xs text-muted-foreground">{email}</span>

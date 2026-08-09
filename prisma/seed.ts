@@ -295,7 +295,7 @@ async function main() {
     const title = ticketTitles[i];
     const type = pick(["INCIDENT", "INCIDENT", "INCIDENT", "REQUEST"]);
     const status = pick([
-      "NEW", "OPEN", "OPEN", "PENDING", "ON_HOLD",
+      "NEW", "OPEN", "IN_PROGRESS", "IN_PROGRESS", "PENDING", "ON_HOLD",
       "RESOLVED", "RESOLVED", "CLOSED",
     ]);
     const priority = pick(["LOW", "MEDIUM", "MEDIUM", "HIGH", "HIGH", "CRITICAL"]);
@@ -388,7 +388,7 @@ async function main() {
     problems.push(p);
   }
   // link some open tickets to problems
-  const openTickets = await db.ticket.findMany({ where: { status: { in: ["NEW", "OPEN", "PENDING"] } }, take: 8 });
+  const openTickets = await db.ticket.findMany({ where: { status: { in: ["NEW", "OPEN", "IN_PROGRESS", "PENDING"] } }, take: 8 });
   for (const t of openTickets)
     if (rand() > 0.5) await db.ticket.update({ where: { id: t.id }, data: { problemId: pick(problems).id } });
 
@@ -500,22 +500,36 @@ async function main() {
   });
 
   // ---- Knowledge base articles ----
-  const articleDefs: [string, string, string][] = [
-    ["How to connect to the VPN", "how-to-connect-vpn", "Step-by-step guide to installing and connecting to the corporate VPN client on Windows and macOS."],
-    ["Reset your password", "reset-your-password", "You can reset your password from the self-service portal in under a minute."],
-    ["Request a new laptop", "request-new-laptop", "Use the Hardware Request service to order a standard or specialised device."],
-    ["Set up email on your phone", "email-on-your-phone", "Configure corporate email on iOS and Android using the company profile."],
-    ["Wi-Fi troubleshooting", "wifi-troubleshooting", "Common fixes for Wi-Fi connectivity problems in the office."],
+  // [title, slug, excerpt, visibility, status]
+  const articleDefs: [string, string, string, "PUBLIC" | "INTERNAL", "PUBLISHED" | "DRAFT" | "REVIEW"][] = [
+    ["How to connect to the VPN", "how-to-connect-vpn", "Step-by-step guide to installing and connecting to the corporate VPN client on Windows and macOS.", "PUBLIC", "PUBLISHED"],
+    ["Reset your password", "reset-your-password", "You can reset your password from the self-service portal in under a minute.", "PUBLIC", "PUBLISHED"],
+    ["Request a new laptop", "request-new-laptop", "Use the Hardware Request service to order a standard or specialised device.", "PUBLIC", "PUBLISHED"],
+    ["Set up email on your phone", "email-on-your-phone", "Configure corporate email on iOS and Android using the company profile.", "PUBLIC", "PUBLISHED"],
+    ["Wi-Fi troubleshooting", "wifi-troubleshooting", "Common fixes for Wi-Fi connectivity problems in the office.", "PUBLIC", "PUBLISHED"],
+    // Internal runbook — agents only, must never surface in the portal.
+    ["Runbook: VPN concentrator failover", "runbook-vpn-failover", "Internal procedure for failing over the VPN concentrator during an outage.", "INTERNAL", "PUBLISHED"],
+    // A draft to show the authoring lifecycle.
+    ["New starter IT checklist", "new-starter-it-checklist", "Draft checklist of accounts and equipment to provision for new hires.", "PUBLIC", "DRAFT"],
   ];
-  for (const [title, slug, excerpt] of articleDefs) {
+  for (const [title, slug, excerpt, visibility, status] of articleDefs) {
+    const isPublished = status === "PUBLISHED";
+    const author = pick(agents);
     await db.article.create({
       data: {
         title, slug, excerpt,
         body: `## ${title}\n\n${excerpt}\n\n1. Open the self-service portal.\n2. Follow the on-screen steps.\n3. Contact the Service Desk if you need help.\n\n> Tip: You can track all your requests under **My Tickets**.`,
+        bodyFormat: "markdown",
+        status,
+        visibility,
+        published: isPublished,
+        publishedAt: isPublished ? daysAgo(Math.floor(rand() * 30 + 1)) : null,
         categoryId: pick(parentCats).id,
-        authorId: pick(agents).id,
-        published: true,
-        views: Math.floor(rand() * 400 + 20),
+        authorId: author.id,
+        views: isPublished ? Math.floor(rand() * 400 + 20) : 0,
+        revisions: {
+          create: { version: 1, title, excerpt, body: `## ${title}\n\n${excerpt}`, editorId: author.id, note: "Seeded" },
+        },
       },
     });
   }

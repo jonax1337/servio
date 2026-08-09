@@ -8,15 +8,10 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { ComboField } from "@/components/combo-field";
+import type { ComboOption } from "@/components/combobox";
 
-const SCOPE_OPTIONS: { value: string; label: string }[] = [
+const SCOPE_OPTIONS: ComboOption[] = [
   { value: "read", label: "Read only" },
   { value: "read,write", label: "Read & write" },
   { value: "read,write,admin", label: "Read, write & admin" },
@@ -75,24 +70,7 @@ export function TokenManager() {
           </div>
           <div className="grid min-w-48 gap-1.5">
             <Label>Scopes</Label>
-            <Select
-              name="scopes"
-              defaultValue="read"
-              items={Object.fromEntries(
-                SCOPE_OPTIONS.map((o) => [o.value, o.label]),
-              )}
-            >
-              <SelectTrigger className="w-full">
-                <SelectValue placeholder="Scopes" />
-              </SelectTrigger>
-              <SelectContent>
-                {SCOPE_OPTIONS.map((o) => (
-                  <SelectItem key={o.value} value={o.value}>
-                    {o.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <ComboField name="scopes" options={SCOPE_OPTIONS} defaultValue="read" />
           </div>
           <Button type="submit" disabled={pending}>
             {pending ? (

@@ -1,8 +1,9 @@
 import type { Prisma } from "@prisma/client";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { guard, ok, apiError, preflight, paginate, pageMeta } from "@/lib/api";
+import { guard, ok, apiError, preflight, paginate, pageMeta, principalIsAgent } from "@/lib/api";
 import { writeAudit } from "@/lib/audit";
+import { slaCreateData } from "@/lib/sla";
 import { serializeTicket } from "../_serializers";
 import {
   TICKET_TYPES, TICKET_STATUSES, PRIORITIES, IMPACT_URGENCY, OPEN_TICKET_STATUSES,
@@ -22,7 +23,10 @@ export async function GET(req: Request) {
   const url = new URL(req.url);
   const { page, perPage, skip, take } = paginate(url.searchParams);
 
-  const where: Prisma.TicketWhereInput = {};
+  // Non-agent tokens are scoped to the caller's own tickets (no org-wide PII).
+  const where: Prisma.TicketWhereInput = principalIsAgent(auth.principal)
+    ? {}
+    : { requesterId: auth.principal.userId };
   const status = url.searchParams.get("status");
   const priority = url.searchParams.get("priority");
   const type = url.searchParams.get("type");
@@ -75,9 +79,31 @@ export async function POST(req: Request) {
   const parsed = createSchema.safeParse(body);
   if (!parsed.success) return apiError(422, "Validation failed", parsed.error.flatten().fieldErrors);
 
-  const requesterId = parsed.data.requesterId ?? auth.principal.userId;
+  const isAgentPrincipal = principalIsAgent(auth.principal);
+  // Non-agents can only file tickets as themselves; agents may set requesterId.
+  const requesterId = isAgentPrincipal
+    ? parsed.data.requesterId ?? auth.principal.userId
+    : auth.principal.userId;
+  // Resolve SLA + deadlines from the service/priority at creation time.
+  const sla = await slaCreateData({ serviceId: parsed.data.serviceId, priority: parsed.data.priority });
+  // Non-agents may not set server-controlled fields (status/assignee/queue/etc.)
+  // — those fall back to schema defaults. Prevents self-assign / pre-resolved
+  // tickets that would skew SLA and metrics.
+  const data = isAgentPrincipal
+    ? { ...parsed.data, ...sla, requesterId, source: "API" as const }
+    : {
+        title: parsed.data.title,
+        description: parsed.data.description,
+        type: parsed.data.type,
+        priority: parsed.data.priority,
+        impact: parsed.data.impact,
+        urgency: parsed.data.urgency,
+        ...sla,
+        requesterId,
+        source: "API" as const,
+      };
   const ticket = await db.ticket.create({
-    data: { ...parsed.data, requesterId, source: "API" },
+    data,
     include: { requester: true, assignee: true },
   });
   await writeAudit({ userId: auth.principal.userId, action: "CREATE", entity: "Ticket", entityId: ticket.id, summary: "Created via API" });

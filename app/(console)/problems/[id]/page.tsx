@@ -12,6 +12,7 @@ import { ProblemProperties } from "@/components/problems/problem-properties";
 import { CommentThread } from "@/components/comments/comment-thread";
 import { EditEntityDialog } from "@/components/edit-entity-dialog";
 import { addProblemComment, updateProblemDetails } from "@/lib/actions/problems";
+import { sanitizeCommentHtml } from "@/lib/markdown";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   PROBLEM_STATUS_META, PRIORITY_META, TICKET_STATUS_META,
@@ -62,7 +63,7 @@ export default async function ProblemDetailPage({
   if (!problem) notFound();
 
   const comments = problem.comments.map((c) => ({
-    id: c.id, author: c.author.name ?? c.author.email, body: c.body, isInternal: c.isInternal, createdAt: c.createdAt,
+    id: c.id, author: c.author.name ?? c.author.email, body: c.body, bodyHtml: c.bodyHtml, isInternal: c.isInternal, createdAt: c.createdAt, attachments: [],
   }));
   const activity = audits
     .filter((a) => a.summary && a.summary !== "Added a comment")
@@ -88,6 +89,7 @@ export default async function ProblemDetailPage({
               id={problem.id}
               title={problem.title}
               description={problem.description}
+              descriptionHtml={problem.descriptionHtml}
               entityLabel="problem"
             />
           </div>
@@ -102,8 +104,14 @@ export default async function ProblemDetailPage({
             {problem.category ? <> · {problem.category.name}</> : null}
           </p>
 
-          <div className="mt-4 rounded-xl border bg-card p-4 text-sm leading-relaxed whitespace-pre-wrap">
-            {problem.description || <span className="text-muted-foreground">No description provided.</span>}
+          <div className="mt-4 rounded-xl border bg-card p-4 text-sm leading-relaxed">
+            {problem.descriptionHtml ? (
+              <div className="prose prose-sm dark:prose-invert max-w-none" dangerouslySetInnerHTML={{ __html: sanitizeCommentHtml(problem.descriptionHtml) }} />
+            ) : problem.description ? (
+              <div className="whitespace-pre-wrap">{problem.description}</div>
+            ) : (
+              <span className="text-muted-foreground">No description provided.</span>
+            )}
           </div>
 
           <div className="mt-4 grid gap-4 sm:grid-cols-2">

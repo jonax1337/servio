@@ -24,7 +24,7 @@ import {
 } from "@/lib/constants";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { LinkButton } from "@/components/link-button";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { UserAvatar } from "@/components/user-avatar";
 import { formatDistanceToNow } from "date-fns";
 
 export const dynamic = "force-dynamic";
@@ -243,11 +243,11 @@ export default async function DashboardPage() {
               <CardContent className="grid gap-3">
                 {activity.map((a) => (
                   <div key={a.id} className="flex items-start gap-2.5 text-sm">
-                    <Avatar className="size-6">
-                      <AvatarFallback className="text-[10px]">
-                        {(a.user?.name ?? "S").slice(0, 2).toUpperCase()}
-                      </AvatarFallback>
-                    </Avatar>
+                    <UserAvatar
+                      name={a.user?.name ?? "System"}
+                      email={a.user?.email}
+                      size="sm"
+                    />
                     <div className="min-w-0 leading-tight">
                       <p className="truncate">
                         <span className="font-medium">{a.user?.name ?? "System"}</span>{" "}

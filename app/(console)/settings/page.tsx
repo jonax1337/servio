@@ -5,6 +5,8 @@ import {
   RefreshCw,
   FolderTree,
   Users,
+  Timer,
+  Zap,
   ArrowUpRight,
   Info,
 } from "lucide-react";
@@ -25,6 +27,18 @@ type SettingCard = {
 };
 
 const CARDS: SettingCard[] = [
+  {
+    href: "/settings/sla",
+    title: "SLA Policies",
+    description: "Define response and resolution targets and how the clock is applied.",
+    icon: Timer,
+  },
+  {
+    href: "/automations",
+    title: "Automations",
+    description: "Build rules that route, prioritise and act on tickets automatically.",
+    icon: Zap,
+  },
   {
     href: "/settings/api",
     title: "API Tokens",

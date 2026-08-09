@@ -4,8 +4,11 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { getSessionUser, isAgent, type Role } from "@/lib/session";
+import { getSessionUser, isAgent, hasRole, type Role } from "@/lib/session";
 import { writeAudit, notify } from "@/lib/audit";
+import { canTransition, CHANGE_TRANSITIONS } from "@/lib/transitions";
+import { selectApprovers, isEligibleApprover } from "@/lib/cab";
+import { readRichBody, readRichField } from "@/lib/markdown";
 import {
   changeRef,
   CHANGE_TYPES,
@@ -99,7 +102,7 @@ const updateSchema = z.object({
 
 export async function updateChangeField(formData: FormData) {
   const me = await getSessionUser();
-  if (!me) return;
+  if (!me || !isAgent(me.role as Role)) return;
   const parsed = updateSchema.safeParse(Object.fromEntries(formData));
   if (!parsed.success) return;
   const { id, field, value } = parsed.data;
@@ -107,7 +110,23 @@ export async function updateChangeField(formData: FormData) {
   const isRelation = field.endsWith("Id");
   const v = isRelation && (value === "none" || value === "") ? null : value;
 
-  await db.change.update({ where: { id }, data: { [field]: v } });
+  const patch: Record<string, unknown> = { [field]: v };
+  if (field === "status") {
+    const current = await db.change.findUnique({ where: { id }, select: { status: true, actualStart: true } });
+    if (!current) return;
+    // Guard the lifecycle: no jumping straight to APPROVED/SCHEDULED/etc.
+    // Freigabe happens only through the CAB approval flow (decideApproval).
+    // Governed lifecycle → fail closed on an unknown status (never accept an
+    // arbitrary jump from a corrupt/renamed value).
+    if (!canTransition(CHANGE_TRANSITIONS, current.status, value, true)) return;
+    // Back to DRAFT wipes the old CAB so the next submit builds a fresh one
+    // (and stale REJECTED rows don't instantly re-reject).
+    if (value === "DRAFT") await db.changeApproval.deleteMany({ where: { changeId: id } });
+    if (value === "IN_PROGRESS" && !current.actualStart) patch.actualStart = new Date();
+    if (value === "CLOSED" || value === "FAILED") patch.actualEnd = new Date();
+  }
+
+  await db.change.update({ where: { id }, data: patch });
   await writeAudit({
     userId: me.id,
     action: "UPDATE",
@@ -130,10 +149,19 @@ const decideSchema = z.object({
 
 export async function decideApproval(formData: FormData) {
   const me = await getSessionUser();
-  if (!me) return;
+  if (!me || !isAgent(me.role as Role)) return;
   const parsed = decideSchema.safeParse(Object.fromEntries(formData));
   if (!parsed.success) return;
   const { approvalId, decision, comment } = parsed.data;
+
+  // Separation of duties: only the assigned approver (or an admin) may decide,
+  // and only while the approval is still pending.
+  const existing = await db.changeApproval.findUnique({ where: { id: approvalId } });
+  if (!existing || existing.status !== "PENDING") return;
+  if (existing.approverId !== me.id && me.role !== "ADMIN") return;
+  // Never decide on a change you own, even as ADMIN.
+  const ownerChange = await db.change.findUnique({ where: { id: existing.changeId }, select: { assigneeId: true } });
+  if (ownerChange?.assigneeId === me.id) return;
 
   const approval = await db.changeApproval.update({
     where: { id: approvalId },
@@ -145,14 +173,16 @@ export async function decideApproval(formData: FormData) {
     where: { changeId: approval.changeId },
     select: { status: true },
   });
+  // Guard the status write with `status: "APPROVAL"` so a concurrent back-to-DRAFT
+  // (which wipes the board) can't be overwritten by a stale APPROVED/REJECTED.
   if (approvals.length > 0 && approvals.every((a) => a.status === "APPROVED")) {
-    await db.change.update({
-      where: { id: approval.changeId },
+    await db.change.updateMany({
+      where: { id: approval.changeId, status: "APPROVAL" },
       data: { status: "APPROVED" },
     });
   } else if (decision === "REJECTED") {
-    await db.change.update({
-      where: { id: approval.changeId },
+    await db.change.updateMany({
+      where: { id: approval.changeId, status: "APPROVAL" },
       data: { status: "REJECTED" },
     });
   }
@@ -166,6 +196,114 @@ export async function decideApproval(formData: FormData) {
   });
   revalidatePath(`/changes/${approval.changeId}`);
   revalidatePath("/changes");
+  revalidatePath("/approvals");
+}
+
+// ── CAB governance: submit / add / remove approvers ──────────────────────────
+
+const submitSchema = z.object({ id: z.coerce.number() });
+const addApproverSchema = z.object({ changeId: z.coerce.number(), approverId: z.string().min(1) });
+const removeApproverSchema = z.object({ approvalId: z.string().min(1) });
+
+export async function submitChangeForApproval(formData: FormData) {
+  const me = await getSessionUser();
+  if (!me || !isAgent(me.role as Role)) return;
+  const parsed = submitSchema.safeParse(Object.fromEntries(formData));
+  if (!parsed.success) return;
+  const { id } = parsed.data;
+
+  const current = await db.change.findUnique({
+    where: { id },
+    select: { id: true, type: true, risk: true, status: true, assigneeId: true, title: true },
+  });
+  if (!current) return;
+  // Only from DRAFT — this also makes a double-click idempotent (2nd submit is in APPROVAL).
+  if (!canTransition(CHANGE_TRANSITIONS, current.status, "SUBMITTED", true)) return;
+
+  if (current.type === "STANDARD") {
+    // Pre-authorized: straight to APPROVED, no CAB. (Bypasses the transition map
+    // deliberately — same authorized-flow exception decideApproval uses.)
+    await db.change.update({ where: { id }, data: { status: "APPROVED" } });
+    await writeAudit({ userId: me.id, action: "UPDATE", entity: "Change", entityId: id, summary: "Standard change auto-approved (pre-authorized)" });
+  } else {
+    const approverIds = await selectApprovers(current);
+    if (approverIds.length === 0) {
+      // Never silently approve an unreviewed change — stay in DRAFT for a retry.
+      await writeAudit({ userId: me.id, action: "UPDATE", entity: "Change", entityId: id, summary: "No eligible CAB approvers — submission blocked" });
+      return;
+    }
+    await db.changeApproval.createMany({ data: approverIds.map((approverId) => ({ changeId: id, approverId })) });
+    await db.change.update({ where: { id }, data: { status: "APPROVAL" } });
+    if (current.type === "EMERGENCY") {
+      await db.changeComment.create({
+        data: { changeId: id, authorId: me.id, isInternal: true, body: "Emergency change — expedited ECAB approval. Post-Implementation Review (PIR) required after closure." },
+      });
+    }
+    for (const approverId of approverIds) {
+      await notify(approverId, { type: "APPROVAL", title: "Approval needed", body: current.title, entity: "Change", entityId: String(id) });
+    }
+    await writeAudit({ userId: me.id, action: "UPDATE", entity: "Change", entityId: id, summary: "Submitted for approval" });
+  }
+
+  revalidatePath(`/changes/${id}`);
+  revalidatePath("/changes");
+  revalidatePath("/approvals");
+}
+
+export async function addChangeApprover(formData: FormData) {
+  const me = await getSessionUser();
+  if (!me) return;
+  const parsed = addApproverSchema.safeParse(Object.fromEntries(formData));
+  if (!parsed.success) return;
+  const { changeId, approverId } = parsed.data;
+
+  const change = await db.change.findUnique({ where: { id: changeId }, select: { assigneeId: true, status: true, risk: true, title: true } });
+  if (!change) return;
+  // Manager+ only — the change owner must NOT curate their own approval board (SoD).
+  if (!hasRole(me.role as Role, "MANAGER")) return;
+  if (change.status !== "APPROVAL") return;
+  if (approverId === change.assigneeId) return; // SoD — never seat the owner
+  if (!(await isEligibleApprover(approverId, change.risk))) return;
+
+  // Idempotent (honors @@unique([changeId, approverId]) without a P2002 throw).
+  const exists = await db.changeApproval.findFirst({ where: { changeId, approverId }, select: { id: true } });
+  if (exists) return;
+  await db.changeApproval.create({ data: { changeId, approverId } });
+
+  await notify(approverId, { type: "APPROVAL", title: "Approval needed", body: change.title, entity: "Change", entityId: String(changeId) });
+  await writeAudit({ userId: me.id, action: "UPDATE", entity: "Change", entityId: changeId, summary: "Added approver" });
+  revalidatePath(`/changes/${changeId}`);
+  revalidatePath("/approvals");
+}
+
+export async function removeChangeApprover(formData: FormData) {
+  const me = await getSessionUser();
+  if (!me) return;
+  const parsed = removeApproverSchema.safeParse(Object.fromEntries(formData));
+  if (!parsed.success) return;
+  const { approvalId } = parsed.data;
+
+  const row = await db.changeApproval.findUnique({
+    where: { id: approvalId },
+    include: { change: { select: { id: true, status: true, assigneeId: true } } },
+  });
+  if (!row) return;
+  // Manager+ only — the owner must NOT prune their own board (could force approval).
+  if (!hasRole(me.role as Role, "MANAGER")) return;
+  if (row.change.status !== "APPROVAL") return;
+
+  await db.changeApproval.delete({ where: { id: approvalId } }).catch(() => {});
+
+  // Removing a row can complete unanimity — recompute, but never auto-approve an
+  // empty board, and guard the status write against a concurrent back-to-DRAFT.
+  const remaining = await db.changeApproval.findMany({ where: { changeId: row.change.id }, select: { status: true } });
+  if (remaining.length > 0 && remaining.every((a) => a.status === "APPROVED")) {
+    await db.change.updateMany({ where: { id: row.change.id, status: "APPROVAL" }, data: { status: "APPROVED" } });
+  }
+
+  await writeAudit({ userId: me.id, action: "UPDATE", entity: "Change", entityId: row.change.id, summary: "Removed approver" });
+  revalidatePath(`/changes/${row.change.id}`);
+  revalidatePath("/approvals");
 }
 
 // ── Comments & edit ──────────────────────────────────────────────────────────
@@ -179,10 +317,10 @@ export async function addChangeComment(formData: FormData) {
   const me = await requireAgentC();
   if (!me) return;
   const id = Number(formData.get("changeId"));
-  const body = String(formData.get("body") ?? "").trim();
   const isInternal = formData.get("isInternal") === "on";
+  const { body, bodyHtml } = readRichBody(formData);
   if (!id || !body) return;
-  await db.changeComment.create({ data: { changeId: id, authorId: me.id, body, isInternal } });
+  await db.changeComment.create({ data: { changeId: id, authorId: me.id, body, bodyHtml, isInternal } });
   await db.change.update({ where: { id }, data: { updatedAt: new Date() } });
   await writeAudit({ userId: me.id, action: "UPDATE", entity: "Change", entityId: id, summary: "Added a comment" });
   revalidatePath(`/changes/${id}`);
@@ -193,9 +331,9 @@ export async function updateChangeDetails(formData: FormData) {
   if (!me) return;
   const id = Number(formData.get("id"));
   const title = String(formData.get("title") ?? "").trim();
-  const description = String(formData.get("description") ?? "");
   if (!id || title.length < 3) return;
-  await db.change.update({ where: { id }, data: { title, description } });
+  const { text: description, html: descriptionHtml } = readRichField(formData, "descriptionHtml", "description");
+  await db.change.update({ where: { id }, data: { title, description, descriptionHtml } });
   await writeAudit({ userId: me.id, action: "UPDATE", entity: "Change", entityId: id, summary: "Edited details" });
   revalidatePath(`/changes/${id}`);
   revalidatePath("/changes");

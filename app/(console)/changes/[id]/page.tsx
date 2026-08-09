@@ -3,21 +3,25 @@ import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import {
   ArrowLeft, Server, AlertTriangle, Ticket as TicketIcon,
-  ClipboardList, RotateCcw, FileText, CheckCircle2, ShieldCheck,
+  ClipboardList, RotateCcw, FileText,
 } from "lucide-react";
 import { db } from "@/lib/db";
 import { getFormOptions } from "@/lib/data/options";
+import { getSessionUser, isAgent, hasRole, type Role } from "@/lib/session";
 import { LinkButton } from "@/components/link-button";
 import { StatusBadge } from "@/components/status-badge";
 import { ChangeProperties } from "@/components/changes/change-properties";
-import { ApprovalActions } from "@/components/changes/approval-actions";
+import { SubmitForApproval } from "@/components/changes/submit-for-approval";
+import { ApprovalPanel, type ApprovalRow } from "@/components/changes/approval-panel";
 import { CommentThread } from "@/components/comments/comment-thread";
 import { EditEntityDialog } from "@/components/edit-entity-dialog";
 import { addChangeComment, updateChangeDetails } from "@/lib/actions/changes";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { sanitizeCommentHtml } from "@/lib/markdown";
+import { initials } from "@/lib/avatar";
+import type { ComboOption } from "@/components/combobox";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
-  CHANGE_STATUS_META, CHANGE_TYPE_META, RISK_META, PRIORITY_META, APPROVAL_META,
+  CHANGE_STATUS_META, CHANGE_TYPE_META, RISK_META, PRIORITY_META,
   changeRef, problemRef, ticketRef,
 } from "@/lib/constants";
 import { format, formatDistanceToNow } from "date-fns";
@@ -32,10 +36,6 @@ export async function generateMetadata({
   const { id } = await params;
   const c = await db.change.findUnique({ where: { id: Number(id) }, select: { title: true } });
   return { title: c ? c.title : "Change" };
-}
-
-function initials(s: string) {
-  return s.split(" ").map((p) => p[0]).slice(0, 2).join("").toUpperCase();
 }
 
 export default async function ChangeDetailPage({
@@ -68,8 +68,24 @@ export default async function ChangeDetailPage({
   ]);
   if (!change) notFound();
 
+  const me = await getSessionUser();
+  // Manager+ curate the approval board (not the owner — SoD, matches the server).
+  const canManage = !!me && hasRole(me.role as Role, "MANAGER");
+  const isAgentUser = !!me && isAgent(me.role as Role);
+  const approverIds = new Set(change.approvals.map((a) => a.approverId));
+  const agentOptions: ComboOption[] = options.agents
+    .filter((a) => !approverIds.has(a.id) && a.id !== change.assigneeId)
+    .map((a) => ({ value: a.id, label: a.name ?? a.email, avatar: initials(a.name ?? a.email), hint: a.email }));
+  const approvalRows: ApprovalRow[] = change.approvals.map((a) => ({
+    id: a.id,
+    approver: { id: a.approver.id, name: a.approver.name, email: a.approver.email },
+    status: a.status,
+    comment: a.comment,
+    decidedAt: a.decidedAt,
+  }));
+
   const comments = change.comments.map((c) => ({
-    id: c.id, author: c.author.name ?? c.author.email, body: c.body, isInternal: c.isInternal, createdAt: c.createdAt,
+    id: c.id, author: c.author.name ?? c.author.email, body: c.body, bodyHtml: c.bodyHtml, isInternal: c.isInternal, createdAt: c.createdAt, attachments: [],
   }));
   const activity = audits
     .filter((a) => a.summary && a.summary !== "Added a comment")
@@ -88,12 +104,20 @@ export default async function ChangeDetailPage({
           </span>
           <StatusBadge map={CHANGE_TYPE_META} value={change.type} dot />
           <div className="ml-auto flex items-center gap-2">
+            {isAgentUser && change.status === "DRAFT" ? (
+              <SubmitForApproval
+                changeId={change.id}
+                isStandard={change.type === "STANDARD"}
+                approverCount={change.approvals.length}
+              />
+            ) : null}
             <EditEntityDialog
               action={updateChangeDetails}
               idField="id"
               id={change.id}
               title={change.title}
               description={change.description}
+              descriptionHtml={change.descriptionHtml}
               entityLabel="change"
             />
             <StatusBadge map={RISK_META} value={change.risk} dot />
@@ -110,8 +134,14 @@ export default async function ChangeDetailPage({
             {change.assignee ? <> · owned by {change.assignee.name ?? change.assignee.email}</> : null}
           </p>
 
-          <div className="mt-4 rounded-xl border bg-card p-4 text-sm leading-relaxed whitespace-pre-wrap">
-            {change.description || <span className="text-muted-foreground">No description provided.</span>}
+          <div className="mt-4 rounded-xl border bg-card p-4 text-sm leading-relaxed">
+            {change.descriptionHtml ? (
+              <div className="prose prose-sm dark:prose-invert max-w-none" dangerouslySetInnerHTML={{ __html: sanitizeCommentHtml(change.descriptionHtml) }} />
+            ) : change.description ? (
+              <div className="whitespace-pre-wrap">{change.description}</div>
+            ) : (
+              <span className="text-muted-foreground">No description provided.</span>
+            )}
           </div>
 
           {/* Plan cards */}
@@ -142,51 +172,16 @@ export default async function ChangeDetailPage({
             </div>
           )}
 
-          {/* Approvals */}
-          <div className="mt-8">
-            <h2 className="mb-4 flex items-center gap-2 text-sm font-semibold">
-              <ShieldCheck className="size-4 text-muted-foreground" />
-              Approvals · {change.approvals.length}
-            </h2>
-            <div className="grid gap-3">
-              {change.approvals.map((a) => (
-                <div key={a.id} className="rounded-xl border bg-card p-3">
-                  <div className="flex items-center gap-3">
-                    <Avatar className="size-8 shrink-0">
-                      <AvatarFallback className="text-xs">
-                        {initials(a.approver.name ?? a.approver.email)}
-                      </AvatarFallback>
-                    </Avatar>
-                    <div className="min-w-0 flex-1">
-                      <div className="text-sm font-medium">
-                        {a.approver.name ?? a.approver.email}
-                      </div>
-                      {a.decidedAt ? (
-                        <div className="text-xs text-muted-foreground">
-                          Decided {formatDistanceToNow(a.decidedAt, { addSuffix: true })}
-                        </div>
-                      ) : (
-                        <div className="text-xs text-muted-foreground">Awaiting decision</div>
-                      )}
-                    </div>
-                    <StatusBadge map={APPROVAL_META} value={a.status} />
-                  </div>
-                  {a.comment ? (
-                    <p className="mt-2 rounded-lg border bg-muted/30 p-2 text-xs text-muted-foreground whitespace-pre-wrap">
-                      {a.comment}
-                    </p>
-                  ) : null}
-                  {a.status === "PENDING" ? <ApprovalActions approvalId={a.id} /> : null}
-                </div>
-              ))}
-              {change.approvals.length === 0 ? (
-                <div className="flex items-center gap-2 rounded-xl border border-dashed bg-card/50 px-4 py-6 text-sm text-muted-foreground">
-                  <CheckCircle2 className="size-4" />
-                  No approvers assigned to this change yet.
-                </div>
-              ) : null}
-            </div>
-          </div>
+          {/* Approvals / CAB */}
+          <ApprovalPanel
+            changeId={change.id}
+            changeType={change.type}
+            changeStatus={change.status}
+            approvals={approvalRows}
+            currentUserId={me?.id ?? ""}
+            canManage={canManage}
+            agentOptions={agentOptions}
+          />
 
           {/* Affected assets */}
           {change.assets.length > 0 ? (

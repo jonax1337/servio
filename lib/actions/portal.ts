@@ -8,6 +8,8 @@ import { getSessionUser } from "@/lib/session";
 import { writeAudit } from "@/lib/audit";
 import { sendMail, tplTicketReceived } from "@/lib/mail";
 import { runAutomations } from "@/lib/automations";
+import { slaCreateData } from "@/lib/sla";
+import { sanitizeCommentHtml, htmlToText } from "@/lib/markdown";
 import { TICKET_TYPES, PRIORITIES } from "@/lib/constants";
 
 export type PortalState = { error?: string; fieldErrors?: Record<string, string[]> } | undefined;
@@ -36,9 +38,11 @@ export async function createPortalTicket(_prev: PortalState, formData: FormData)
   }
 
   const triage = await db.queue.findFirst({ where: { name: "Triage" } });
+  const sla = await slaCreateData({ serviceId: parsed.data.serviceId, priority: parsed.data.priority });
   const ticket = await db.ticket.create({
     data: {
       ...parsed.data,
+      ...sla,
       status: "NEW",
       source: "PORTAL",
       impact: "MEDIUM",
@@ -62,14 +66,35 @@ export async function addPortalComment(formData: FormData) {
   const me = await getSessionUser();
   if (!me) return;
   const id = Number(formData.get("ticketId"));
-  const body = String(formData.get("body") ?? "").trim();
+
+  const rawHtml = formData.get("bodyHtml");
+  let body: string;
+  let bodyHtml: string | null;
+  if (typeof rawHtml === "string" && rawHtml.trim()) {
+    bodyHtml = sanitizeCommentHtml(rawHtml);
+    body = htmlToText(bodyHtml).trim();
+  } else {
+    bodyHtml = null;
+    body = String(formData.get("body") ?? "").trim();
+  }
   if (!id || !body) return;
 
   // portal users can only comment on their own tickets
   const ticket = await db.ticket.findFirst({ where: { id, requesterId: me.id } });
   if (!ticket) return;
 
-  await db.ticketComment.create({ data: { ticketId: id, authorId: me.id, body, isInternal: false } });
+  // Attach files staged on the requester's own ticket onto this comment (atomic + capped).
+  const attachmentIds = formData.getAll("attachmentIds").map(String).filter(Boolean).slice(0, 20);
+  await db.$transaction(async (tx) => {
+    const c = await tx.ticketComment.create({ data: { ticketId: id, authorId: me.id, body, bodyHtml, isInternal: false } });
+    if (attachmentIds.length) {
+      await tx.attachment.updateMany({
+        where: { id: { in: attachmentIds }, ticketId: id, commentId: null, uploadedById: me.id },
+        data: { commentId: c.id, ticketId: null },
+      });
+    }
+  });
+
   await db.ticket.update({ where: { id }, data: { updatedAt: new Date() } });
   revalidatePath(`/portal/tickets/${id}`);
 }

@@ -15,7 +15,7 @@ import { LinkButton } from "@/components/link-button";
 import { StatusBadge, VipBadge } from "@/components/status-badge";
 import { StatCard } from "@/components/stat-card";
 import { UserProperties } from "@/components/people/user-properties";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { UserAvatar } from "@/components/user-avatar";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ROLE_META, GROUP_TYPE_META, OPEN_TICKET_STATUSES } from "@/lib/constants";
 import { format } from "date-fns";
@@ -33,15 +33,6 @@ export async function generateMetadata({
     select: { name: true, email: true },
   });
   return { title: u ? u.name ?? u.email : "Person" };
-}
-
-function initials(s: string) {
-  return s
-    .split(" ")
-    .map((p) => p[0])
-    .slice(0, 2)
-    .join("")
-    .toUpperCase();
 }
 
 export default async function PersonDetailPage({
@@ -93,14 +84,13 @@ export default async function PersonDetailPage({
         <div className="p-4 sm:p-6">
           {/* Profile header */}
           <div className="flex items-start gap-4">
-            <Avatar className="size-16" size="lg">
-              {user.image ? (
-                <AvatarImage src={user.image} alt={displayName} />
-              ) : null}
-              <AvatarFallback className="text-lg">
-                {initials(displayName)}
-              </AvatarFallback>
-            </Avatar>
+            <UserAvatar
+              name={user.name}
+              email={user.email}
+              image={user.image}
+              size="lg"
+              className="size-16 text-lg"
+            />
             <div className="min-w-0">
               <div className="flex items-center gap-2">
                 <h1 className="font-display text-2xl font-semibold tracking-tight">

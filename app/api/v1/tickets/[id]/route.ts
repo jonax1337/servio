@@ -1,7 +1,9 @@
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { guard, ok, apiError, preflight } from "@/lib/api";
+import { guard, ok, apiError, preflight, principalIsAgent } from "@/lib/api";
 import { writeAudit } from "@/lib/audit";
+import { pauseData, resumeData } from "@/lib/sla";
+import { canTransition, TICKET_TRANSITIONS } from "@/lib/transitions";
 import { serializeTicket } from "../../_serializers";
 import { TICKET_STATUSES, PRIORITIES } from "@/lib/constants";
 
@@ -16,12 +18,17 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
   const auth = await guard(req, "read");
   if ("response" in auth) return auth.response;
   const { id } = await ctx.params;
+  const ticketId = Number(id);
+  if (!Number.isInteger(ticketId)) return apiError(404, "Ticket not found");
 
   const ticket = await db.ticket.findUnique({
-    where: { id: Number(id) },
+    where: { id: ticketId },
     include: { requester: true, assignee: true },
   });
   if (!ticket) return apiError(404, "Ticket not found");
+  // Non-agents may only read their own tickets (404, not 403, to avoid leaking existence).
+  if (!principalIsAgent(auth.principal) && ticket.requesterId !== auth.principal.userId)
+    return apiError(404, "Ticket not found");
   return ok(serializeTicket(ticket));
 }
 
@@ -38,9 +45,13 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   const auth = await guard(req, "write");
   if ("response" in auth) return auth.response;
   const { id } = await ctx.params;
+  const ticketId = Number(id);
+  if (!Number.isInteger(ticketId)) return apiError(404, "Ticket not found");
 
-  const existing = await db.ticket.findUnique({ where: { id: Number(id) } });
+  const existing = await db.ticket.findUnique({ where: { id: ticketId } });
   if (!existing) return apiError(404, "Ticket not found");
+  // Non-agents cannot mutate tickets via the API (they may only read their own).
+  if (!principalIsAgent(auth.principal)) return apiError(404, "Ticket not found");
 
   let body: unknown;
   try {
@@ -52,11 +63,32 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   if (!parsed.success) return apiError(422, "Validation failed", parsed.error.flatten().fieldErrors);
 
   const data = { ...parsed.data } as Record<string, unknown>;
-  if (parsed.data.status === "RESOLVED") data.resolvedAt = new Date();
-  if (parsed.data.status === "CLOSED") data.closedAt = new Date();
+  const to = parsed.data.status;
+  if (to && to !== existing.status) {
+    // Mirror the server-action lifecycle: guard the transition and run the SLA clock.
+    if (!canTransition(TICKET_TRANSITIONS, existing.status, to)) {
+      return apiError(409, `Illegal status transition ${existing.status} → ${to}`);
+    }
+    const now = new Date();
+    const wasPending = existing.status === "PENDING" || existing.status === "ON_HOLD";
+    const willPending = to === "PENDING" || to === "ON_HOLD";
+    if (willPending && !wasPending) Object.assign(data, pauseData(existing, now));
+    let effResolveDueAt = existing.resolveDueAt;
+    if (!willPending && wasPending) {
+      const resumed = resumeData(existing, now);
+      Object.assign(data, resumed);
+      effResolveDueAt = resumed.resolveDueAt ?? existing.resolveDueAt;
+    }
+    if (to === "RESOLVED") {
+      data.resolvedAt = now;
+      data.resolveBreached = effResolveDueAt ? now > effResolveDueAt : false;
+    }
+    if (to === "CLOSED") data.closedAt = now;
+    if (!willPending) { data.pendingReason = null; data.pendingNote = null; }
+  }
 
   const ticket = await db.ticket.update({
-    where: { id: Number(id) },
+    where: { id: ticketId },
     data,
     include: { requester: true, assignee: true },
   });

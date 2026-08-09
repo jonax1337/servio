@@ -1,4 +1,5 @@
 import { db } from "@/lib/db";
+import { storage } from "@/lib/storage";
 import { ticketRef } from "@/lib/constants";
 
 /**
@@ -19,6 +20,8 @@ type SendInput = {
   template?: string;
   entity?: string;
   entityId?: string | number;
+  /** Stored blobs to attach (read from storage at send time). */
+  attachments?: { filename: string; storageKey: string }[];
 };
 
 export async function sendMail(input: SendInput): Promise<void> {
@@ -46,11 +49,18 @@ export async function sendMail(input: SendInput): Promise<void> {
           ? { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS }
           : undefined,
       });
+      // Read stored blobs into stream attachments for nodemailer.
+      const mailAttachments = input.attachments?.length
+        ? await Promise.all(
+            input.attachments.map(async (a) => ({ filename: a.filename, content: (await storage.get(a.storageKey)).body })),
+          )
+        : undefined;
       await transport.sendMail({
         from: process.env.SMTP_FROM ?? "Servio <servio@localhost>",
         to: input.toName ? `${input.toName} <${input.to}>` : input.to,
         subject: input.subject,
         text: input.body,
+        attachments: mailAttachments,
       });
     }
     // No SMTP configured → simulated delivery (visible in the outbox).
@@ -112,6 +122,20 @@ There's a new update on your request ${ticketRef(t.id, t.type)} — "${t.title}"
   ${snippet}
 
 Reply in the portal to continue the conversation.
+
+— ${FROM_NAME}`,
+  };
+}
+
+export function tplTicketParticipant(t: TicketLike, name: string, addedBy: string, note: string) {
+  return {
+    template: "ticket_participant",
+    subject: `[${ticketRef(t.id, t.type)}] You were added to a ticket`,
+    body: `Hi ${name},
+
+${addedBy} added you as a participant on ${ticketRef(t.id, t.type)} — "${t.title}".
+${note ? `\nNote: ${note}\n` : ""}
+You'll now receive updates on this ticket in Servio.
 
 — ${FROM_NAME}`,
   };

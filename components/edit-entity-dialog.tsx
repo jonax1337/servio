@@ -6,10 +6,21 @@ import { Pencil, Loader2, Save } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
+import { RichTextEditor } from "@/components/ui/rich-text-editor";
 import {
   Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger,
 } from "@/components/ui/dialog";
+
+/** Escape plaintext + convert newlines to <br> so an existing plaintext description
+ *  seeds the rich editor without losing line breaks. */
+function seedHtml(html: string | null | undefined, text: string): string {
+  if (html) return html;
+  const esc = (text ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+  return esc.replace(/\n/g, "<br>");
+}
 
 function SaveButton() {
   const { pending } = useFormStatus();
@@ -27,6 +38,7 @@ export function EditEntityDialog({
   id,
   title,
   description,
+  descriptionHtml,
   entityLabel = "record",
 }: {
   action: (formData: FormData) => void | Promise<void>;
@@ -34,6 +46,7 @@ export function EditEntityDialog({
   id: number | string;
   title: string;
   description: string;
+  descriptionHtml?: string | null;
   entityLabel?: string;
 }) {
   const [open, setOpen] = useState(false);
@@ -56,8 +69,8 @@ export function EditEntityDialog({
             <Input id="edit-title" name="title" defaultValue={title} required />
           </div>
           <div className="grid gap-1.5">
-            <Label htmlFor="edit-description">Description</Label>
-            <Textarea id="edit-description" name="description" defaultValue={description} className="min-h-40" />
+            <Label>Description</Label>
+            <RichTextEditor name="descriptionHtml" ariaLabel="Description" defaultHTML={seedHtml(descriptionHtml, description)} />
           </div>
           <DialogFooter>
             <SaveButton />

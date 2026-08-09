@@ -22,7 +22,8 @@ export default async function PortalHome() {
       take: 5,
     }),
     db.catalogItem.findMany({ where: { isPublished: true }, orderBy: [{ order: "asc" }, { name: "asc" }], take: 6 }),
-    db.article.findMany({ where: { published: true }, orderBy: { views: "desc" }, take: 5 }),
+    // Only published, public-facing articles ever surface in the portal.
+    db.article.findMany({ where: { status: "PUBLISHED", visibility: "PUBLIC" }, orderBy: { views: "desc" }, take: 5 }),
   ]);
 
   return (
