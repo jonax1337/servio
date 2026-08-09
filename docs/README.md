@@ -1,0 +1,40 @@
+# Servio documentation
+
+Developer and operator documentation for **Servio**, an open-source ITSM platform
+built with Next.js 16, React 19, Prisma 6, and Auth.js v5. Every page is verified
+against the code and kept in sync with the repository. New here? Start with
+[development.md](./development.md), then read [architecture.md](./architecture.md).
+
+## Getting started
+
+| Doc | What it covers |
+| --- | --- |
+| [development.md](./development.md) | Local setup, quickstart, demo credentials/API token, project layout, and the core coding conventions. |
+| [configuration.md](./configuration.md) | Every environment variable, plus SSO/OIDC, SMTP, and file-storage configuration. |
+
+## Reference
+
+| Doc | What it covers |
+| --- | --- |
+| [architecture.md](./architecture.md) | Runtime model, request paths (Server Components / Server Actions / Route Handlers), route groups, auth, RBAC, and the sync engine. |
+| [data-model.md](./data-model.md) | The Prisma schema by domain, the String-backed enum strategy, human reference numbers, and the migration workflow. |
+| [rest-api.md](./rest-api.md) | The versioned `/api/v1` Bearer-token REST API: auth, scopes, envelope, pagination, and every endpoint. |
+| [design-system.md](./design-system.md) | Theme tokens, typography, the base-ui/shadcn setup, primitive library, and shared composite components. |
+| [modules.md](./modules.md) | The feature-to-file map for every console and portal module. |
+
+## Operations
+
+| Doc | What it covers |
+| --- | --- |
+| [deployment.md](./deployment.md) | Moving to PostgreSQL, production environment, build/run, persistent storage, and scheduled syncs. |
+
+## Contributing
+
+| Doc | What it covers |
+| --- | --- |
+| [../CONTRIBUTING.md](../CONTRIBUTING.md) | Workflow, canonical reference files, the "add a module" recipe, gotchas, and PR expectations. |
+
+---
+
+See also the root [README](../README.md) for a project overview and
+[CONTRIBUTING.md](../CONTRIBUTING.md) for the contributor workflow.

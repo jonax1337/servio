@@ -1,0 +1,249 @@
+# ⚙️ Configuration
+
+This is the environment and configuration reference for Servio. All runtime
+configuration is supplied through environment variables — there is no separate
+config file. Copy [`../.env.example`](../.env.example) to `.env` and edit it.
+
+Servio is designed to run with **zero required setup for local development**:
+with a fresh checkout you only need `DATABASE_URL` and `AUTH_SECRET`. Every
+integration (SSO, SMTP, non-local storage) is optional and degrades gracefully
+when left unconfigured.
+
+See also: [development.md](development.md) for the local dev loop, and
+[deployment.md](deployment.md) for hardening these values in production.
+
+---
+
+## Environment variable reference
+
+The table below is derived from [`../.env.example`](../.env.example) **and** a
+grep of every `process.env.*` read in the codebase. Variables marked
+_(not in `.env.example`)_ are real but undocumented in the sample file.
+
+| Variable | Required? | Default | Description |
+| --- | --- | --- | --- |
+| `DATABASE_URL` | **Yes** | — | Prisma connection string. Consumed via `env("DATABASE_URL")` in [`../prisma/schema.prisma`](../prisma/schema.prisma). Default provider is `sqlite` (`file:./dev.db`); swap the datasource `provider` to `postgresql` for production. |
+| `AUTH_SECRET` | **Yes** | — | Secret used by Auth.js to sign/encrypt the JWT session. Read implicitly by `next-auth`. See [generating `AUTH_SECRET`](#generating-auth_secret). |
+| `AUTH_TRUST_HOST` | Recommended | — | Set `true` to trust the incoming host header (needed behind a reverse proxy). Note: [`../auth.config.ts`](../auth.config.ts) hard-codes `trustHost: true`, so this is belt-and-suspenders. |
+| `NEXTAUTH_URL` | No | `http://localhost:3000` | Canonical app URL for Auth.js callback/redirect resolution. Not read directly by app code; consumed by `next-auth` when host inference is undesirable. |
+| `AUTH_OIDC_ID` | No | — | OIDC/OAuth **client ID**. Presence of this **and** `AUTH_OIDC_ISSUER` enables SSO. See [SSO / OIDC setup](#sso--oidc-setup). |
+| `AUTH_OIDC_SECRET` | No | — | OIDC client secret. Passed to the provider; not part of the enable gate. |
+| `AUTH_OIDC_ISSUER` | No | — | OIDC issuer URL (the IdP's discovery base, e.g. `https://idp/realms/main`). Required to enable SSO. |
+| `AUTH_OIDC_NAME` | No | `SSO` | Display name for the SSO button ("Continue with _{name}_"). |
+| `APP_NAME` | No | `Servio` | Application display name. Present in `.env.example` as a convention; not currently read by app code. |
+| `APP_URL` | No | `http://localhost:3000` | Public app URL. Present in `.env.example` as a convention; not currently read by app code. |
+| `SMTP_HOST` | No | _empty_ | SMTP server host. **Leaving it empty enables outbox mode** — see [Email / SMTP](#email--smtp). |
+| `SMTP_PORT` | No | `587` | SMTP port. Together with `SMTP_HOST` it forms the "SMTP configured" check in [`../lib/mail.ts`](../lib/mail.ts). |
+| `SMTP_SECURE` | No | `false` | `"true"` to use an implicit TLS connection (typically port 465); any other value uses STARTTLS. |
+| `SMTP_USER` | No | — | SMTP auth username. If empty, the transport connects **without** auth. |
+| `SMTP_PASS` | No | — | SMTP auth password (only used when `SMTP_USER` is set). |
+| `SMTP_FROM` | No | `Servio <servio@localhost>` | Envelope/`From` header for outgoing mail. |
+| `STORAGE_DRIVER` | No | `fs` | Blob storage driver. Only `fs` is implemented; `s3` and `vercel-blob` are seams in [`../lib/storage.ts`](../lib/storage.ts). An unknown value throws at startup. |
+| `UPLOAD_DIR` | No | `./.uploads` | Filesystem root for the `fs` driver. **Must stay outside `./public`** — see [File storage](#file-storage--attachments). |
+| `MAX_UPLOAD_MB` | No | `15` | Per-file upload cap in MB. [`../lib/files.ts`](../lib/files.ts) derives `MAX_UPLOAD_BYTES` from it. |
+| `API_CORS_ORIGIN` _(not in `.env.example`)_ | No | `*` | Allowed origin for the bearer-token REST API responses. Read in [`../lib/api.ts`](../lib/api.ts). Lock this down in production — see [rest-api.md](rest-api.md). |
+| `NODE_ENV` | No | — | Standard Node/Next env. Toggles Prisma query logging ([`../lib/db.ts`](../lib/db.ts)) and the HMR-safe singleton guards in `lib/db.ts` / `lib/storage.ts`. |
+
+> **Tip for agents:** the enable gates are literal `Boolean(process.env.X && ...)`
+> checks. An empty string is falsy in JS, so an empty value in `.env` is
+> equivalent to the variable being unset for every optional feature here.
+
+---
+
+## Generating `AUTH_SECRET`
+
+`AUTH_SECRET` signs the session JWT. Never commit it and use a distinct value
+per environment. Generate one with the Auth.js CLI (writes to `.env` if present):
+
+```bash
+pnpm dlx auth secret
+```
+
+Or generate a raw value manually:
+
+```bash
+openssl rand -base64 33
+```
+
+Then set it in `.env`:
+
+```dotenv
+AUTH_SECRET="<generated-value>"
+```
+
+The session strategy is JWT (`session: { strategy: "jwt" }` in
+[`../auth.config.ts`](../auth.config.ts)), so rotating this value invalidates all
+existing sessions.
+
+---
+
+## SSO / OIDC setup
+
+Servio ships a first-party **Credentials** (email + password) provider that is
+always enabled. An optional OIDC provider is registered **only when configured**,
+so no dead SSO button appears on a stock install.
+
+### How the enable gate works
+
+In [`../auth.ts`](../auth.ts) the OIDC provider is pushed only when **both**
+`AUTH_OIDC_ID` and `AUTH_OIDC_ISSUER` are set:
+
+```ts
+if (process.env.AUTH_OIDC_ID && process.env.AUTH_OIDC_ISSUER) {
+  providers.push({
+    id: "oidc",
+    name: process.env.AUTH_OIDC_NAME || "SSO",
+    type: "oidc",
+    issuer: process.env.AUTH_OIDC_ISSUER,
+    clientId: process.env.AUTH_OIDC_ID,
+    clientSecret: process.env.AUTH_OIDC_SECRET,
+    allowDangerousEmailAccountLinking: true,
+  });
+}
+
+export const ssoEnabled = Boolean(
+  process.env.AUTH_OIDC_ID && process.env.AUTH_OIDC_ISSUER,
+);
+```
+
+The same `ssoEnabled` flag is passed into the login form
+([`../app/login/page.tsx`](../app/login/page.tsx) →
+[`../app/login/login-form.tsx`](../app/login/login-form.tsx)), which renders the
+"Continue with _{name}_" button **only when `ssoEnabled` is true**. Leave the
+`AUTH_OIDC_*` vars empty and the SSO button — and the whole OIDC provider — simply
+does not exist.
+
+Notes:
+
+- Only `AUTH_OIDC_ID` **and** `AUTH_OIDC_ISSUER` gate SSO. `AUTH_OIDC_SECRET` is
+  passed to the provider but is **not** part of the enable check (public/PKCE
+  clients can leave it empty).
+- `allowDangerousEmailAccountLinking: true` links an OIDC identity to an existing
+  local account with the same email. Only enable SSO against an IdP whose email
+  verification you trust.
+- Session role/id come from the JWT callbacks in
+  [`../auth.config.ts`](../auth.config.ts); a first-time OIDC user gets the
+  default `USER` role via the Prisma adapter.
+
+### Worked example (generic OIDC provider)
+
+Point Servio at any standards-compliant IdP (Keycloak, Authentik, Azure AD,
+Okta, Google, etc.). Register a **Web / confidential** client at the IdP with the
+redirect URI:
+
+```
+https://your-servio-host/api/auth/callback/oidc
+```
+
+Then set:
+
+```dotenv
+AUTH_OIDC_ID="servio-web"
+AUTH_OIDC_SECRET="<client-secret-from-idp>"
+AUTH_OIDC_ISSUER="https://idp.example.com/realms/main"
+AUTH_OIDC_NAME="Company SSO"
+```
+
+The `issuer` must be the base URL whose `<issuer>/.well-known/openid-configuration`
+resolves — Auth.js discovers the authorization, token, and userinfo endpoints
+from there. Restart the app after changing any `AUTH_OIDC_*` value (these are read
+at module load in `auth.ts`).
+
+---
+
+## Email / SMTP
+
+Mail is sent through [`../lib/mail.ts`](../lib/mail.ts). **Every message is always
+persisted** to the `EmailMessage` table first, then delivery is attempted. This
+gives you a durable outbox regardless of transport.
+
+### "SMTP configured" check and outbox mode
+
+```ts
+export function smtpConfigured() {
+  return Boolean(process.env.SMTP_HOST && process.env.SMTP_PORT);
+}
+```
+
+Because `.env.example` ships `SMTP_PORT="587"` by default, the effective switch is
+**`SMTP_HOST`**:
+
+| `SMTP_HOST` | Behavior |
+| --- | --- |
+| **empty** | **Outbox mode.** No network send is attempted; the message row is marked `SENT` (simulated delivery) and is viewable under **Settings › Mail**. Ideal for local dev and demos. |
+| **set** | The message is sent via `nodemailer` using `SMTP_PORT`, `SMTP_SECURE`, and (if `SMTP_USER` is present) `SMTP_USER`/`SMTP_PASS`, then marked `SENT`. On failure the row is marked `FAILED` with the error message. |
+
+### Real SMTP example
+
+```dotenv
+SMTP_HOST="smtp.example.com"
+SMTP_PORT="587"
+SMTP_SECURE="false"                 # STARTTLS on 587; set "true" for implicit TLS (e.g. 465)
+SMTP_USER="servicedesk@example.com"
+SMTP_PASS="<smtp-password>"
+SMTP_FROM="Servio Service Desk <servicedesk@example.com>"
+```
+
+Details verified in code:
+
+- `SMTP_SECURE === "true"` selects implicit TLS; anything else uses STARTTLS.
+- Auth is only sent when `SMTP_USER` is non-empty; otherwise the transport
+  connects anonymously.
+- Attachments are streamed from blob storage at send time via
+  [`../lib/storage.ts`](../lib/storage.ts), so mail delivery honors the same
+  storage driver as the rest of the app.
+
+---
+
+## File storage / attachments
+
+Attachment storage is defined in [`../lib/storage.ts`](../lib/storage.ts) and
+upload validation in [`../lib/files.ts`](../lib/files.ts).
+
+### Driver
+
+`STORAGE_DRIVER` selects the adapter (default `fs`):
+
+- **`fs`** — implemented. Uses the `FilesystemAdapter` rooted at `UPLOAD_DIR`.
+- **`s3`**, **`vercel-blob`** — declared as seams (commented `case` branches);
+  implement the `StorageAdapter` interface and return an instance to enable them.
+- Any other value throws `Unsupported STORAGE_DRIVER` at startup.
+
+### Upload directory (`UPLOAD_DIR`)
+
+```dotenv
+STORAGE_DRIVER="fs"
+UPLOAD_DIR="./.uploads"
+```
+
+`UPLOAD_DIR` (default `./.uploads`) **must stay outside `./public`**. Blobs are
+deliberately stored where Next.js can never serve them statically — every read
+goes through an authorized route handler. The directory should be git-ignored and,
+in production, mounted on durable/persistent storage (a stateless container's
+local disk is lost on redeploy — see [deployment.md](deployment.md)).
+
+Storage keys are server-generated as `YYYY/MM/<uuid>-<safeName>` and every key is
+validated (`assertValidKey`) to reject path traversal, so user-supplied filenames
+can never escape the root.
+
+### Size cap and allowed types
+
+```dotenv
+MAX_UPLOAD_MB="15"
+```
+
+`MAX_UPLOAD_MB` sets the per-file cap; [`../lib/files.ts`](../lib/files.ts)
+derives `MAX_UPLOAD_BYTES = MAX_UPLOAD_MB * 1024 * 1024`. The server is
+authoritative: uploads are validated against an allow-list of MIME types
+(images, PDF, Office `docx`/`xlsx`/`pptx`, `txt`/`log`/`csv`) **and** magic-byte
+signatures, and oversized/empty/mismatched files are rejected. See
+[rest-api.md](rest-api.md) for the upload endpoint and error codes.
+
+---
+
+## Related docs
+
+- [development.md](development.md) — local setup, running the dev server, seeding.
+- [deployment.md](deployment.md) — production values, persistence, reverse-proxy.
+- [rest-api.md](rest-api.md) — API auth, CORS, and the upload endpoint.
+- [architecture.md](architecture.md) — how these modules fit together.

@@ -1,0 +1,312 @@
+# Architecture
+
+This document describes how Servio is put together: the runtime model, how requests
+flow through the app, how the code is organised, and how authentication, RBAC, the
+integration sync engine, and the database are wired.
+
+Servio is a modern, open-source IT Service Management (ITSM) platform — an
+alternative to legacy tools like GLPI. It is a single Next.js 16 application (App
+Router, React 19, Turbopack) backed by Prisma 6 and Auth.js v5.
+
+See also: [data-model.md](./data-model.md) · [rest-api.md](./rest-api.md) ·
+[design-system.md](./design-system.md) · [modules.md](./modules.md).
+
+## 🎯 Design principles
+
+| Principle | What it means in this codebase |
+| --- | --- |
+| One app, three surfaces | A single Next.js app serves the **agent console** (`app/(console)`), the **self-service portal** (`app/portal`), and a **REST API** (`app/api/v1`). |
+| Server-first | Pages are React Server Components that query the database directly through Prisma. There is no client-side data-fetching layer. |
+| Mutations are Server Actions | The app's own writes go through `"use server"` functions in `lib/actions/*`, invoked from forms. The public API is a separate, token-authenticated surface. |
+| Single source of truth for enums | Status/type/priority values are plain strings validated against `lib/constants.ts` (SQLite has no native enums). See [data-model.md](./data-model.md). |
+| One schema, two databases | The same Prisma schema runs on SQLite for local dev and PostgreSQL for production — no code changes, only `provider` + `DATABASE_URL`. |
+| Least-privilege access | Roles are enforced in three layers: the edge gate in `proxy.ts`, server-side helpers in `lib/session.ts`, and token scopes in `lib/api.ts`. |
+
+## 🔁 Request & runtime model
+
+Servio has three distinct request paths. Knowing which one you are in tells you
+where to put code.
+
+### 1. Reads — Server Components query Prisma directly
+
+Route pages (`page.tsx`, `layout.tsx`) are async Server Components. They call
+`db.*` (the Prisma client from [`lib/db.ts`](../lib/db.ts)) inline and render the
+result. There is no REST hop for the UI's own reads.
+
+```tsx
+// app/(console)/syncs/page.tsx  (abridged)
+export const dynamic = "force-dynamic";
+
+export default async function SyncsPage() {
+  const sources = await db.syncSource.findMany({ orderBy: [{ name: "asc" }] });
+  // ...render...
+}
+```
+
+List pages read filters/pagination from URL search params using the helpers in
+[`lib/query.ts`](../lib/query.ts) (`getParam`, `getPage`, `PAGE_SIZE`,
+`buildHref`), so filter state lives in the URL rather than in client state.
+
+### 2. Writes — Server Actions in `lib/actions/*`
+
+The app's own mutations are `"use server"` functions under
+[`lib/actions/`](../lib/actions). Forms bind directly to them; each action
+validates its `FormData` with Zod, checks permission, mutates through Prisma,
+writes an audit entry, and calls `revalidatePath()` to refresh affected routes.
+
+There is one action module per domain:
+
+```
+lib/actions/
+  approvals.ts   assets.ts       attachments.ts  auth.ts
+  automations.ts catalog.ts      catalog-admin.ts categories.ts
+  changes.ts     groups.ts       knowledge.ts    locations.ts
+  notifications.ts people.ts      portal.ts       problems.ts
+  services.ts    sla-admin.ts    syncs.ts        tags.ts
+  tickets.ts     tokens.ts
+```
+
+A representative action guards on role, validates, mutates, audits, and revalidates:
+
+```ts
+// lib/actions/tickets.ts (abridged)
+async function requireAgent() {
+  const me = await getSessionUser();
+  if (!me || !isAgent(me.role as Role)) return null;
+  return me;
+}
+
+export async function createTicket(_prev: ActionState, formData: FormData) {
+  const me = await requireAgent();
+  if (!me) return { error: "Not authorised" };
+  const parsed = createSchema.safeParse(Object.fromEntries(formData));
+  // ...create via db, writeAudit(...), revalidatePath(...)...
+}
+```
+
+Actions return an `ActionState` (`{ error?, fieldErrors? }`) for `useActionState`
+form binding, or `redirect()` on success.
+
+### 3. External integrations — Route Handlers under `app/api`
+
+The outside world talks to Servio through Route Handlers, **not** Server Actions.
+
+| Path | Purpose |
+| --- | --- |
+| `app/api/auth/[...nextauth]/route.ts` | Auth.js sign-in/callback handlers. |
+| `app/api/v1/*` | Public, token-authenticated REST API (`tickets`, `assets`, `services`, `openapi`). |
+| `app/api/files/*` | Attachment upload/download. |
+| `app/api/search/route.ts` | Global search. |
+
+Public API routes authenticate with a **Bearer token** (not the session cookie)
+via `guard()` from [`lib/api.ts`](../lib/api.ts), which resolves an
+`ApiPrincipal` (token id, acting user, scopes, role) and enforces `read`/`write`
+scopes. Agent principals act org-wide; non-agent tokens are scoped to the
+caller's own objects. Full detail in [rest-api.md](./rest-api.md).
+
+```ts
+// app/api/v1/tickets/route.ts (abridged)
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
+export async function GET(req: Request) {
+  const auth = await guard(req, "read");
+  if ("response" in auth) return auth.response;
+  const where = principalIsAgent(auth.principal) ? {} : { requesterId: auth.principal.userId };
+  // ...paginate + serialize...
+}
+```
+
+## 🗂️ Route groups & layout tree
+
+> **Note on drift:** older design docs describe a `src/` directory with
+> `(app)/(auth)/(portal)` route groups and a `middleware.ts` file. That structure
+> does **not** exist. There is no `src/`; everything is at the repo root. Routes
+> are split into `app/(console)` and `app/portal`, auth pages live at `app/login`,
+> and the middleware is `proxy.ts` (Next.js 16 naming).
+
+Three layouts define the three surfaces:
+
+- **`app/layout.tsx`** — root layout. Loads fonts, `ThemeProvider`, and the
+  `Toaster`. No auth logic.
+- **`app/(console)/layout.tsx`** — the agent console. Calls
+  `requireRole("AGENT")`; anything below `AGENT` is redirected to the portal.
+  Renders the sidebar (`AppSidebar`) + topbar shell.
+- **`app/portal/layout.tsx`** — the self-service portal. Calls `requireUser()`
+  (any authenticated user). Renders the help-center header; if the user is an
+  agent it shows a link back to the console.
+
+The console is mounted at the **root** path (`/`), so `(console)` is a route
+group (parentheses = no URL segment). The portal is a real segment at `/portal`.
+
+```
+E:\DEV\servio
+├─ app/
+│  ├─ layout.tsx              # root: fonts, theme, toaster
+│  ├─ globals.css
+│  ├─ login/                  # auth pages (public)
+│  │  ├─ page.tsx
+│  │  └─ login-form.tsx
+│  ├─ (console)/              # AGENT+ console, mounted at "/"
+│  │  ├─ layout.tsx           # requireRole("AGENT")
+│  │  ├─ page.tsx             # dashboard
+│  │  ├─ tickets/  problems/  changes/  approvals/
+│  │  ├─ queues/              # "Team board" — groups open tickets by team
+│  │  ├─ services/  catalog/  assets/  locations/  categories/  knowledge/
+│  │  ├─ groups/  people/  tags/
+│  │  ├─ automations/  syncs/  settings/  notifications/
+│  ├─ portal/                 # self-service (any authenticated user)
+│  │  ├─ layout.tsx           # requireUser()
+│  │  ├─ page.tsx  tickets/  new/  request/  catalog/  knowledge/
+│  └─ api/
+│     ├─ auth/[...nextauth]/route.ts
+│     ├─ v1/                  # public REST API (tickets, assets, services, openapi)
+│     ├─ files/               # upload / download
+│     └─ search/route.ts
+├─ auth.ts                    # NextAuth (Node runtime): Prisma adapter + providers
+├─ auth.config.ts             # edge-safe config: session strategy + JWT callbacks
+├─ proxy.ts                   # middleware: edge auth gate
+├─ components/                # UI, one folder per domain + components/ui (base-ui/shadcn)
+├─ lib/
+│  ├─ actions/                # Server Actions (one file per domain)
+│  ├─ data/                   # shared select options
+│  ├─ db.ts        session.ts constants.ts  query.ts  nav.ts  api.ts
+│  ├─ audit.ts     sla.ts     assignment.ts transitions.ts automations.ts
+│  └─ mail.ts      markdown.ts storage.ts    files.ts …
+├─ prisma/
+│  ├─ schema.prisma  seed.ts  seed-extras.ts  migrations/  dev.db
+└─ next.config.ts  proxy.ts  package.json  tsconfig.json
+```
+
+> **Queues module drift:** the blueprint lists a "Queues" module. In reality
+> queues were dissolved into **Teams/Groups**. `app/(console)/queues/page.tsx` is
+> a thin "Team board" page that groups open tickets by `Group` (excluding
+> vendors), not a standalone queue entity. The sidebar still labels it "Board"
+> (`lib/nav.ts` maps `title: "Board"` to `/queues`).
+
+Console navigation is data-driven from [`lib/nav.ts`](../lib/nav.ts). Each
+`NavItem` may carry a `minRole` (`MANAGER`/`ADMIN`); `filterNav()` hides items the
+current role cannot use, so the sidebar reflects RBAC.
+
+## 🔐 Auth architecture (Auth.js v5)
+
+Auth.js is deliberately split into two files so the config can run at the edge
+(in middleware) without pulling in Prisma or bcrypt.
+
+| File | Runtime | Contents |
+| --- | --- | --- |
+| [`auth.config.ts`](../auth.config.ts) | Edge-safe | `trustHost`, `pages.signIn = "/login"`, `session.strategy = "jwt"`, and the `jwt`/`session` callbacks. **No providers, no Prisma.** |
+| [`auth.ts`](../auth.ts) | Node | Spreads `authConfig`, adds the `PrismaAdapter(db)` and the heavy providers (Credentials + optional OIDC), and exports `handlers`, `auth`, `signIn`, `signOut`. |
+
+`proxy.ts` instantiates NextAuth with only `authConfig` (edge-safe), while
+route/server code imports the full instance from `auth.ts`.
+
+**Sessions are JWT-based** (`session.strategy: "jwt"`). The `jwt` callback stamps
+`token.uid`, `token.role`, and `token.picture` at login; the `session` callback
+copies `id` and `role` onto `session.user`. Because the JWT freezes role/active
+state at sign-in, the server-side `requireUser()` helper re-reads the DB user row
+per request (see below) so demotions/deactivations take effect immediately.
+
+**Providers:**
+
+- **Credentials** — email + password. `authorize()` validates with Zod, looks up
+  the user, checks `isActive`, compares the bcrypt hash, and stamps `lastLoginAt`.
+- **OIDC / SSO** — registered **only** when `AUTH_OIDC_ID` and `AUTH_OIDC_ISSUER`
+  are set. `ssoEnabled` / `ssoProviderName` are exported so the login page can
+  conditionally render the SSO button. See [configuration.md](./configuration.md).
+
+## 🛡️ RBAC — four roles, three enforcement layers
+
+Roles are a plain string on `User.role`, ordered by rank:
+
+| Role | Rank | Typical access |
+| --- | --- | --- |
+| `ADMIN` | 3 | Everything, including settings/admin. |
+| `MANAGER` | 2 | Console + manager-only items (catalog, automations, syncs, settings). |
+| `AGENT` | 1 | Console: tickets, problems, changes, CMDB, etc. |
+| `USER` | 0 | Self-service portal only. |
+
+Enforcement happens in three complementary places:
+
+**1. Edge gate — [`proxy.ts`](../proxy.ts).** The middleware runs on every request
+(except Next internals/static assets, per its `matcher`). It:
+
+- allows the public prefixes `/login`, `/api/auth`, `/api/v1`;
+- redirects already-logged-in users away from `/login` to `/`;
+- redirects unauthenticated users to `/login?callbackUrl=…`;
+- redirects plain `USER`s to `/portal` if they try to reach any non-portal path.
+
+This is a coarse first gate. Note it reads the role from the **JWT** (edge), so it
+cannot see a just-demoted user — that is what the server layer is for.
+
+**2. Server helpers — [`lib/session.ts`](../lib/session.ts).** The authoritative
+layer. Functions are wrapped in React `cache()` so each is one query per request:
+
+| Helper | Behaviour |
+| --- | --- |
+| `getSessionUser()` | Returns the session user (`id`, `role`, `email`, `name`, `image`) or `null`. |
+| `getCurrentUser()` | Full DB user row (cached). |
+| `requireUser()` | Redirects to `/login` if unauthenticated; **re-reads the DB row** and rejects deactivated users; returns the fresh role. |
+| `requireRole(min)` | `requireUser()` + rank check; redirects to `/portal` if below `min`. |
+| `hasRole(role, min)` / `isAgent(role)` | Pure rank comparisons. |
+
+Layouts and pages call `requireRole("AGENT")` (console) or `requireUser()`
+(portal); actions call `getSessionUser()` + `isAgent(...)`.
+
+**3. API token scopes — [`lib/api.ts`](../lib/api.ts).** The REST API is orthogonal
+to sessions: `guard(req, "read"|"write")` authenticates a Bearer token, checks the
+token's scopes, and yields an `ApiPrincipal`. `principalIsAgent()` decides whether
+a token sees org-wide data or only the owner's objects. See [rest-api.md](./rest-api.md).
+
+## 🔄 Sync / integrations engine
+
+Servio can import users and assets from external systems (AD, Azure AD/Entra,
+Intune, LDAP, CSV, ServiceNow, GLPI, generic REST). The engine is modelled by two
+tables and driven from the console.
+
+- **`SyncSource`** — a configured integration: `type`, `direction`
+  (`IMPORT`/`EXPORT`/`BIDIRECTIONAL`), `scope` (`USERS`/`ASSETS`/`TICKETS`/`ALL`),
+  `isActive`, `lastRunAt`, `lastStatus`.
+- **`SyncRun`** — one execution: `status`, `trigger` (`MANUAL`/scheduled),
+  counts (`created`/`updated`/`failed`), `log`, `finishedAt`.
+
+The valid `type`, direction, scope, and run-status values are enumerated in
+[`lib/constants.ts`](../lib/constants.ts) (`SYNC_TYPES`, `SYNC_DIRECTIONS`,
+`SYNC_SCOPES`, `SYNC_RUN_STATUSES`).
+
+The UI lives at `app/(console)/syncs` (list `page.tsx` + a `[id]` detail page),
+gated to `MANAGER`+ in the sidebar. Runs are triggered by Server Actions in
+[`lib/actions/syncs.ts`](../lib/actions/syncs.ts):
+
+- `runSync(formData)` — creates a `SyncRun` (`RUNNING`), performs the sync, updates
+  the run + source status, writes an audit entry, and revalidates `/syncs`.
+- `toggleSyncActive(formData)` — pauses/activates a source with an audit trail.
+
+> **Reference-implementation note:** `runSync` currently *simulates* a run
+> (deterministic demo counts) rather than calling a live connector — the data
+> model, run history, audit trail, and UI are complete, and the connector body is
+> the extension point. Replace the body of `runSync` with a real client keyed off
+> `source.type`.
+
+## 🗄️ One schema, two databases
+
+There is a **single** Prisma schema, [`prisma/schema.prisma`](../prisma/schema.prisma).
+
+- **Local dev:** `provider = "sqlite"`, `DATABASE_URL` points at `prisma/dev.db`.
+- **Production:** switch the provider to `postgresql` and point `DATABASE_URL` at
+  Postgres. See [deployment.md](./deployment.md).
+
+Because SQLite has **no native enums**, all status/type/priority/etc. fields are
+plain `String` columns. Their allowed values, human labels, badge tones, and icons
+are centralised in [`lib/constants.ts`](../lib/constants.ts) and validated with Zod
+at every write boundary (Server Actions and API routes). This keeps the schema
+portable across both databases while giving the UI a single, typed source of enum
+metadata. Full model reference in [data-model.md](./data-model.md).
+
+The Prisma client is a lazily-created singleton in [`lib/db.ts`](../lib/db.ts),
+cached on `globalThis` in non-production to survive Turbopack/HMR reloads.
+
+---
+
+**Next:** [data-model.md](./data-model.md) · [rest-api.md](./rest-api.md) ·
+[design-system.md](./design-system.md) · [modules.md](./modules.md)

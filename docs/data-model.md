@@ -1,0 +1,261 @@
+# Data model
+
+The complete schema lives in [`prisma/schema.prisma`](../prisma/schema.prisma) (833 lines) and the enum
+values that back its `String` columns live in [`lib/constants.ts`](../lib/constants.ts). This document is a
+grouped reference; the schema file remains the single source of truth for exact field lists and indexes.
+
+See also: [architecture.md](./architecture.md) for how the data layer fits into the app, and
+[rest-api.md](./rest-api.md) for the API surface over these models.
+
+## Datasource strategy
+
+Servio ships one schema that runs on **SQLite in development** and **PostgreSQL in production** without
+model changes. The provider is pinned to `sqlite` in both [`prisma/schema.prisma`](../prisma/schema.prisma)
+and [`prisma/migrations/migration_lock.toml`](../prisma/migrations/migration_lock.toml); for a Postgres
+deployment you switch the `datasource db` provider to `postgresql` and point `DATABASE_URL` at the server.
+The portability is achieved through a few deliberate conventions:
+
+| Convention | Why | Example |
+| --- | --- | --- |
+| **Enums are `String` columns**, not Prisma `enum` blocks | SQLite has no native enum type; keeps one schema across both databases | `status String @default("NEW")` on `Ticket` |
+| **JSON stored as `String` (TEXT)** | SQLite has no JSON column type | `SyncSource.config`, `CatalogItem.formSchema`, `AutomationRule.conditions`/`actions`, `Ticket.formData`/`formSchema`, `AuditLog.meta` |
+| **String PKs use `cuid()`** | Collision-free client-generatable IDs for most models | `id String @id @default(cuid())` |
+| **Ticket/Problem/Change PKs are `Int @default(autoincrement())`** | Produce the sequential number for human reference codes | `Ticket.id` → `INC-0042` |
+| **Enum values are validated in app code** (Zod) | The DB will not reject a bad string; validation happens before write | schemas in `lib/actions/*` |
+
+### Human reference numbers
+
+`Ticket`, `Problem`, and `Change` use an autoincrementing integer `id`. The display code (e.g. `INC-0042`)
+is **derived from that `id`** by helpers in [`lib/constants.ts`](../lib/constants.ts) — there is no separate
+`number` column (the blueprint's `number` field was dropped):
+
+```ts
+// lib/constants.ts
+export const PREFIX = { ticket: "INC", request: "REQ", problem: "PRB", change: "CHG" } as const;
+
+ticketRef(id, type)  // → "INC-0042" (or "REQ-0042" when type === "REQUEST")
+problemRef(id)       // → "PRB-0007"
+changeRef(id)        // → "CHG-0033"
+```
+
+Each number is zero-padded to 4 digits. A ticket's code switches between the `INC` and `REQ` prefix based on
+its `type`, so incidents and requests share one number sequence.
+
+## Model catalog
+
+Grouped by domain. Every field/relation below is verified against
+[`prisma/schema.prisma`](../prisma/schema.prisma).
+
+### Auth (Auth.js adapter)
+
+Standard [`@auth/prisma-adapter`](https://authjs.dev) models plus a credentials extension. See
+[configuration.md](./configuration.md) for auth setup.
+
+| Model | Purpose | Key fields / relations |
+| --- | --- | --- |
+| `User` | Person (agent or end-user); credentials + OAuth account holder | `email` (unique), `passwordHash` (bcrypt, for credentials login), `role`, `isVip`, `jobTitle`, `department`, `timezone`, `locale`, `isActive`, `syncSourceId`/`externalId` (link to import source), `lastLoginAt`; the hub of most relations |
+| `Account` | OAuth provider account linked to a user | `provider` + `providerAccountId` (unique), tokens; `onDelete: Cascade` |
+| `Session` | Database session token | `sessionToken` (unique), `expires` |
+| `VerificationToken` | Email verification / magic-link tokens | `identifier` + `token` |
+
+### RBAC
+
+Roles are a `String` on `User` (`role`), not a separate table. Allowed values: `ADMIN | MANAGER | AGENT | USER`
+(see `ROLES` in [`lib/constants.ts`](../lib/constants.ts)). Group-level roles live on `GroupMember`.
+
+### Org / routing
+
+| Model | Purpose | Key fields / relations |
+| --- | --- | --- |
+| `Group` | Team, department, or vendor that owns work | `name` (unique), `type` (`TEAM`/`DEPARTMENT`/`VENDOR`), `managerId`, `autoAssign` strategy (`OFF`/`ROUND_ROBIN`/`LEAST_BUSY`), `lastAssignedUserId` (round-robin cursor); has members, queues, tickets, problems, changes, assets |
+| `GroupMember` | User membership in a group | `(groupId, userId)` unique; `role` (`MEMBER`/`LEAD`) |
+| `Queue` | Named work queue, optionally tied to a group | `name` (unique), `groupId`, `order`, `isActive` |
+
+> **Drift note:** the blueprint treated "Queues" as a first-class module. In the current app queues were
+> largely dissolved into Teams/Groups — the board groups by team, and `app/(console)/queues` is a thin page.
+> The `Queue` model still exists and `Ticket.queueId` is still populated by the seed, but routing logic
+> centres on `Group`.
+
+### Tickets (incidents & requests)
+
+`Ticket` is the largest model and the core of the app.
+
+| Model | Purpose | Key fields / relations |
+| --- | --- | --- |
+| `Ticket` | An incident or service request | `id` (Int, autoincrement → `INC-`/`REQ-`), `type`, `status`, `priority`, `impact`, `urgency`, `source`, `isMajorIncident`, `pendingReason`/`pendingNote`, `resolutionCode`/`resolutionNote`, `mergedIntoId`; `description` (plaintext twin) + `descriptionHtml` (sanitized rich text); routing FKs `requesterId`, `assigneeId`, `groupId`, `queueId`, `categoryId`, `serviceId`, `catalogItemId`, `slaId`, `problemId`, `changeId`; catalog `formData`/`formSchema` snapshot; **SLA clock** fields (see below); relations to comments, watchers, attachments, assets, tags, tasks, worklogs, approvals, links, merges |
+| `TicketComment` | Reply or internal note on a ticket | `body` (plaintext) + `bodyHtml`, `isInternal`, `authorId`; has attachments |
+| `Task` | Checklist item / subtask on a ticket | `title`, `done`, `order`, `assigneeId` |
+| `WorkLog` | Time logged against a ticket (effort reporting) | `minutes`, `note`, `billable`, `loggedAt`, `userId` |
+| `TicketLink` | Typed relationship between two tickets | `(ticketId, linkedTicketId)` unique; `type` (`RELATED`/`DUPLICATE`/`BLOCKS`/`CAUSED_BY`) |
+| `TicketApproval` | Approval request on a ticket (catalog approvals) | `approverId`, `status` (`PENDING`/`APPROVED`/`REJECTED`), `decidedAt` |
+| `TicketWatcher` | Users following a ticket | composite PK `(ticketId, userId)` |
+| `Tag` / `TicketTag` | Freeform labels and the ticket↔tag join | `Tag.name` unique; `TicketTag` composite PK |
+
+**SLA clock fields on `Ticket`:** `dueDate` (manual agent due date), `dueAt`/`responseDueAt`/`resolveDueAt`
+(computed from the SLA at create), `responseBreached`/`resolveBreached`, `pendingSince` + `pausedMs` (clock
+pauses while `PENDING`/`ON_HOLD`), `firstResponseAt`, `resolvedAt`, `closedAt`. The derived clock state
+(`ON_TRACK`, `AT_RISK`, `BREACHED`, `MET`, `PAUSED`, `NONE`) is computed in app code from these columns — see
+`SLA_STATES` in [`lib/constants.ts`](../lib/constants.ts).
+
+### Problems
+
+| Model | Purpose | Key fields / relations |
+| --- | --- | --- |
+| `Problem` | Root-cause record; groups related incidents | `id` (Int → `PRB-`), `status` (`NEW`/`INVESTIGATING`/`KNOWN_ERROR`/`RESOLVED`/`CLOSED`), `priority`, `impact`, `rootCause`, `workaround`, `assigneeId`, `groupId`, `categoryId`; has tickets, changes, comments |
+| `ProblemComment` | Comment on a problem | `body`/`bodyHtml`, `isInternal`, `authorId` |
+
+### Changes
+
+| Model | Purpose | Key fields / relations |
+| --- | --- | --- |
+| `Change` | Change request with a workflow lifecycle | `id` (Int → `CHG-`), `type` (`STANDARD`/`NORMAL`/`EMERGENCY`), `status` (10-state lifecycle), `risk`, `priority`, `impact`, `reason`, `implementationPlan`, `rollbackPlan`, `plannedStart`/`plannedEnd`/`actualStart`/`actualEnd`, `problemId`; has approvals, affected assets, tickets, comments |
+| `ChangeComment` | Comment on a change | `body`/`bodyHtml`, `isInternal`, `authorId` |
+| `ChangeApproval` | Per-approver decision on a change | `(changeId, approverId)` unique; `status`, `comment`, `decidedAt` |
+
+### CMDB / assets
+
+| Model | Purpose | Key fields / relations |
+| --- | --- | --- |
+| `Asset` | Configuration item (hardware, VM, cloud, software) | `assetTag` (unique), `name`, `type` (12 values), `status`, hardware detail (`serial`, `model`, `manufacturer`, `ipAddress`, `macAddress`, `os`, `cpu`, `ramGb`, `storageGb`), lifecycle (`cost`, `purchaseDate`, `warrantyEnd`), `ownerId`, `groupId`, `locationId`, `syncSourceId`/`externalId`, `lastSeenAt`; relations to tickets, changes, and asset-to-asset relations |
+| `AssetRelation` | Directed dependency edge between two assets | `(sourceId, targetId, type)` unique; `type` (`DEPENDS_ON`/`CONNECTS_TO`/`RUNS_ON`/`HOSTS`/`PART_OF`/`BACKS_UP`) |
+| `TicketAsset` | Ticket ↔ affected-asset join | composite PK `(ticketId, assetId)` |
+| `ChangeAsset` | Change ↔ affected-asset join | composite PK `(changeId, assetId)` |
+
+### Locations
+
+| Model | Purpose | Key fields / relations |
+| --- | --- | --- |
+| `Location` | Self-referencing physical/logical location tree | `type` (`SITE`/`BUILDING`/`FLOOR`/`ROOM`/`DATACENTER`/`RACK`), `parentId` (self relation `LocationTree`), `address`/`city`/`country`; assets link via `Asset.locationId` |
+
+### Catalog / knowledge
+
+| Model | Purpose | Key fields / relations |
+| --- | --- | --- |
+| `Category` | Self-referencing taxonomy tree | `parentId` (self relation `CategoryTree`), `(name, parentId)` unique; shared by tickets, problems, changes, services, articles, catalog items |
+| `SLA` | Response/resolution targets | `name` (unique), `priority` (for auto-match), `responseMins`, `resolveMins`, `isActive` |
+| `Service` | Operational business service (service health) | `name` (unique), `status` (`OPERATIONAL`/`DEGRADED`/`OUTAGE`/`MAINTENANCE`/`RETIRED`), `criticality`, `categoryId`, `ownerId`, `slaId` |
+| `CatalogItem` | Requestable self-service catalog entry (portal form) | `name`, `formSchema` (JSON field defs as TEXT), `requiresApproval` + `approverId`, `estimatedDays`, `isPublished`, `order`; spawns tickets |
+| `Article` | Knowledge-base article | `slug` (unique), `body` + `bodyFormat` (`markdown`/`plain`), `status` (`DRAFT`/`REVIEW`/`PUBLISHED`/`RETIRED`), `visibility` (`INTERNAL`/`PUBLIC`), `published` (denormalized mirror), `views`, `categoryId`, `authorId`; has revisions & attachments |
+| `ArticleRevision` | Append-only content snapshot per save/publish | `(articleId, version)` unique; `title`, `excerpt`, `body`, `note`, `editorId` |
+
+> **Note:** `Service` (operational health) and `CatalogItem` (requestable form) are distinct models. The seed
+> creates operational services in [`prisma/seed.ts`](../prisma/seed.ts) and catalog items in
+> [`prisma/seed-extras.ts`](../prisma/seed-extras.ts).
+
+### Sync / integrations
+
+| Model | Purpose | Key fields / relations |
+| --- | --- | --- |
+| `SyncSource` | External system to import/export from | `name` (unique), `type` (8 values: LDAP … GLPI), `direction` (`IMPORT`/`EXPORT`/`BIDIRECTIONAL`), `scope` (`USERS`/`ASSETS`/`TICKETS`/`ALL`), `config` (JSON as TEXT), `schedule` (cron), `isActive`, `lastRunAt`, `lastStatus`; has runs, imported users & assets |
+| `SyncRun` | One execution of a sync source | `status`, `trigger` (`MANUAL`/`SCHEDULE`/`API`), counters `created`/`updated`/`failed`, `log`, `startedAt`/`finishedAt` |
+
+### Attachments, audit, notifications, email
+
+| Model | Purpose | Key fields / relations |
+| --- | --- | --- |
+| `Attachment` | Uploaded blob (driver-agnostic) | `storageKey` (`YYYY/MM/<id>-<name>`), `checksum` (sha256), `mime`, `size`; nullable FKs to `ticket`/`comment`/`article`, plus `uploadedBy`; `url` kept for legacy/external only |
+| `AuditLog` | Immutable activity record | `action`, `entity` + `entityId`, `summary`, `meta` (JSON as TEXT), `ip`, optional `userId` |
+| `Notification` | Per-user in-app notification | `type`, `title`, `body`, `entity`/`entityId`, `read`; indexed `(userId, read)` |
+| `EmailMessage` | Outbound email record / queue | `toEmail`, `subject`, `body`, `template`, `status` (`QUEUED`/`SENT`/`FAILED`), `error`, `entity`/`entityId`, `sentAt` |
+
+### API tokens
+
+| Model | Purpose | Key fields / relations |
+| --- | --- | --- |
+| `ApiToken` | Personal access token for the REST API | `tokenHash` (unique, bcrypt), `prefix` (display), `scopes` (csv: `read,write,admin`), `userId`, `lastUsedAt`, `expiresAt`, `revoked`. See [rest-api.md](./rest-api.md). |
+
+### Automations
+
+| Model | Purpose | Key fields / relations |
+| --- | --- | --- |
+| `AutomationRule` | Condition→action rule run on ticket events | `trigger` (`TICKET_CREATED`/`TICKET_UPDATED`), `matchType` (`ALL`/`ANY`), `conditions` and `actions` (JSON arrays as TEXT), `isActive`, `order`, `runCount`, `lastRunAt` |
+
+## Enums
+
+Every "enum" is a `String` column whose allowed values are declared as a `readonly` tuple in
+[`lib/constants.ts`](../lib/constants.ts). Each domain also exports a `*_META` map with a human label, a badge
+`tone`, and (often) a Lucide icon, so a value renders consistently everywhere.
+
+| Constant | Backs | Allowed values |
+| --- | --- | --- |
+| `ROLES` | `User.role` | `ADMIN`, `MANAGER`, `AGENT`, `USER` |
+| `TICKET_TYPES` | `Ticket.type` | `INCIDENT`, `REQUEST` |
+| `TICKET_STATUSES` | `Ticket.status` | `NEW`, `OPEN`, `IN_PROGRESS`, `PENDING`, `ON_HOLD`, `RESOLVED`, `CLOSED`, `CANCELLED` |
+| `OPEN_TICKET_STATUSES` | (subset) | `NEW`, `OPEN`, `IN_PROGRESS`, `PENDING`, `ON_HOLD` |
+| `PENDING_STATUSES` | (subset) | `PENDING`, `ON_HOLD` |
+| `PENDING_REASONS` | `Ticket.pendingReason` | `AWAITING_CUSTOMER`, `AWAITING_VENDOR`, `AWAITING_CHANGE`, `AWAITING_PARTS`, `SCHEDULED` |
+| `RESOLUTION_CODES` | `Ticket.resolutionCode` | `FIXED`, `WORKAROUND`, `NOT_REPRODUCIBLE`, `DUPLICATE`, `NO_ACTION` |
+| `PRIORITIES` | `*.priority` | `LOW`, `MEDIUM`, `HIGH`, `CRITICAL` |
+| `IMPACT_URGENCY` | `*.impact`, `*.urgency` | `LOW`, `MEDIUM`, `HIGH` |
+| `TICKET_SOURCES` | `Ticket.source` | `PORTAL`, `EMAIL`, `PHONE`, `API`, `AGENT` |
+| `PROBLEM_STATUSES` | `Problem.status` | `NEW`, `INVESTIGATING`, `KNOWN_ERROR`, `RESOLVED`, `CLOSED` |
+| `CHANGE_TYPES` | `Change.type` | `STANDARD`, `NORMAL`, `EMERGENCY` |
+| `CHANGE_STATUSES` | `Change.status` | `DRAFT`, `SUBMITTED`, `APPROVAL`, `APPROVED`, `SCHEDULED`, `IN_PROGRESS`, `REVIEW`, `CLOSED`, `REJECTED`, `FAILED` |
+| `RISKS` | `Change.risk` | `LOW`, `MEDIUM`, `HIGH` |
+| `APPROVAL_STATUSES` | `TicketApproval.status`, `ChangeApproval.status`, `Ticket.approvalState` | `PENDING`, `APPROVED`, `REJECTED` |
+| `SERVICE_STATUSES` | `Service.status` | `OPERATIONAL`, `DEGRADED`, `OUTAGE`, `MAINTENANCE`, `RETIRED` |
+| `CRITICALITIES` | `Service.criticality` | `LOW`, `MEDIUM`, `HIGH`, `CRITICAL` |
+| `AUTO_ASSIGN_STRATEGIES` | `Group.autoAssign` | `OFF`, `ROUND_ROBIN`, `LEAST_BUSY` |
+| `GROUP_TYPES` | `Group.type` | `TEAM`, `DEPARTMENT`, `VENDOR` |
+| `ASSET_TYPES` | `Asset.type` | `SERVER`, `WORKSTATION`, `LAPTOP`, `NETWORK`, `SOFTWARE`, `MOBILE`, `PRINTER`, `VM`, `CLOUD`, `SERVICE`, `MONITOR`, `PHONE` |
+| `ASSET_STATUSES` | `Asset.status` | `IN_USE`, `IN_STOCK`, `MAINTENANCE`, `RETIRED`, `DISPOSED` |
+| `ASSET_RELATION_TYPES` | `AssetRelation.type` | `DEPENDS_ON`, `CONNECTS_TO`, `RUNS_ON`, `HOSTS`, `PART_OF`, `BACKS_UP` |
+| `SYNC_TYPES` | `SyncSource.type` | `LDAP`, `ACTIVE_DIRECTORY`, `AZURE_AD`, `INTUNE`, `CSV`, `SNOW`, `REST_API`, `GLPI` |
+| `SYNC_DIRECTIONS` | `SyncSource.direction` | `IMPORT`, `EXPORT`, `BIDIRECTIONAL` |
+| `SYNC_SCOPES` | `SyncSource.scope` | `USERS`, `ASSETS`, `TICKETS`, `ALL` |
+| `SYNC_RUN_STATUSES` | `SyncRun.status`, `SyncSource.lastStatus` | `RUNNING`, `SUCCESS`, `FAILED`, `PARTIAL` |
+| `SLA_STATES` | derived SLA clock state | `ON_TRACK`, `AT_RISK`, `BREACHED`, `MET`, `PAUSED`, `NONE` |
+| `ARTICLE_STATUSES` | `Article.status` | `DRAFT`, `REVIEW`, `PUBLISHED`, `RETIRED` |
+| `ARTICLE_VISIBILITIES` | `Article.visibility` | `INTERNAL`, `PUBLIC` |
+| `LOCATION_TYPES` | `Location.type` | `SITE`, `BUILDING`, `FLOOR`, `ROOM`, `DATACENTER`, `RACK` |
+| `TICKET_LINK` types | `TicketLink.type` | `RELATED`, `DUPLICATE`, `BLOCKS`, `CAUSED_BY` *(defined inline on the schema, not exported as a constant)* |
+
+There is no `lib/enums.ts` — all enum tuples and their metadata live in
+[`lib/constants.ts`](../lib/constants.ts).
+
+### Enums as the single source of truth
+
+The pattern keeps one authoritative list per domain:
+
+1. **`lib/constants.ts` declares** the `readonly` tuple (`export const X = [...] as const`), a derived
+   TypeScript union type, and the `*_META` map (`label`, `tone`, `icon`).
+2. **Zod schemas** in the server actions validate incoming values against those tuples before any write, so
+   the plain `String` DB column can never be persisted with an out-of-range value from the app.
+3. **UI components** read the same tuples to build `<Select>` option lists and the `*_META` maps to render
+   status/priority badges, guaranteeing DB, validation, and UI never drift.
+4. The `metaFor(map, key)` helper provides a safe fallback (`{ label: key, tone: "neutral" }`) for legacy or
+   unknown values.
+
+To add or change an allowed value, edit the tuple and its `*_META` entry in `lib/constants.ts` — no schema
+migration is required, since the column is already a `String`.
+
+## Migration workflow
+
+Prisma migrations live in [`prisma/migrations/`](../prisma/migrations/). The seed is split across
+[`prisma/seed.ts`](../prisma/seed.ts) (users, groups, tickets, problems, changes, assets, services, sync,
+articles) and [`prisma/seed-extras.ts`](../prisma/seed-extras.ts) (locations, catalog items, automation
+rules); `package.json` runs both via the `prisma.seed` hook (`tsx prisma/seed.ts && tsx prisma/seed-extras.ts`).
+
+| Command | Runs | Use when |
+| --- | --- | --- |
+| `pnpm db:generate` | `prisma generate` | Regenerate the Prisma Client after editing the schema |
+| `pnpm db:migrate` | `prisma migrate dev` | Create + apply a new migration in development (prompts for a name) |
+| `pnpm db:push` | `prisma db push` | Push schema changes to the DB **without** a migration file (fast prototyping) |
+| `pnpm db:reset` | `prisma migrate reset --force` | Drop, re-apply all migrations, and re-seed from scratch |
+| `pnpm db:seed` | both seed scripts | (Re)populate demo data into the current DB |
+| `pnpm db:studio` | `prisma studio` | Browse/edit data in the Prisma Studio GUI |
+| `pnpm setup` | `prisma migrate deploy && prisma db seed` | Production/CI: apply pending migrations then seed |
+
+Typical local loop: edit `prisma/schema.prisma` → `pnpm db:migrate` (name the migration) → `pnpm db:seed` if
+you need fresh demo data. Use `pnpm db:reset` to get back to a known clean state.
+
+The demo login created by the seed is `admin@servio.dev` / `servio123`.
+
+### Existing migrations
+
+Nine migrations exist (all dated 2026-08-08/09), building the schema incrementally: `init`,
+`vip_and_email`, `ticket_collab`, `service_catalog`, `change_problem_comments`, `automations`, `locations`,
+and `pending_reason`. The provider lock is `sqlite`
+([`prisma/migrations/migration_lock.toml`](../prisma/migrations/migration_lock.toml)); switching to Postgres
+for production means changing both the `datasource` provider and this lock, then regenerating the migration
+history for the new engine.

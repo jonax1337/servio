@@ -51,8 +51,6 @@ dev.db-journal
 
 # playwright mcp
 .playwright-mcp/
-ticket-detail*.png
-changes-detail.png
-sync-detail.png
-asset-detail.png
-portal-home.png
+
+# stray screenshots at the repo root (keep it clean; committed images live under docs/ or public/)
+/*.png
