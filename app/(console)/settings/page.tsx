@@ -9,6 +9,10 @@ import {
   Zap,
   ArrowUpRight,
   Info,
+  Palette,
+  Mail,
+  Bot,
+  UploadCloud,
 } from "lucide-react";
 import type { Metadata } from "next";
 import type { LucideIcon } from "lucide-react";
@@ -27,6 +31,30 @@ type SettingCard = {
 };
 
 const CARDS: SettingCard[] = [
+  {
+    href: "/settings/general",
+    title: "General & Branding",
+    description: "Application name and public URL used across the app and emails.",
+    icon: Palette,
+  },
+  {
+    href: "/settings/email",
+    title: "Email (SMTP)",
+    description: "Configure outgoing mail delivery, or run in outbox mode.",
+    icon: Mail,
+  },
+  {
+    href: "/settings/ai",
+    title: "AI Assistant",
+    description: "Provider, model and API keys for the built-in AI assistant.",
+    icon: Bot,
+  },
+  {
+    href: "/settings/uploads",
+    title: "Uploads",
+    description: "File attachment size limits for tickets, comments and articles.",
+    icon: UploadCloud,
+  },
   {
     href: "/settings/sla",
     title: "SLA Policies",

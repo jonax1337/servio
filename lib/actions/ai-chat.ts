@@ -6,6 +6,7 @@ import { getSessionUser, isAgent, type Role } from "@/lib/session";
 import { aiConfigured, generateAiChat } from "@/lib/ai";
 import { getTicketAiContext } from "@/lib/actions/ai";
 import { getOrgDirectory } from "@/lib/ai-context";
+import { getSetting } from "@/lib/settings";
 import {
   AI_CHAT_TOOLS,
   resolveGroupId,
@@ -42,7 +43,7 @@ export type ChatState =
 export async function chatWithAi(ticketId: number, history: ChatMessage[]): Promise<ChatState> {
   const me = await getSessionUser();
   if (!me || !isAgent(me.role as Role)) return { ok: false, error: "Not authorised" };
-  if (!aiConfigured()) {
+  if (!(await aiConfigured())) {
     return { ok: false, error: "AI is not configured." };
   }
   if (!Array.isArray(history) || history.length === 0) {
@@ -57,7 +58,7 @@ export async function chatWithAi(ticketId: number, history: ChatMessage[]): Prom
     select: { group: { select: { name: true } } },
   });
   const teams = memberships.map((m) => m.group?.name).filter(Boolean);
-  const orgName = process.env.APP_NAME || "Servio";
+  const orgName = (await getSetting("APP_NAME")) || "Servio";
   const orgDirectory = await getOrgDirectory();
 
   const system = [
@@ -201,10 +202,17 @@ export async function applyTicketProposal(
       const targetId = parseTicketId(p.target);
       if (!targetId) return { ok: false, error: `Cannot resolve ${p.target}` };
       if (targetId === ticketId) return { ok: false, error: "Cannot link a ticket to itself" };
+      // Server Action args are client-controlled — re-validate the relation
+      // against the allowed set (mirrors how update_field re-validates enums)
+      // rather than writing p.relation verbatim into TicketLink.type.
+      const LINK_TYPES = ["RELATED", "DUPLICATE", "BLOCKS", "CAUSED_BY"];
+      const relation = LINK_TYPES.includes(String(p.relation))
+        ? String(p.relation)
+        : "RELATED";
       const fd = new FormData();
       fd.set("id", String(ticketId));
       fd.set("targetId", String(targetId));
-      fd.set("type", p.relation ?? "RELATED");
+      fd.set("type", relation);
       await linkTicket(fd);
       return { ok: true, applied: `Linked to ${p.target}` };
     }

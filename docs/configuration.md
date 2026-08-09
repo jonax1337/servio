@@ -12,6 +12,17 @@ when left unconfigured.
 See also: [development.md](development.md) for the local dev loop, and
 [deployment.md](deployment.md) for hardening these values in production.
 
+> **Admin Settings override `.env`.** Most application-level config (SMTP, AI
+> provider/model/keys, branding `APP_NAME`/`APP_URL`, `MAX_UPLOAD_MB`) can now be
+> managed from the UI under **Settings** (ADMIN only) and is stored in the
+> `AppSetting` table. Precedence for every key is **DB row → `process.env` →
+> built-in default**, so an empty table falls back to `.env` and nothing breaks
+> until an admin overrides a value. Secrets (SMTP password, AI API keys) are
+> encrypted at rest (AES-256-GCM) using `SETTINGS_ENCRYPTION_KEY`. Resolution
+> lives in [`../lib/settings.ts`](../lib/settings.ts) + [`../lib/crypto.ts`](../lib/crypto.ts).
+> Bootstrap secrets (`DATABASE_URL`, `AUTH_SECRET`, `SETTINGS_ENCRYPTION_KEY`) and
+> OIDC/SSO stay `.env`-only.
+
 ---
 
 ## Environment variable reference

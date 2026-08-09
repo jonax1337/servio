@@ -1,0 +1,89 @@
+"use server";
+
+import { revalidatePath } from "next/cache";
+import { z } from "zod";
+import { db } from "@/lib/db";
+import { getCurrentUser } from "@/lib/session";
+import { writeAudit } from "@/lib/audit";
+import { sanitizeCommentHtml } from "@/lib/markdown";
+
+export type ActionState =
+  | { error?: string; fieldErrors?: Record<string, string[]>; ok?: boolean }
+  | undefined;
+
+const schema = z.object({
+  name: z.string().trim().min(1, "Name is required").max(120),
+  phone: z.string().trim().max(60).optional().default(""),
+  jobTitle: z.string().trim().max(120).optional().default(""),
+  department: z.string().trim().max(120).optional().default(""),
+  timezone: z.string().trim().min(1).default("UTC"),
+  locale: z.string().trim().min(1).default("en"),
+  signature: z.string().optional().default(""),
+});
+
+/** Current user's editable account fields (for the settings dialog/page). */
+export async function getMyAccount() {
+  const me = await getCurrentUser();
+  if (!me) return null;
+  return {
+    name: me.name ?? "",
+    email: me.email,
+    phone: me.phone ?? "",
+    jobTitle: me.jobTitle ?? "",
+    department: me.department ?? "",
+    timezone: me.timezone,
+    locale: me.locale,
+    signature: me.signature ?? "",
+    signatureEnabled: me.signatureEnabled,
+  };
+}
+
+export async function updateMySettings(
+  _prev: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  const me = await getCurrentUser();
+  if (!me || !me.isActive) return { error: "Not authenticated." };
+
+  const parsed = schema.safeParse(Object.fromEntries(formData));
+  if (!parsed.success) {
+    return {
+      error: "Please fix the errors below.",
+      fieldErrors: parsed.error.flatten().fieldErrors,
+    };
+  }
+  const d = parsed.data;
+
+  // Switch (base-ui) submits "on" when checked, nothing when unchecked.
+  const signatureEnabled = formData.get("signatureEnabled") === "on";
+  // Server is the trust boundary — re-sanitize the user-controlled signature
+  // HTML even though the editor already sanitizes client-side.
+  const signature = d.signature.trim()
+    ? sanitizeCommentHtml(d.signature)
+    : null;
+
+  await db.user.update({
+    where: { id: me.id },
+    data: {
+      name: d.name,
+      phone: d.phone || null,
+      jobTitle: d.jobTitle || null,
+      department: d.department || null,
+      timezone: d.timezone,
+      locale: d.locale,
+      signature,
+      signatureEnabled,
+    },
+  });
+
+  await writeAudit({
+    userId: me.id,
+    action: "UPDATE",
+    entity: "User",
+    entityId: me.id,
+    summary: "Updated account settings",
+  });
+
+  revalidatePath("/", "layout");
+  return { ok: true };
+}

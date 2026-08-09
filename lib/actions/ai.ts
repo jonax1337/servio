@@ -235,7 +235,7 @@ export type TriageState =
 export async function suggestTriage(ticketId: number): Promise<TriageState> {
   const me = await requireAgent();
   if (!me) return { ok: false, error: "Not authorised" };
-  if (!aiConfigured()) return { ok: false, error: NOT_CONFIGURED };
+  if (!(await aiConfigured())) return { ok: false, error: NOT_CONFIGURED };
 
   const ticket = await loadTicketContext(ticketId);
   if (!ticket) return { ok: false, error: "Ticket not found" };
@@ -334,7 +334,7 @@ export type AiTextState = { ok: true; text: string; html: string } | { ok: false
 export async function summarizeThread(ticketId: number): Promise<AiTextState> {
   const me = await requireAgent();
   if (!me) return { ok: false, error: "Not authorised" };
-  if (!aiConfigured()) return { ok: false, error: NOT_CONFIGURED };
+  if (!(await aiConfigured())) return { ok: false, error: NOT_CONFIGURED };
 
   const ticket = await loadTicketContext(ticketId);
   if (!ticket) return { ok: false, error: "Ticket not found" };
@@ -367,7 +367,7 @@ export async function summarizeThread(ticketId: number): Promise<AiTextState> {
 export async function draftReply(ticketId: number): Promise<AiTextState> {
   const me = await requireAgent();
   if (!me) return { ok: false, error: "Not authorised" };
-  if (!aiConfigured()) return { ok: false, error: NOT_CONFIGURED };
+  if (!(await aiConfigured())) return { ok: false, error: NOT_CONFIGURED };
 
   const ticket = await loadTicketContext(ticketId);
   if (!ticket) return { ok: false, error: "Ticket not found" };
@@ -423,7 +423,7 @@ export async function improveText(
 ): Promise<AiTextState> {
   const me = await requireAgent();
   if (!me) return { ok: false, error: "Not authorised" };
-  if (!aiConfigured()) return { ok: false, error: NOT_CONFIGURED };
+  if (!(await aiConfigured())) return { ok: false, error: NOT_CONFIGURED };
 
   if (plain(draft).length < 2) return { ok: false, error: "Nothing to improve." };
 

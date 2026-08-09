@@ -91,8 +91,8 @@ export default async function TicketDetailPage({
   ]);
   if (!ticket) notFound();
 
-  const aiEnabled = aiConfigured();
-  const aiTeaser = !aiEnabled && aiTeaserEnabled(); // show buttons as a preview when disabled
+  const aiEnabled = await aiConfigured();
+  const aiTeaser = !aiEnabled && (await aiTeaserEnabled()); // show buttons as a preview when disabled
   const aiVisible = aiEnabled || aiTeaser;
   const isWatching = !!me && ticket.watchers.some((w) => w.userId === me.id);
   const candidateOpts = candidates.map((c) => ({

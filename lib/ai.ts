@@ -4,11 +4,13 @@ import { createOpenAI } from "@ai-sdk/openai";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import type { ModelMessage, ToolSet } from "ai";
 import type { z } from "zod";
+import { getSetting, getBoolSetting, getNumberSetting } from "@/lib/settings";
 
 /**
- * Self-hosted "AI Service Agent" config. Mirrors the lib/mail.ts ethos: read
- * straight from process.env at call time, gate on a *Configured() boolean, and
- * never leak secrets to the client. All AI runs server-side (server actions).
+ * Self-hosted "AI Service Agent" (Vio) config. Config is resolved through
+ * lib/settings (DB AppSetting overrides process.env), gated on an async
+ * *Configured() boolean, and secrets never leak to the client. All AI runs
+ * server-side (server actions / route handlers).
  *
  * `ollama` is a LOCAL, OpenAI-compatible endpoint — no key, data stays on-box.
  * `anthropic`/`openai` are EXTERNAL and require AI_ALLOW_EXTERNAL="true".
@@ -18,16 +20,16 @@ export type AiProvider = "anthropic" | "openai" | "ollama";
 /** The only local provider — never gated by AI_ALLOW_EXTERNAL. */
 const LOCAL_PROVIDERS: readonly AiProvider[] = ["ollama"];
 
-function provider(): AiProvider {
-  const p = (process.env.AI_PROVIDER ?? "anthropic").toLowerCase();
+async function provider(): Promise<AiProvider> {
+  const p = ((await getSetting("AI_PROVIDER")) ?? "anthropic").toLowerCase();
   if (p === "openai") return "openai";
   if (p === "ollama") return "ollama";
   return "anthropic";
 }
 
 /** Privacy gate: true when external (non-local) providers are permitted. */
-function allowExternal(): boolean {
-  return process.env.AI_ALLOW_EXTERNAL === "true";
+async function allowExternal(): Promise<boolean> {
+  return getBoolSetting("AI_ALLOW_EXTERNAL");
 }
 
 function isLocal(p: AiProvider): boolean {
@@ -35,14 +37,14 @@ function isLocal(p: AiProvider): boolean {
 }
 
 /** Per-provider default model when AI_MODEL is unset. */
-function defaultModel(p: AiProvider): string {
+async function defaultModel(p: AiProvider): Promise<string> {
   if (p === "openai") return "gpt-4o";
-  if (p === "ollama") return process.env.OLLAMA_MODEL || "llama3.1";
+  if (p === "ollama") return (await getSetting("OLLAMA_MODEL")) || "llama3.1";
   return "claude-opus-4-8"; // anthropic default
 }
 
-function modelId(p: AiProvider): string {
-  return process.env.AI_MODEL || defaultModel(p);
+async function modelId(p: AiProvider): Promise<string> {
+  return (await getSetting("AI_MODEL")) || (await defaultModel(p));
 }
 
 /**
@@ -51,12 +53,12 @@ function modelId(p: AiProvider): string {
  *  - local (ollama): always OK (no key needed)
  *  - external (anthropic/openai): requires AI_ALLOW_EXTERNAL="true" AND its key
  */
-export function aiConfigured(): boolean {
-  const p = provider();
+export async function aiConfigured(): Promise<boolean> {
+  const p = await provider();
   if (isLocal(p)) return true;
-  if (!allowExternal()) return false; // privacy gate blocks external providers
-  if (p === "anthropic") return Boolean(process.env.ANTHROPIC_API_KEY);
-  if (p === "openai") return Boolean(process.env.OPENAI_API_KEY);
+  if (!(await allowExternal())) return false; // privacy gate blocks external providers
+  if (p === "anthropic") return Boolean(await getSetting("ANTHROPIC_API_KEY"));
+  if (p === "openai") return Boolean(await getSetting("OPENAI_API_KEY"));
   return false;
 }
 
@@ -65,25 +67,25 @@ export function aiConfigured(): boolean {
  * preview (a nudge to enable the feature). Clicking them surfaces a friendly
  * hint instead of running anything. Independent of aiConfigured().
  */
-export function aiTeaserEnabled(): boolean {
-  return process.env.AI_TEASER === "true";
+export async function aiTeaserEnabled(): Promise<boolean> {
+  return getBoolSetting("AI_TEASER");
 }
 
 /** Safe status object for UI/debugging — contains no secrets. */
-export function aiStatus(): {
+export async function aiStatus(): Promise<{
   configured: boolean;
   provider: AiProvider;
   model: string;
   local: boolean;
   externalAllowed: boolean;
-} {
-  const p = provider();
+}> {
+  const p = await provider();
   return {
-    configured: aiConfigured(),
+    configured: await aiConfigured(),
     provider: p,
-    model: modelId(p),
+    model: await modelId(p),
     local: isLocal(p),
-    externalAllowed: allowExternal(),
+    externalAllowed: await allowExternal(),
   };
 }
 
@@ -92,22 +94,24 @@ export function aiStatus(): {
  * selected while AI_ALLOW_EXTERNAL is false, so a misconfiguration can never
  * push ticket data off-box.
  */
-function assertPrivacy(p: AiProvider): void {
-  if (!isLocal(p) && !allowExternal()) {
+async function assertPrivacy(p: AiProvider): Promise<void> {
+  if (!isLocal(p) && !(await allowExternal())) {
     throw new Error(
       `AI provider "${p}" is external and AI_ALLOW_EXTERNAL is not "true". Refusing to send data off-box.`,
     );
   }
 }
 
-/** Resolve the AI SDK model for the current AI_PROVIDER. Key stays in process.env. */
-function getModel() {
-  const p = provider();
-  assertPrivacy(p);
-  const id = modelId(p);
+/** Resolve the AI SDK model for the current AI_PROVIDER. Keys stay server-side. */
+async function getModel() {
+  const p = await provider();
+  await assertPrivacy(p);
+  const id = await modelId(p);
 
   if (p === "anthropic") {
-    const anthropic = createAnthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+    const anthropic = createAnthropic({
+      apiKey: (await getSetting("ANTHROPIC_API_KEY")) ?? undefined,
+    });
     return anthropic(id);
   }
 
@@ -115,8 +119,8 @@ function getModel() {
     // OPENAI_BASE_URL lets you point at any OpenAI-compatible cloud (OpenAI,
     // Moonshot/Kimi, Zhipu/GLM, OpenRouter, …) — the model id comes from AI_MODEL.
     const openai = createOpenAI({
-      apiKey: process.env.OPENAI_API_KEY,
-      baseURL: process.env.OPENAI_BASE_URL || undefined,
+      apiKey: (await getSetting("OPENAI_API_KEY")) ?? undefined,
+      baseURL: (await getSetting("OPENAI_BASE_URL")) || undefined,
     });
     return openai(id);
   }
@@ -127,14 +131,14 @@ function getModel() {
   // without it the model free-forms JSON with wrong keys / missing fields).
   const ollama = createOpenAICompatible({
     name: "ollama",
-    baseURL: process.env.OLLAMA_BASE_URL || "http://localhost:11434/v1",
+    baseURL: (await getSetting("OLLAMA_BASE_URL")) || "http://localhost:11434/v1",
     supportsStructuredOutputs: true,
   });
   return ollama(id);
 }
 
-function maxOutputTokens(): number {
-  const n = Number(process.env.AI_MAX_OUTPUT_TOKENS ?? 1024);
+async function maxOutputTokens(): Promise<number> {
+  const n = await getNumberSetting("AI_MAX_OUTPUT_TOKENS", 1024);
   return Number.isFinite(n) && n > 0 ? n : 1024;
 }
 
@@ -146,10 +150,10 @@ export async function generateAiText(input: {
   temperature?: number;
 }): Promise<string> {
   const { text } = await generateText({
-    model: getModel(),
+    model: await getModel(),
     system: input.system,
     prompt: input.prompt,
-    maxOutputTokens: input.maxOutputTokens ?? maxOutputTokens(),
+    maxOutputTokens: input.maxOutputTokens ?? (await maxOutputTokens()),
     temperature: input.temperature,
   });
   return text.trim();
@@ -168,13 +172,13 @@ export async function generateAiChat(input: {
   temperature?: number;
 }): Promise<{ text: string; toolCalls: { name: string; input: unknown }[] }> {
   const result = await generateText({
-    model: getModel(),
+    model: await getModel(),
     system: input.system,
     messages: input.messages,
     tools: input.tools,
     stopWhen: stepCountIs(input.maxSteps ?? 6),
     temperature: input.temperature,
-    maxOutputTokens: Math.max(maxOutputTokens(), 2048),
+    maxOutputTokens: Math.max(await maxOutputTokens(), 2048),
   });
   const toolCalls = result.steps.flatMap((s) =>
     s.toolCalls.map((tc) => ({ name: tc.toolName, input: (tc as { input?: unknown }).input })),
@@ -190,11 +194,11 @@ export async function generateAiObject<T>(input: {
   maxOutputTokens?: number;
 }): Promise<T> {
   const { object } = await generateObject({
-    model: getModel(),
+    model: await getModel(),
     system: input.system,
     prompt: input.prompt,
     schema: input.schema,
-    maxOutputTokens: input.maxOutputTokens ?? maxOutputTokens(),
+    maxOutputTokens: input.maxOutputTokens ?? (await maxOutputTokens()),
   });
   return object;
 }

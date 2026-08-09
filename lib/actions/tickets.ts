@@ -254,12 +254,23 @@ export async function addTicketComment(formData: FormData) {
     const atts = attachmentIds.length
       ? await db.attachment.findMany({ where: { commentId: comment.id }, select: { filename: true, storageKey: true } })
       : [];
+    // Append the agent's signature to the OUTGOING email only (not the stored
+    // comment) — keeps the portal thread and AI summaries clean and avoids
+    // double-appending. Signature is sanitized HTML; flatten to text for mail.
+    const author = await db.user.findUnique({
+      where: { id: me.id },
+      select: { signature: true, signatureEnabled: true },
+    });
+    const signatureText =
+      author?.signatureEnabled && author.signature
+        ? htmlToText(author.signature)
+        : undefined;
     await sendMail({
       to: ticket.requester.email,
       toName: ticket.requester.name,
       entity: "Ticket",
       entityId: ticket.id,
-      ...tplTicketReply(ticket, snippet),
+      ...tplTicketReply(ticket, snippet, signatureText),
       attachments: atts.flatMap((a) => (a.storageKey ? [{ filename: a.filename, storageKey: a.storageKey }] : [])),
     });
   }
