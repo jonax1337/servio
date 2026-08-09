@@ -17,6 +17,18 @@ import { createMentionExtension, type MentionUser } from "./mention-extension";
 
 export type { MentionUser };
 
+/** Imperative handle exposed via `onReady` so callers (e.g. AI helpers) can read
+ *  or replace the editor content. Writes go through the same sync path as typing,
+ *  so the required hidden input stays in step. */
+export type RichTextEditorHandle = {
+  /** Replace the whole document with plain text (blank lines → paragraphs). */
+  setText: (text: string) => void;
+  /** Current plain-text content. */
+  getText: () => string;
+  /** True when the editor is empty. */
+  isEmpty: () => boolean;
+};
+
 export type RichTextEditorProps = {
   name: string;
   defaultHTML?: string;
@@ -26,7 +38,19 @@ export type RichTextEditorProps = {
   ariaLabel?: string;
   mentionUsers?: MentionUser[];
   onChangeHTML?: (html: string) => void;
+  onReady?: (handle: RichTextEditorHandle) => void;
 };
+
+function escapeHtml(s: string) {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+/** Plain text → paragraph HTML (double newline splits paragraphs, single → <br>). */
+function textToHtml(text: string) {
+  const blocks = text.trim().split(/\n{2,}/).filter(Boolean);
+  if (blocks.length === 0) return "<p></p>";
+  return blocks.map((b) => `<p>${escapeHtml(b).replace(/\n/g, "<br />")}</p>`).join("");
+}
 
 // Border/ring chrome + prose typography (matches render sites) + placeholder + live chip.
 const EDITOR_CLASS = cn(
@@ -123,11 +147,13 @@ function Toolbar({ editor }: { editor: Editor | null }) {
 }
 
 function RichTextEditor({
-  name, defaultHTML, placeholder, required, className, ariaLabel, mentionUsers, onChangeHTML,
+  name, defaultHTML, placeholder, required, className, ariaLabel, mentionUsers, onChangeHTML, onReady,
 }: RichTextEditorProps) {
   const hiddenRef = React.useRef<HTMLInputElement>(null);
   const onChangeRef = React.useRef(onChangeHTML);
   React.useEffect(() => { onChangeRef.current = onChangeHTML; }, [onChangeHTML]);
+  const onReadyRef = React.useRef(onReady);
+  React.useEffect(() => { onReadyRef.current = onReady; }, [onReady]);
 
   // The form bridge — mirrors the editor HTML into an sr-only REQUIRED input so
   // empty submits are blocked with real feedback (type=hidden would be a no-op).
@@ -172,6 +198,20 @@ function RichTextEditor({
     onCreate: ({ editor }) => syncToInput(editor),
     onUpdate: ({ editor }) => syncToInput(editor),
   });
+
+  // Expose an imperative handle once the editor exists. Writes use a single
+  // chained transaction (clearContent + insertContent) so onUpdate fires once →
+  // syncToInput re-populates the required hidden input, exactly like typing.
+  React.useEffect(() => {
+    if (!editor) return;
+    onReadyRef.current?.({
+      setText: (text: string) => {
+        editor.chain().focus().clearContent(true).insertContent(textToHtml(text)).run();
+      },
+      getText: () => editor.getText(),
+      isEmpty: () => editor.isEmpty,
+    });
+  }, [editor]);
 
   // Clear the editor when the surrounding form resets. Anchor off the hidden
   // input (always in the DOM) rather than the editor DOM (mounts a tick later).

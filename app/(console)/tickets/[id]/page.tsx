@@ -12,6 +12,8 @@ import { LinkButton } from "@/components/link-button";
 import { StatusBadge, VipBadge, ToneBadge } from "@/components/status-badge";
 import { TicketProperties } from "@/components/tickets/ticket-properties";
 import { CommentThread } from "@/components/comments/comment-thread";
+import { SummarizeButton } from "@/components/tickets/summarize-button";
+import { aiConfigured, aiTeaserEnabled } from "@/lib/ai";
 import { EditEntityDialog } from "@/components/edit-entity-dialog";
 import { addTicketComment, updateTicketDetails, unlinkTicket, unlinkAsset, unlinkRelation } from "@/lib/actions/tickets";
 import { TicketActions } from "@/components/tickets/ticket-actions";
@@ -89,6 +91,9 @@ export default async function TicketDetailPage({
   ]);
   if (!ticket) notFound();
 
+  const aiEnabled = aiConfigured();
+  const aiTeaser = !aiEnabled && aiTeaserEnabled(); // show buttons as a preview when disabled
+  const aiVisible = aiEnabled || aiTeaser;
   const isWatching = !!me && ticket.watchers.some((w) => w.userId === me.id);
   const candidateOpts = candidates.map((c) => ({
     value: String(c.id),
@@ -236,6 +241,11 @@ export default async function TicketDetailPage({
 
           {/* Comments & Activity */}
           <div className="mt-8">
+            {aiVisible ? (
+              <div className="mb-3 flex justify-end">
+                <SummarizeButton ticketId={ticket.id} teaser={aiTeaser} />
+              </div>
+            ) : null}
             <CommentThread
               idField="ticketId"
               entityId={ticket.id}
@@ -244,6 +254,8 @@ export default async function TicketDetailPage({
               addAction={addTicketComment}
               mentionUsers={options.agents}
               attachTarget={{ ticketId: ticket.id }}
+              aiTicketId={aiVisible ? ticket.id : undefined}
+              aiTeaser={aiTeaser}
             />
           </div>
         </div>
@@ -254,7 +266,7 @@ export default async function TicketDetailPage({
         <Card>
           <CardHeader><CardTitle className="text-sm">Properties</CardTitle></CardHeader>
           <CardContent>
-            <TicketProperties ticket={ticket} options={options} />
+            <TicketProperties ticket={ticket} options={options} aiEnabled={aiVisible} aiTeaser={aiTeaser} />
           </CardContent>
         </Card>
 

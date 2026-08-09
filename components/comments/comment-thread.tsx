@@ -1,14 +1,18 @@
 "use client";
 
-import { useRef } from "react";
+import { useRef, useState, useTransition } from "react";
 import { useFormStatus } from "react-dom";
-import { Lock, Send, Loader2, MessageSquare, Activity as ActivityIcon } from "lucide-react";
+import { Lock, Send, Loader2, MessageSquare, Activity as ActivityIcon, Sparkles, Wand2 } from "lucide-react";
+import { toast } from "sonner";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { UserAvatar } from "@/components/user-avatar";
-import { RichTextEditor, type MentionUser } from "@/components/ui/rich-text-editor";
+import { RichTextEditor, type MentionUser, type RichTextEditorHandle } from "@/components/ui/rich-text-editor";
+import { AiButton } from "@/components/ui/ai-button";
+import { draftReply, improveText } from "@/lib/actions/ai";
+import { AI_TEASER_MESSAGE } from "@/lib/constants";
 import { ComposerAttachments } from "@/components/comments/composer-attachments";
 import { sanitizeCommentHtml } from "@/lib/markdown";
 import { iconForMime, formatBytes, type AttachmentRow } from "@/lib/attachments-ui";
@@ -58,6 +62,61 @@ function SubmitButton() {
   );
 }
 
+/** AI helpers in the composer footer — only rendered when a ticket id is given
+ *  and AI is configured. Draft writes into the editor; Improve rewrites what's
+ *  already typed. Both go through the editor handle so the hidden input stays synced. */
+function AiComposerButtons({
+  ticketId,
+  editorRef,
+  teaser = false,
+}: {
+  ticketId: number;
+  editorRef: React.RefObject<RichTextEditorHandle | null>;
+  teaser?: boolean;
+}) {
+  const [pending, start] = useTransition();
+  const [busy, setBusy] = useState<"draft" | "improve" | null>(null);
+
+  function onDraft() {
+    if (teaser) return void toast.info(AI_TEASER_MESSAGE);
+    setBusy("draft");
+    start(async () => {
+      const res = await draftReply(ticketId);
+      setBusy(null);
+      if (!res.ok) return void toast.error(res.error);
+      editorRef.current?.setText(res.text);
+      toast.success("Reply drafted");
+    });
+  }
+
+  function onImprove() {
+    if (teaser) return void toast.info(AI_TEASER_MESSAGE);
+    const current = editorRef.current?.getText() ?? "";
+    if (current.trim().length < 2) return void toast.error("Nothing to improve.");
+    setBusy("improve");
+    start(async () => {
+      const res = await improveText(current);
+      setBusy(null);
+      if (!res.ok) return void toast.error(res.error);
+      editorRef.current?.setText(res.text);
+      toast.success("Text improved");
+    });
+  }
+
+  return (
+    <div className="flex items-center gap-1.5">
+      <AiButton type="button" onClick={onDraft} disabled={pending}>
+        {pending && busy === "draft" ? <Loader2 className="size-4 animate-spin" /> : <Sparkles className="size-4" />}
+        Suggest reply
+      </AiButton>
+      <AiButton type="button" onClick={onImprove} disabled={pending}>
+        {pending && busy === "improve" ? <Loader2 className="size-4 animate-spin" /> : <Wand2 className="size-4" />}
+        Improve
+      </AiButton>
+    </div>
+  );
+}
+
 export function CommentThread({
   idField,
   entityId,
@@ -68,6 +127,8 @@ export function CommentThread({
   placeholder = "Write a reply…",
   mentionUsers,
   attachTarget,
+  aiTicketId,
+  aiTeaser = false,
 }: {
   idField: string;
   entityId: number;
@@ -78,8 +139,13 @@ export function CommentThread({
   placeholder?: string;
   mentionUsers?: MentionUser[];
   attachTarget?: { ticketId: number };
+  /** When set, shows AI reply/improve helpers in the composer. */
+  aiTicketId?: number;
+  /** When true, the AI buttons are a disabled "teaser" (click shows a hint, no call). */
+  aiTeaser?: boolean;
 }) {
   const ref = useRef<HTMLFormElement>(null);
+  const editorRef = useRef<RichTextEditorHandle | null>(null);
 
   return (
     <Tabs defaultValue="comments">
@@ -133,17 +199,27 @@ export function CommentThread({
             className="mt-1 grid gap-2 rounded-xl border bg-card p-3"
           >
             <input type="hidden" name={idField} value={entityId} />
-            <RichTextEditor name="bodyHtml" required placeholder={placeholder} ariaLabel="Reply" mentionUsers={mentionUsers} />
+            <RichTextEditor
+              name="bodyHtml"
+              required
+              placeholder={placeholder}
+              ariaLabel="Reply"
+              mentionUsers={mentionUsers}
+              onReady={(handle) => { editorRef.current = handle; }}
+            />
             {attachTarget ? <ComposerAttachments ticketId={attachTarget.ticketId} /> : null}
-            <div className="flex items-center justify-between border-t pt-2">
-              {allowInternal ? (
-                <div className="flex items-center gap-2">
-                  <Checkbox id={`internal-${entityId}`} name="isInternal" />
-                  <Label htmlFor={`internal-${entityId}`} className="text-xs text-muted-foreground">
-                    Internal note
-                  </Label>
-                </div>
-              ) : <span />}
+            <div className="flex flex-wrap items-center justify-between gap-2 border-t pt-2">
+              <div className="flex flex-wrap items-center gap-2">
+                {allowInternal ? (
+                  <div className="flex items-center gap-2">
+                    <Checkbox id={`internal-${entityId}`} name="isInternal" />
+                    <Label htmlFor={`internal-${entityId}`} className="text-xs text-muted-foreground">
+                      Internal note
+                    </Label>
+                  </div>
+                ) : null}
+                {aiTicketId ? <AiComposerButtons ticketId={aiTicketId} editorRef={editorRef} teaser={aiTeaser} /> : null}
+              </div>
               <SubmitButton />
             </div>
           </form>
