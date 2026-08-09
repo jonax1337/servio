@@ -442,7 +442,10 @@ export async function setTicketResolution(formData: FormData) {
   const id = Number(formData.get("id"));
   const status = String(formData.get("status") ?? "");
   const code = String(formData.get("code") ?? "").trim() || null;
-  const note = String(formData.get("note") ?? "").trim() || null;
+  const rawHtml = formData.get("bodyHtml");
+  const bodyHtml = typeof rawHtml === "string" && rawHtml.trim() ? sanitizeCommentHtml(rawHtml) : null;
+  const note = bodyHtml ? htmlToText(bodyHtml).trim() || null : String(formData.get("note") ?? "").trim() || null;
+  const noteInternal = formData.get("isInternal") === "on";
   if (!id || !["RESOLVED", "CLOSED", "CANCELLED"].includes(status)) return;
 
   const current = await db.ticket.findUnique({ where: { id } });
@@ -482,7 +485,13 @@ export async function setTicketResolution(formData: FormData) {
 
   const verb = status === "CANCELLED" ? "Cancelled" : status === "CLOSED" ? "Closed" : "Resolved";
   await db.ticketComment.create({
-    data: { ticketId: id, authorId: me.id, isInternal: false, body: `${verb}${code ? ` (${code.replace(/_/g, " ").toLowerCase()})` : ""}${note ? `: ${note}` : "."}` },
+    data: {
+      ticketId: id,
+      authorId: me.id,
+      isInternal: noteInternal,
+      body: note ?? `${verb}${code ? ` (${code.replace(/_/g, " ").toLowerCase()})` : ""}.`,
+      bodyHtml,
+    },
   });
   await writeAudit({ userId: me.id, action: "UPDATE", entity: "Ticket", entityId: id, summary: `${verb} ticket` });
 
@@ -749,7 +758,10 @@ export async function setTicketPending(formData: FormData) {
   const id = Number(formData.get("id"));
   const status = String(formData.get("status") ?? "");
   const reason = String(formData.get("reason") ?? "");
-  const note = String(formData.get("note") ?? "").trim() || null;
+  const rawHtml = formData.get("bodyHtml");
+  const bodyHtml = typeof rawHtml === "string" && rawHtml.trim() ? sanitizeCommentHtml(rawHtml) : null;
+  const note = bodyHtml ? htmlToText(bodyHtml).trim() || null : String(formData.get("note") ?? "").trim() || null;
+  const noteInternal = formData.get("isInternal") === "on";
   if (!id || !["PENDING", "ON_HOLD"].includes(status) || !reason) return;
 
   const current = await db.ticket.findUnique({ where: { id }, select: { status: true, pendingSince: true } });
@@ -762,7 +774,13 @@ export async function setTicketPending(formData: FormData) {
   });
   const reasonLabel = reason.replace(/_/g, " ").toLowerCase();
   await db.ticketComment.create({
-    data: { ticketId: id, authorId: me.id, isInternal: true, body: `Set to ${status === "ON_HOLD" ? "on hold" : "pending"} — ${reasonLabel}${note ? `: ${note}` : ""}.` },
+    data: {
+      ticketId: id,
+      authorId: me.id,
+      isInternal: note ? noteInternal : true,
+      body: note ?? `Set to ${status === "ON_HOLD" ? "on hold" : "pending"} (${reasonLabel}).`,
+      bodyHtml,
+    },
   });
   await writeAudit({ userId: me.id, action: "UPDATE", entity: "Ticket", entityId: id, summary: `Set ${status.toLowerCase()} (${reasonLabel})` });
   await runAutomations("TICKET_UPDATED", id);

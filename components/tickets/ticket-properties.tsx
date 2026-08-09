@@ -1,10 +1,10 @@
 "use client";
 
 import { useEffect, useRef, useState, useTransition } from "react";
-import { Sparkles, Loader2 } from "lucide-react";
+import { Sparkles, Loader2, X } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
-import { updateTicketField } from "@/lib/actions/tickets";
+import { updateTicketField, setTicketResolution, setTicketPending } from "@/lib/actions/tickets";
 import { suggestTriage, type TriageState } from "@/lib/actions/ai";
 import { Button } from "@/components/ui/button";
 import { Combobox, type ComboOption } from "@/components/combobox";
@@ -14,16 +14,19 @@ import {
   TICKET_STATUSES,
   PRIORITIES,
   IMPACT_URGENCY,
+  PENDING_REASONS,
   TICKET_STATUS_META,
   PRIORITY_META,
   LEVEL_META,
-  AI_ASSISTANT_NAME,
 } from "@/lib/constants";
 import type { FormOptions } from "@/lib/data/options";
 
 /** Editable fields staged in the local draft (saved together via "Save changes"). */
-type DraftKey = "priority" | "impact" | "urgency" | "assigneeId" | "groupId" | "categoryId" | "serviceId";
-const DRAFT_KEYS: DraftKey[] = ["priority", "impact", "urgency", "assigneeId", "groupId", "categoryId", "serviceId"];
+type DraftKey = "status" | "priority" | "impact" | "urgency" | "assigneeId" | "groupId" | "categoryId" | "serviceId";
+const DRAFT_KEYS: DraftKey[] = ["status", "priority", "impact", "urgency", "assigneeId", "groupId", "categoryId", "serviceId"];
+
+/** Extra data captured for status changes that need a note (resolution / pending). */
+type StatusPayload = { code?: string | null; reason?: string; noteHtml: string; isInternal: boolean } | null;
 
 function initials(s: string) {
   return s.split(" ").map((p) => p[0]).slice(0, 2).join("").toUpperCase();
@@ -68,9 +71,7 @@ function EditProp({
       {suggestion ? (
         <div className="flex items-center gap-1 rounded-md border border-violet-500/25 bg-violet-500/[0.06] px-2 py-1">
           <Sparkles className="size-3 shrink-0 text-violet-500" />
-          <span className="min-w-0 flex-1 truncate text-xs text-violet-600 dark:text-violet-300">
-            {AI_ASSISTANT_NAME}: {suggestion.label}
-          </span>
+          <span className="min-w-0 flex-1 truncate text-xs text-violet-600 dark:text-violet-300">{suggestion.label}</span>
           <Button type="button" size="xs" className="h-5 shrink-0 px-1.5" onClick={onApply}>Apply</Button>
           <Button type="button" size="xs" variant="ghost" className="h-5 shrink-0 px-1.5 text-muted-foreground" onClick={onDismiss}>
             Dismiss
@@ -124,6 +125,7 @@ export function TicketProperties({
 
   // ── Draft state (staged edits) vs the saved ticket baseline ──
   const base: Record<DraftKey, string> = {
+    status: ticket.status,
     priority: ticket.priority,
     impact: ticket.impact,
     urgency: ticket.urgency,
@@ -133,14 +135,15 @@ export function TicketProperties({
     serviceId: ticket.serviceId ?? "none",
   };
   const [draft, setDraft] = useState<Record<DraftKey, string>>(base);
+  const [statusPayload, setStatusPayload] = useState<StatusPayload>(null);
   const [saving, startSaving] = useTransition();
   const savingRef = useRef(false);
 
-  // Sync the draft when the ticket changes externally (another save, a Vio chat
-  // action, etc.). Skipped while we are mid-save so our own writes don't clobber it.
+  // Sync the draft when the ticket changes externally. Skipped mid-save.
   useEffect(() => {
     if (savingRef.current) return;
     setDraft({
+      status: ticket.status,
       priority: ticket.priority,
       impact: ticket.impact,
       urgency: ticket.urgency,
@@ -149,7 +152,8 @@ export function TicketProperties({
       categoryId: ticket.categoryId ?? "none",
       serviceId: ticket.serviceId ?? "none",
     });
-  }, [ticket.priority, ticket.impact, ticket.urgency, ticket.assigneeId, ticket.groupId, ticket.categoryId, ticket.serviceId]);
+    setStatusPayload(null);
+  }, [ticket.status, ticket.priority, ticket.impact, ticket.urgency, ticket.assigneeId, ticket.groupId, ticket.categoryId, ticket.serviceId]);
 
   const dirtyKeys = DRAFT_KEYS.filter((k) => draft[k] !== base[k]);
   const anyDirty = dirtyKeys.length > 0;
@@ -158,20 +162,52 @@ export function TicketProperties({
     setDraft((d) => ({ ...d, [k]: v }));
   }
 
+  function discard() {
+    setDraft(base);
+    setStatusPayload(null);
+    setDismissed(new Set());
+  }
+
   function saveChanges() {
-    const changes = dirtyKeys.map((field) => ({ field, value: draft[field] }));
-    if (changes.length === 0) return;
+    const nonStatus = dirtyKeys.filter((k) => k !== "status").map((field) => ({ field, value: draft[field] }));
+    const statusChanged = draft.status !== base.status;
+    if (nonStatus.length === 0 && !statusChanged) return;
+    const newStatus = draft.status;
+    const payload = statusPayload;
     savingRef.current = true;
     startSaving(async () => {
       try {
-        for (const c of changes) {
+        for (const c of nonStatus) {
           const fd = new FormData();
           fd.set("id", String(ticket.id));
           fd.set("field", c.field);
           fd.set("value", c.value);
           await updateTicketField(fd);
         }
-        toast.success(`Saved ${changes.length} change${changes.length > 1 ? "s" : ""}`);
+        if (statusChanged) {
+          const fd = new FormData();
+          fd.set("id", String(ticket.id));
+          if (newStatus === "PENDING" || newStatus === "ON_HOLD") {
+            fd.set("status", newStatus);
+            fd.set("reason", payload?.reason ?? PENDING_REASONS[0]);
+            fd.set("bodyHtml", payload?.noteHtml ?? "");
+            if (payload?.isInternal) fd.set("isInternal", "on");
+            await setTicketPending(fd);
+          } else if (newStatus === "RESOLVED" || newStatus === "CLOSED" || newStatus === "CANCELLED") {
+            fd.set("status", newStatus);
+            if (payload?.code) fd.set("code", payload.code);
+            fd.set("bodyHtml", payload?.noteHtml ?? "");
+            if (payload?.isInternal) fd.set("isInternal", "on");
+            await setTicketResolution(fd);
+          } else {
+            fd.set("field", "status");
+            fd.set("value", newStatus);
+            await updateTicketField(fd);
+          }
+        }
+        const count = nonStatus.length + (statusChanged ? 1 : 0);
+        toast.success(`Saved ${count} change${count > 1 ? "s" : ""}`);
+        setStatusPayload(null);
       } catch {
         toast.error("Could not save changes.");
       } finally {
@@ -180,10 +216,17 @@ export function TicketProperties({
     });
   }
 
-  function discard() {
-    setDraft(base);
-    setDismissed(new Set());
-  }
+  // ── Status pick → stage directly, or open a dialog to capture the note first ──
+  const [pendingDlg, setPendingDlg] = useState<{ open: boolean; status: string }>({ open: false, status: "PENDING" });
+  const [resDlg, setResDlg] = useState<{ open: boolean; status: string }>({ open: false, status: "RESOLVED" });
+
+  const changeStatus = (v: string) => {
+    if (v === draft.status) return;
+    if (v === "PENDING" || v === "ON_HOLD") return setPendingDlg({ open: true, status: v });
+    if (v === "RESOLVED" || v === "CLOSED" || v === "CANCELLED") return setResDlg({ open: true, status: v });
+    setField("status", v);
+    setStatusPayload(null);
+  };
 
   // ── Vio triage suggestions (inline, per field) ──
   const [sugg, setSugg] = useState<Extract<TriageState, { ok: true }> | null>(null);
@@ -195,8 +238,6 @@ export function TicketProperties({
     suggestTriage(ticket.id).then((res) => { if (res.ok) setSugg(res); }).catch(() => {});
   }, [aiEnabled, aiTeaser, ticket.id]);
 
-  /** Vio's suggestion for a field, if it still differs from the current draft and
-   *  is worth showing (empty field to fill, or a value Vio flagged as wrong). */
   function suggestionFor(k: DraftKey): Suggestion | null {
     if (!sugg || dismissed.has(k)) return null;
     const flagged = sugg.flagged ?? [];
@@ -237,39 +278,43 @@ export function TicketProperties({
     );
   };
 
-  // ── Status stays immediate (its resolution/pending dialogs need notes) ──
-  const [statusPending, startStatus] = useTransition();
-  const [pendingDlg, setPendingDlg] = useState<{ open: boolean; status: string }>({ open: false, status: "PENDING" });
-  const [resDlg, setResDlg] = useState<{ open: boolean; status: string }>({ open: false, status: "RESOLVED" });
-
-  const changeStatus = (v: string) => {
-    if (v === "PENDING" || v === "ON_HOLD") return setPendingDlg({ open: true, status: v });
-    if (v === "RESOLVED" || v === "CLOSED" || v === "CANCELLED") return setResDlg({ open: true, status: v });
-    const fd = new FormData();
-    fd.set("id", String(ticket.id));
-    fd.set("field", "status");
-    fd.set("value", v);
-    startStatus(() => updateTicketField(fd));
-  };
+  const statusDirty = draft.status !== base.status;
 
   return (
     <div className="grid gap-3">
-      {/* Status — immediate */}
+      {/* Status — staged like the rest */}
       <div className="grid gap-1.5">
-        <span className="text-xs font-medium text-muted-foreground">Status</span>
-        <Combobox options={statusOpts} value={ticket.status} pending={statusPending} onChange={changeStatus} />
+        <span className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+          Status
+          {statusDirty ? <span className="size-1.5 rounded-full bg-amber-500" title="Unsaved change" /> : null}
+        </span>
+        <Combobox
+          options={statusOpts}
+          value={draft.status}
+          pending={saving && statusDirty}
+          onChange={changeStatus}
+          className={statusDirty ? "border-amber-500/40 ring-2 ring-amber-500/40" : undefined}
+        />
       </div>
       <PendingReasonDialog
-        ticketId={ticket.id}
         status={pendingDlg.status}
         open={pendingDlg.open}
         onOpenChange={(o) => setPendingDlg((s) => ({ ...s, open: o }))}
+        onConfirm={(p) => {
+          setDraft((d) => ({ ...d, status: pendingDlg.status }));
+          setStatusPayload({ reason: p.reason, noteHtml: p.noteHtml, isInternal: p.isInternal });
+          setPendingDlg((s) => ({ ...s, open: false }));
+        }}
       />
       <ResolutionDialog
-        ticketId={ticket.id}
         status={resDlg.status}
         open={resDlg.open}
         onOpenChange={(o) => setResDlg((s) => ({ ...s, open: o }))}
+        onConfirm={(p) => {
+          setDraft((d) => ({ ...d, status: resDlg.status }));
+          setStatusPayload({ code: p.code, noteHtml: p.noteHtml, isInternal: p.isInternal });
+          setResDlg((s) => ({ ...s, open: false }));
+        }}
       />
 
       {/* Who owns it */}
@@ -295,15 +340,13 @@ export function TicketProperties({
 
       {/* Save bar — only when there are staged changes */}
       {anyDirty ? (
-        <div className="sticky bottom-0 -mx-4 flex items-center gap-2 border-t bg-card/95 px-4 pt-2.5 pb-1 backdrop-blur sm:-mx-6 sm:px-6">
-          <span className="text-xs text-muted-foreground">
-            {dirtyKeys.length} unsaved change{dirtyKeys.length > 1 ? "s" : ""}
-          </span>
-          <Button type="button" size="sm" variant="ghost" className="ml-auto" onClick={discard} disabled={saving}>
-            Discard
+        <div className="sticky bottom-0 -mx-4 flex items-center gap-1.5 border-t bg-card/95 px-4 pt-2.5 pb-1 backdrop-blur sm:-mx-6 sm:px-6">
+          <Button type="button" size="sm" className="flex-1" onClick={saveChanges} disabled={saving}>
+            {saving ? <Loader2 className="size-3.5 animate-spin" /> : null}
+            Save changes ({dirtyKeys.length})
           </Button>
-          <Button type="button" size="sm" onClick={saveChanges} disabled={saving}>
-            {saving ? <Loader2 className="size-3.5 animate-spin" /> : null} Save changes
+          <Button type="button" size="icon-sm" variant="ghost" onClick={discard} disabled={saving} aria-label="Discard changes" title="Discard changes">
+            <X className="size-4" />
           </Button>
         </div>
       ) : null}
