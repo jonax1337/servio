@@ -114,6 +114,9 @@ export const RESOLUTION_CODE_META: Record<string, Meta> = {
   NO_ACTION: { label: "No action needed", tone: "neutral", icon: Ban },
 };
 
+/** The AI assistant's name — used consistently across chat, triage, and prompts. */
+export const AI_ASSISTANT_NAME = "Vio";
+
 /** Shown when AI buttons are rendered in "teaser" mode (visible but not enabled). */
 export const AI_TEASER_MESSAGE =
   "✨ AI features are available here — an admin can enable them in your Servio configuration.";

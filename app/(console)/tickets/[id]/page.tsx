@@ -12,7 +12,7 @@ import { LinkButton } from "@/components/link-button";
 import { StatusBadge, VipBadge, ToneBadge } from "@/components/status-badge";
 import { TicketProperties } from "@/components/tickets/ticket-properties";
 import { CommentThread } from "@/components/comments/comment-thread";
-import { SummarizeButton } from "@/components/tickets/summarize-button";
+import { TicketAiChat } from "@/components/tickets/ticket-ai-chat";
 import { aiConfigured, aiTeaserEnabled } from "@/lib/ai";
 import { EditEntityDialog } from "@/components/edit-entity-dialog";
 import { addTicketComment, updateTicketDetails, unlinkTicket, unlinkAsset, unlinkRelation } from "@/lib/actions/tickets";
@@ -241,11 +241,6 @@ export default async function TicketDetailPage({
 
           {/* Comments & Activity */}
           <div className="mt-8">
-            {aiVisible ? (
-              <div className="mb-3 flex justify-end">
-                <SummarizeButton ticketId={ticket.id} teaser={aiTeaser} />
-              </div>
-            ) : null}
             <CommentThread
               idField="ticketId"
               entityId={ticket.id}
@@ -334,6 +329,9 @@ export default async function TicketDetailPage({
           </div>
         ) : null}
       </aside>
+
+      {/* Floating AI chat dock (fixed, viewport-anchored) */}
+      {aiVisible ? <TicketAiChat ticketId={ticket.id} teaser={aiTeaser} /> : null}
     </div>
   );
 }

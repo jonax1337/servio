@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { Sparkles, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { updateTicketField } from "@/lib/actions/tickets";
@@ -18,6 +18,7 @@ import {
   PRIORITY_META,
   LEVEL_META,
   AI_TEASER_MESSAGE,
+  AI_ASSISTANT_NAME,
 } from "@/lib/constants";
 import type { FormOptions } from "@/lib/data/options";
 
@@ -62,32 +63,79 @@ function Prop({
   );
 }
 
-/** AI triage — suggest priority/team/category, then apply via updateTicketField
- *  (the same path the manual Combobox uses, so guards + revalidation still run). */
+type TriageField = "priority" | "groupId" | "categoryId";
+type TriageItem = { field: TriageField; value: string; label: string; kind: "fill" | "fix" };
+
+/** Proactive AI triage — only shown when Team/Category are still empty. Fetches a
+ *  suggestion automatically on mount and lets the agent apply each empty field
+ *  (via updateTicketField, the same path the manual Combobox uses). */
 function AiTriagePanel({
   ticketId,
+  priority,
+  groupId,
+  categoryId,
   groupName,
   catName,
   teaser = false,
 }: {
   ticketId: number;
+  priority: string;
+  groupId: string | null;
+  categoryId: string | null;
   groupName: (id: string) => string;
   catName: (id: string) => string;
   teaser?: boolean;
 }) {
   const [pending, start] = useTransition();
   const [sugg, setSugg] = useState<Extract<TriageState, { ok: true }> | null>(null);
+  const [failed, setFailed] = useState(false);
+  const [errMsg, setErrMsg] = useState<string | null>(null);
+  const started = useRef(false);
 
-  function suggest() {
-    if (teaser) return void toast.info(AI_TEASER_MESSAGE);
+  function fetchSuggestion() {
+    setFailed(false);
+    setErrMsg(null);
     start(async () => {
       const res = await suggestTriage(ticketId);
-      if (!res.ok) return void toast.error(res.error);
+      if (!res.ok) { setErrMsg(res.error); setFailed(true); return; }
       setSugg(res);
     });
   }
 
-  function fieldData(field: "priority" | "groupId" | "categoryId", value: string) {
+  // Proactively analyse on mount — no click needed. Skip in teaser mode.
+  useEffect(() => {
+    if (teaser || started.current) return;
+    started.current = true;
+    fetchSuggestion();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [teaser, ticketId]);
+
+  // Offer fields that are empty ("fill") plus already-set fields the AI flagged
+  // as clearly wrong ("fix", shown as current → suggested).
+  const items: TriageItem[] = [];
+  if (sugg) {
+    const flagged = sugg.flagged ?? [];
+    if (sugg.priority !== priority) {
+      if (priority === "MEDIUM")
+        items.push({ field: "priority", value: sugg.priority, label: `Priority: ${sugg.priority}`, kind: "fill" });
+      else if (flagged.includes("priority"))
+        items.push({ field: "priority", value: sugg.priority, label: `Priority: ${priority} → ${sugg.priority}`, kind: "fix" });
+    }
+    if (sugg.groupId && sugg.groupId !== groupId) {
+      if (!groupId)
+        items.push({ field: "groupId", value: sugg.groupId, label: `Team: ${groupName(sugg.groupId)}`, kind: "fill" });
+      else if (flagged.includes("groupId"))
+        items.push({ field: "groupId", value: sugg.groupId, label: `Team: ${groupName(groupId)} → ${groupName(sugg.groupId)}`, kind: "fix" });
+    }
+    if (sugg.categoryId && sugg.categoryId !== categoryId) {
+      if (!categoryId)
+        items.push({ field: "categoryId", value: sugg.categoryId, label: `Category: ${catName(sugg.categoryId)}`, kind: "fill" });
+      else if (flagged.includes("categoryId"))
+        items.push({ field: "categoryId", value: sugg.categoryId, label: `Category: ${catName(categoryId)} → ${catName(sugg.categoryId)}`, kind: "fix" });
+    }
+  }
+
+  function fieldData(field: TriageField, value: string) {
     const fd = new FormData();
     fd.set("id", String(ticketId));
     fd.set("field", field);
@@ -95,44 +143,95 @@ function AiTriagePanel({
     return fd;
   }
 
-  function applyAll() {
-    if (!sugg) return;
-    const s = sugg;
-    // Await the writes sequentially in one transition so ordering is deterministic
-    // (groupId runs auto-assign/automations, same as the manual Team combobox) and
-    // success is reported only after they actually complete.
+  function applyOne(it: TriageItem) {
     start(async () => {
-      await updateTicketField(fieldData("priority", s.priority));
-      if (s.groupId) await updateTicketField(fieldData("groupId", s.groupId));
-      if (s.categoryId) await updateTicketField(fieldData("categoryId", s.categoryId));
-      toast.success("Suggestion applied");
-      setSugg(null);
+      await updateTicketField(fieldData(it.field, it.value));
+      toast.success(`${it.label} applied`);
     });
   }
 
-  if (!sugg) {
+  function applyAll() {
+    const toApply = items;
+    start(async () => {
+      try {
+        for (const it of toApply) await updateTicketField(fieldData(it.field, it.value));
+        toast.success(`Applied ${AI_ASSISTANT_NAME}'s suggestions`);
+        setSugg(null);
+      } catch {
+        toast.error("Could not apply all suggestions.");
+      }
+    });
+  }
+
+  if (teaser) {
     return (
-      <AiButton onClick={suggest} disabled={pending} className="w-full">
-        {pending ? <Loader2 className="size-4 animate-spin" /> : <Sparkles className="size-4" />}
-        AI Triage
+      <AiButton onClick={() => toast.info(AI_TEASER_MESSAGE)} className="w-full">
+        <Sparkles className="size-4" /> {AI_ASSISTANT_NAME} Triage
       </AiButton>
     );
   }
 
+  if (pending && !sugg) {
+    return (
+      <div className="flex items-center gap-2 rounded-xl border border-violet-500/25 bg-violet-500/5 px-3 py-2.5 text-xs text-violet-600 dark:text-violet-300">
+        <span className="grid size-5 shrink-0 place-items-center rounded-full bg-gradient-to-br from-violet-500 to-fuchsia-500 text-white">
+          <Loader2 className="size-3 animate-spin" />
+        </span>
+        {AI_ASSISTANT_NAME} is analysing this ticket…
+      </div>
+    );
+  }
+
+  if (failed) {
+    return (
+      <div className="grid gap-1.5">
+        <AiButton onClick={fetchSuggestion} disabled={pending} className="w-full">
+          {pending ? <Loader2 className="size-4 animate-spin" /> : <Sparkles className="size-4" />}
+          Retry {AI_ASSISTANT_NAME}
+        </AiButton>
+        {errMsg ? <p className="text-xs text-muted-foreground">{errMsg}</p> : null}
+      </div>
+    );
+  }
+
+  if (!sugg || items.length === 0) return null;
+
   return (
-    <div className="grid gap-2 rounded-lg border border-violet-500/30 bg-violet-500/5 p-3 text-sm">
-      <div className="flex items-center gap-1.5 font-medium text-violet-600 dark:text-violet-300">
-        <Sparkles className="size-4" /> Suggested triage
+    <div className="grid min-w-0 gap-2.5 overflow-hidden rounded-xl border border-violet-500/25 bg-gradient-to-br from-violet-500/[0.06] to-fuchsia-500/[0.06] p-3">
+      <div className="flex items-center gap-2">
+        <span className="grid size-6 shrink-0 place-items-center rounded-full bg-gradient-to-br from-violet-500 to-fuchsia-500 text-white shadow-sm shadow-violet-500/30">
+          <Sparkles className="size-3.5" />
+        </span>
+        <span className="text-xs font-semibold text-violet-600 dark:text-violet-300">{AI_ASSISTANT_NAME} suggests</span>
       </div>
-      <div className="text-muted-foreground">
-        Priority <b className="text-foreground">{sugg.priority}</b>
-        {sugg.groupId ? <> · Team <b className="text-foreground">{groupName(sugg.groupId)}</b></> : null}
-        {sugg.categoryId ? <> · Category <b className="text-foreground">{catName(sugg.categoryId)}</b></> : null}
+      {sugg.reasoning ? (
+        <p className="line-clamp-2 break-words text-xs leading-relaxed text-muted-foreground" title={sugg.reasoning}>
+          {sugg.reasoning}
+        </p>
+      ) : null}
+      <div className="grid gap-1.5">
+        {items.map((it) => (
+          <div
+            key={it.field}
+            className="flex min-w-0 items-center gap-2 rounded-lg bg-background/70 px-2.5 py-1.5 text-sm ring-1 ring-black/[0.04] dark:ring-white/[0.06]"
+          >
+            <span className="min-w-0 flex-1 truncate">{it.label}</span>
+            {it.kind === "fix" ? (
+              <span className="shrink-0 rounded bg-amber-500/15 px-1 py-0.5 text-[10px] font-medium text-amber-600 dark:text-amber-400">
+                looks wrong
+              </span>
+            ) : null}
+            <Button type="button" size="xs" className="shrink-0" onClick={() => applyOne(it)} disabled={pending}>Apply</Button>
+          </div>
+        ))}
       </div>
-      {sugg.reasoning ? <p className="text-xs text-muted-foreground">{sugg.reasoning}</p> : null}
-      <div className="flex gap-2">
-        <Button size="sm" onClick={applyAll} disabled={pending}>Apply all</Button>
-        <Button size="sm" variant="ghost" onClick={() => setSugg(null)} disabled={pending}>Dismiss</Button>
+      <div className="flex items-center gap-2">
+        {items.length > 1 ? (
+          <Button type="button" size="sm" onClick={applyAll} disabled={pending}>Apply all</Button>
+        ) : null}
+        <Button type="button" size="sm" variant="ghost" onClick={() => setSugg(null)} disabled={pending} className="ml-auto">
+          Dismiss
+        </Button>
       </div>
     </div>
   );
@@ -203,7 +302,15 @@ export function TicketProperties({
   return (
     <div className="grid gap-3">
       {aiEnabled ? (
-        <AiTriagePanel ticketId={ticket.id} groupName={groupName} catName={catName} teaser={aiTeaser} />
+        <AiTriagePanel
+          ticketId={ticket.id}
+          priority={ticket.priority}
+          groupId={ticket.groupId}
+          categoryId={ticket.categoryId}
+          groupName={groupName}
+          catName={catName}
+          teaser={aiTeaser}
+        />
       ) : null}
 
       {/* Status — the primary action */}

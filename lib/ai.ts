@@ -1,7 +1,8 @@
-import { generateText, generateObject } from "ai";
+import { generateText, generateObject, stepCountIs } from "ai";
 import { createAnthropic } from "@ai-sdk/anthropic";
 import { createOpenAI } from "@ai-sdk/openai";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
+import type { ModelMessage, ToolSet } from "ai";
 import type { z } from "zod";
 
 /**
@@ -111,14 +112,23 @@ function getModel() {
   }
 
   if (p === "openai") {
-    const openai = createOpenAI({ apiKey: process.env.OPENAI_API_KEY });
+    // OPENAI_BASE_URL lets you point at any OpenAI-compatible cloud (OpenAI,
+    // Moonshot/Kimi, Zhipu/GLM, OpenRouter, …) — the model id comes from AI_MODEL.
+    const openai = createOpenAI({
+      apiKey: process.env.OPENAI_API_KEY,
+      baseURL: process.env.OPENAI_BASE_URL || undefined,
+    });
     return openai(id);
   }
 
   // ollama — local, OpenAI-compatible, no API key required.
+  // supportsStructuredOutputs → the SDK sends response_format:json_schema (strict),
+  // so Ollama grammar-constrains output to our zod schema (fixes generateObject:
+  // without it the model free-forms JSON with wrong keys / missing fields).
   const ollama = createOpenAICompatible({
     name: "ollama",
     baseURL: process.env.OLLAMA_BASE_URL || "http://localhost:11434/v1",
+    supportsStructuredOutputs: true,
   });
   return ollama(id);
 }
@@ -133,14 +143,43 @@ export async function generateAiText(input: {
   system?: string;
   prompt: string;
   maxOutputTokens?: number;
+  temperature?: number;
 }): Promise<string> {
   const { text } = await generateText({
     model: getModel(),
     system: input.system,
     prompt: input.prompt,
     maxOutputTokens: input.maxOutputTokens ?? maxOutputTokens(),
+    temperature: input.temperature,
   });
   return text.trim();
+}
+
+/**
+ * Multi-step chat with optional tools (the agent loop). The model may call tools
+ * (e.g. web search) up to maxSteps times before producing its final answer.
+ * Returns the final text plus the tool calls it made (for UI activity display).
+ */
+export async function generateAiChat(input: {
+  system?: string;
+  messages: ModelMessage[];
+  tools?: ToolSet;
+  maxSteps?: number;
+  temperature?: number;
+}): Promise<{ text: string; toolCalls: { name: string; input: unknown }[] }> {
+  const result = await generateText({
+    model: getModel(),
+    system: input.system,
+    messages: input.messages,
+    tools: input.tools,
+    stopWhen: stepCountIs(input.maxSteps ?? 6),
+    temperature: input.temperature,
+    maxOutputTokens: Math.max(maxOutputTokens(), 2048),
+  });
+  const toolCalls = result.steps.flatMap((s) =>
+    s.toolCalls.map((tc) => ({ name: tc.toolName, input: (tc as { input?: unknown }).input })),
+  );
+  return { text: result.text.trim(), toolCalls };
 }
 
 /** Thin wrapper over generateObject. Returns the typed object. */
