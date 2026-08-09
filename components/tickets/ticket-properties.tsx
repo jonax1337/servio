@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, useTransition } from "react";
-import { Sparkles, Loader2 } from "lucide-react";
+import { Sparkles } from "lucide-react";
 import { toast } from "sonner";
 import { updateTicketField } from "@/lib/actions/tickets";
 import { suggestTriage, type TriageState } from "@/lib/actions/ai";
@@ -88,26 +88,17 @@ function AiTriagePanel({
 }) {
   const [pending, start] = useTransition();
   const [sugg, setSugg] = useState<Extract<TriageState, { ok: true }> | null>(null);
-  const [failed, setFailed] = useState(false);
-  const [errMsg, setErrMsg] = useState<string | null>(null);
   const started = useRef(false);
 
-  function fetchSuggestion() {
-    setFailed(false);
-    setErrMsg(null);
-    start(async () => {
-      const res = await suggestTriage(ticketId);
-      if (!res.ok) { setErrMsg(res.error); setFailed(true); return; }
-      setSugg(res);
-    });
-  }
-
-  // Proactively analyse on mount — no click needed. Skip in teaser mode.
+  // Proactively analyse on mount, silently. Skip in teaser mode. If it fails or has
+  // nothing worth suggesting, the panel simply renders nothing (no loading/retry noise).
   useEffect(() => {
     if (teaser || started.current) return;
     started.current = true;
-    fetchSuggestion();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    start(async () => {
+      const res = await suggestTriage(ticketId);
+      if (res.ok) setSugg(res);
+    });
   }, [teaser, ticketId]);
 
   // Offer fields that are empty ("fill") plus already-set fields the AI flagged
@@ -171,29 +162,7 @@ function AiTriagePanel({
     );
   }
 
-  if (pending && !sugg) {
-    return (
-      <div className="flex items-center gap-2 rounded-xl border border-violet-500/25 bg-violet-500/5 px-3 py-2.5 text-xs text-violet-600 dark:text-violet-300">
-        <span className="grid size-5 shrink-0 place-items-center rounded-full bg-gradient-to-br from-violet-500 to-fuchsia-500 text-white">
-          <Loader2 className="size-3 animate-spin" />
-        </span>
-        {AI_ASSISTANT_NAME} is analysing this ticket…
-      </div>
-    );
-  }
-
-  if (failed) {
-    return (
-      <div className="grid gap-1.5">
-        <AiButton onClick={fetchSuggestion} disabled={pending} className="w-full">
-          {pending ? <Loader2 className="size-4 animate-spin" /> : <Sparkles className="size-4" />}
-          Retry {AI_ASSISTANT_NAME}
-        </AiButton>
-        {errMsg ? <p className="text-xs text-muted-foreground">{errMsg}</p> : null}
-      </div>
-    );
-  }
-
+  // Nothing to say (still analysing, failed, or no suggestion) → render nothing.
   if (!sugg || items.length === 0) return null;
 
   return (
