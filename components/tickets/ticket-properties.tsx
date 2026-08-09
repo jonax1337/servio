@@ -5,7 +5,7 @@ import { Sparkles, Loader2, X } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { updateTicketField, setTicketResolution, setTicketPending } from "@/lib/actions/tickets";
-import { suggestTriage, type TriageState } from "@/lib/actions/ai";
+import { type TriageState } from "@/lib/actions/ai";
 import { Button } from "@/components/ui/button";
 import { Combobox, type ComboOption } from "@/components/combobox";
 import { PendingReasonDialog } from "@/components/tickets/pending-reason-dialog";
@@ -235,7 +235,11 @@ export function TicketProperties({
   useEffect(() => {
     if (!aiEnabled || aiTeaser || triageStarted.current) return;
     triageStarted.current = true;
-    suggestTriage(ticket.id).then((res) => { if (res.ok) setSugg(res); }).catch(() => {});
+    // Fetch (not a server action) so it never blocks Save changes.
+    fetch(`/api/ai/triage?ticketId=${ticket.id}`)
+      .then((r) => r.json())
+      .then((res: TriageState) => { if (res?.ok) setSugg(res); })
+      .catch(() => {});
   }, [aiEnabled, aiTeaser, ticket.id]);
 
   function suggestionFor(k: DraftKey): Suggestion | null {
@@ -343,7 +347,7 @@ export function TicketProperties({
         <div className="sticky bottom-0 -mx-4 flex items-center gap-1.5 border-t bg-card/95 px-4 pt-2.5 pb-1 backdrop-blur sm:-mx-6 sm:px-6">
           <Button type="button" size="sm" className="flex-1" onClick={saveChanges} disabled={saving}>
             {saving ? <Loader2 className="size-3.5 animate-spin" /> : null}
-            Save changes ({dirtyKeys.length})
+            Save changes
           </Button>
           <Button type="button" size="icon-sm" variant="ghost" onClick={discard} disabled={saving} aria-label="Discard changes" title="Discard changes">
             <X className="size-4" />
