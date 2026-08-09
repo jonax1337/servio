@@ -1,12 +1,12 @@
 "use client";
 
 import { useEffect, useRef, useState, useTransition } from "react";
-import { Sparkles } from "lucide-react";
+import { Sparkles, Loader2 } from "lucide-react";
 import { toast } from "sonner";
+import { cn } from "@/lib/utils";
 import { updateTicketField } from "@/lib/actions/tickets";
 import { suggestTriage, type TriageState } from "@/lib/actions/ai";
 import { Button } from "@/components/ui/button";
-import { AiButton } from "@/components/ui/ai-button";
 import { Combobox, type ComboOption } from "@/components/combobox";
 import { PendingReasonDialog } from "@/components/tickets/pending-reason-dialog";
 import { ResolutionDialog } from "@/components/tickets/resolution-dialog";
@@ -17,191 +17,66 @@ import {
   TICKET_STATUS_META,
   PRIORITY_META,
   LEVEL_META,
-  AI_TEASER_MESSAGE,
   AI_ASSISTANT_NAME,
 } from "@/lib/constants";
 import type { FormOptions } from "@/lib/data/options";
 
-type Field =
-  | "status" | "priority" | "impact" | "urgency"
-  | "assigneeId" | "groupId" | "queueId" | "categoryId" | "serviceId";
+/** Editable fields staged in the local draft (saved together via "Save changes"). */
+type DraftKey = "priority" | "impact" | "urgency" | "assigneeId" | "groupId" | "categoryId" | "serviceId";
+const DRAFT_KEYS: DraftKey[] = ["priority", "impact", "urgency", "assigneeId", "groupId", "categoryId", "serviceId"];
 
 function initials(s: string) {
   return s.split(" ").map((p) => p[0]).slice(0, 2).join("").toUpperCase();
 }
 
-function Prop({
-  label, ticketId, field, value, options, searchable, placeholder,
+type Suggestion = { value: string; label: string };
+
+/** A single property: staged combobox with dirty highlight + optional inline Vio suggestion. */
+function EditProp({
+  label, value, options, searchable, placeholder, dirty, pending, suggestion, onChange, onApply, onDismiss,
 }: {
   label: string;
-  ticketId: number;
-  field: Field;
-  value: string | null;
+  value: string;
   options: ComboOption[];
   searchable?: boolean;
   placeholder?: string;
+  dirty: boolean;
+  pending: boolean;
+  suggestion: Suggestion | null;
+  onChange: (v: string) => void;
+  onApply: () => void;
+  onDismiss: () => void;
 }) {
-  const [pending, start] = useTransition();
   return (
     <div className="grid gap-1.5">
-      <span className="text-xs font-medium text-muted-foreground">{label}</span>
+      <span className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+        {label}
+        {dirty ? <span className="size-1.5 rounded-full bg-amber-500" title="Unsaved change" /> : null}
+      </span>
       <Combobox
         options={options}
-        value={value ?? "none"}
+        value={value}
         pending={pending}
         placeholder={placeholder}
         searchPlaceholder={searchable ? `Search ${label.toLowerCase()}…` : "Filter…"}
-        onChange={(v) => {
-          const fd = new FormData();
-          fd.set("id", String(ticketId));
-          fd.set("field", field);
-          fd.set("value", v);
-          start(() => updateTicketField(fd));
-        }}
+        onChange={onChange}
+        className={cn(
+          suggestion && "border-violet-500/40 ring-2 ring-violet-500/40",
+          !suggestion && dirty && "border-amber-500/40 ring-2 ring-amber-500/40",
+        )}
       />
-    </div>
-  );
-}
-
-type TriageField = "priority" | "groupId" | "categoryId";
-type TriageItem = { field: TriageField; value: string; label: string; kind: "fill" | "fix" };
-
-/** Proactive AI triage — only shown when Team/Category are still empty. Fetches a
- *  suggestion automatically on mount and lets the agent apply each empty field
- *  (via updateTicketField, the same path the manual Combobox uses). */
-function AiTriagePanel({
-  ticketId,
-  priority,
-  groupId,
-  categoryId,
-  groupName,
-  catName,
-  teaser = false,
-}: {
-  ticketId: number;
-  priority: string;
-  groupId: string | null;
-  categoryId: string | null;
-  groupName: (id: string) => string;
-  catName: (id: string) => string;
-  teaser?: boolean;
-}) {
-  const [pending, start] = useTransition();
-  const [sugg, setSugg] = useState<Extract<TriageState, { ok: true }> | null>(null);
-  const started = useRef(false);
-
-  // Proactively analyse on mount, silently. Skip in teaser mode. If it fails or has
-  // nothing worth suggesting, the panel simply renders nothing (no loading/retry noise).
-  useEffect(() => {
-    if (teaser || started.current) return;
-    started.current = true;
-    start(async () => {
-      const res = await suggestTriage(ticketId);
-      if (res.ok) setSugg(res);
-    });
-  }, [teaser, ticketId]);
-
-  // Offer fields that are empty ("fill") plus already-set fields the AI flagged
-  // as clearly wrong ("fix", shown as current → suggested).
-  const items: TriageItem[] = [];
-  if (sugg) {
-    const flagged = sugg.flagged ?? [];
-    if (sugg.priority !== priority) {
-      if (priority === "MEDIUM")
-        items.push({ field: "priority", value: sugg.priority, label: `Priority: ${sugg.priority}`, kind: "fill" });
-      else if (flagged.includes("priority"))
-        items.push({ field: "priority", value: sugg.priority, label: `Priority: ${priority} → ${sugg.priority}`, kind: "fix" });
-    }
-    if (sugg.groupId && sugg.groupId !== groupId) {
-      if (!groupId)
-        items.push({ field: "groupId", value: sugg.groupId, label: `Team: ${groupName(sugg.groupId)}`, kind: "fill" });
-      else if (flagged.includes("groupId"))
-        items.push({ field: "groupId", value: sugg.groupId, label: `Team: ${groupName(groupId)} → ${groupName(sugg.groupId)}`, kind: "fix" });
-    }
-    if (sugg.categoryId && sugg.categoryId !== categoryId) {
-      if (!categoryId)
-        items.push({ field: "categoryId", value: sugg.categoryId, label: `Category: ${catName(sugg.categoryId)}`, kind: "fill" });
-      else if (flagged.includes("categoryId"))
-        items.push({ field: "categoryId", value: sugg.categoryId, label: `Category: ${catName(categoryId)} → ${catName(sugg.categoryId)}`, kind: "fix" });
-    }
-  }
-
-  function fieldData(field: TriageField, value: string) {
-    const fd = new FormData();
-    fd.set("id", String(ticketId));
-    fd.set("field", field);
-    fd.set("value", value);
-    return fd;
-  }
-
-  function applyOne(it: TriageItem) {
-    start(async () => {
-      await updateTicketField(fieldData(it.field, it.value));
-      toast.success(`${it.label} applied`);
-    });
-  }
-
-  function applyAll() {
-    const toApply = items;
-    start(async () => {
-      try {
-        for (const it of toApply) await updateTicketField(fieldData(it.field, it.value));
-        toast.success(`Applied ${AI_ASSISTANT_NAME}'s suggestions`);
-        setSugg(null);
-      } catch {
-        toast.error("Could not apply all suggestions.");
-      }
-    });
-  }
-
-  if (teaser) {
-    return (
-      <AiButton onClick={() => toast.info(AI_TEASER_MESSAGE)} className="w-full">
-        <Sparkles className="size-4" /> {AI_ASSISTANT_NAME} Triage
-      </AiButton>
-    );
-  }
-
-  // Nothing to say (still analysing, failed, or no suggestion) → render nothing.
-  if (!sugg || items.length === 0) return null;
-
-  return (
-    <div className="grid min-w-0 gap-2.5 overflow-hidden rounded-xl border border-violet-500/25 bg-gradient-to-br from-violet-500/[0.06] to-fuchsia-500/[0.06] p-3">
-      <div className="flex items-center gap-2">
-        <span className="grid size-6 shrink-0 place-items-center rounded-full bg-gradient-to-br from-violet-500 to-fuchsia-500 text-white shadow-sm shadow-violet-500/30">
-          <Sparkles className="size-3.5" />
-        </span>
-        <span className="text-xs font-semibold text-violet-600 dark:text-violet-300">{AI_ASSISTANT_NAME} suggests</span>
-      </div>
-      {sugg.reasoning ? (
-        <p className="line-clamp-2 break-words text-xs leading-relaxed text-muted-foreground" title={sugg.reasoning}>
-          {sugg.reasoning}
-        </p>
+      {suggestion ? (
+        <div className="flex items-center gap-1 rounded-md border border-violet-500/25 bg-violet-500/[0.06] px-2 py-1">
+          <Sparkles className="size-3 shrink-0 text-violet-500" />
+          <span className="min-w-0 flex-1 truncate text-xs text-violet-600 dark:text-violet-300">
+            {AI_ASSISTANT_NAME}: {suggestion.label}
+          </span>
+          <Button type="button" size="xs" className="h-5 shrink-0 px-1.5" onClick={onApply}>Apply</Button>
+          <Button type="button" size="xs" variant="ghost" className="h-5 shrink-0 px-1.5 text-muted-foreground" onClick={onDismiss}>
+            Dismiss
+          </Button>
+        </div>
       ) : null}
-      <div className="grid gap-1.5">
-        {items.map((it) => (
-          <div
-            key={it.field}
-            className="flex min-w-0 items-center gap-2 rounded-lg bg-background/70 px-2.5 py-1.5 text-sm ring-1 ring-black/[0.04] dark:ring-white/[0.06]"
-          >
-            <span className="min-w-0 flex-1 truncate">{it.label}</span>
-            {it.kind === "fix" ? (
-              <span className="shrink-0 rounded bg-amber-500/15 px-1 py-0.5 text-[10px] font-medium text-amber-600 dark:text-amber-400">
-                looks wrong
-              </span>
-            ) : null}
-            <Button type="button" size="xs" className="shrink-0" onClick={() => applyOne(it)} disabled={pending}>Apply</Button>
-          </div>
-        ))}
-      </div>
-      <div className="flex items-center gap-2">
-        {items.length > 1 ? (
-          <Button type="button" size="sm" onClick={applyAll} disabled={pending}>Apply all</Button>
-        ) : null}
-        <Button type="button" size="sm" variant="ghost" onClick={() => setSugg(null)} disabled={pending} className="ml-auto">
-          Dismiss
-        </Button>
-      </div>
     </div>
   );
 }
@@ -228,15 +103,14 @@ export function TicketProperties({
   aiEnabled?: boolean;
   aiTeaser?: boolean;
 }) {
+  // ── Options ──
   const statusOpts: ComboOption[] = TICKET_STATUSES.map((s) => ({
     value: s, label: TICKET_STATUS_META[s].label, tone: TICKET_STATUS_META[s].tone, icon: TICKET_STATUS_META[s].icon,
   }));
   const prioOpts: ComboOption[] = PRIORITIES.map((p) => ({
     value: p, label: PRIORITY_META[p].label, tone: PRIORITY_META[p].tone, icon: PRIORITY_META[p].icon,
   }));
-  const levelOpts: ComboOption[] = IMPACT_URGENCY.map((l) => ({
-    value: l, label: LEVEL_META[l].label, tone: LEVEL_META[l].tone,
-  }));
+  const levelOpts: ComboOption[] = IMPACT_URGENCY.map((l) => ({ value: l, label: LEVEL_META[l].label, tone: LEVEL_META[l].tone }));
   const none = (label: string): ComboOption => ({ value: "none", label });
   const agentOpts: ComboOption[] = [
     none("Unassigned"),
@@ -244,23 +118,133 @@ export function TicketProperties({
   ];
   const groupOpts: ComboOption[] = [none("No team"), ...options.groups.map((g) => ({ value: g.id, label: g.name }))];
   const catOpts: ComboOption[] = [none("No category"), ...options.categories.map((c) => ({ value: c.id, label: c.name }))];
+  const svcOpts: ComboOption[] = [none("No service"), ...options.services.map((s) => ({ value: s.id, label: s.name }))];
   const groupName = (id: string) => options.groups.find((g) => g.id === id)?.name ?? id;
   const catName = (id: string) => options.categories.find((c) => c.id === id)?.name ?? id;
-  const svcOpts: ComboOption[] = [none("No service"), ...options.services.map((s) => ({ value: s.id, label: s.name }))];
 
+  // ── Draft state (staged edits) vs the saved ticket baseline ──
+  const base: Record<DraftKey, string> = {
+    priority: ticket.priority,
+    impact: ticket.impact,
+    urgency: ticket.urgency,
+    assigneeId: ticket.assigneeId ?? "none",
+    groupId: ticket.groupId ?? "none",
+    categoryId: ticket.categoryId ?? "none",
+    serviceId: ticket.serviceId ?? "none",
+  };
+  const [draft, setDraft] = useState<Record<DraftKey, string>>(base);
+  const [saving, startSaving] = useTransition();
+  const savingRef = useRef(false);
+
+  // Sync the draft when the ticket changes externally (another save, a Vio chat
+  // action, etc.). Skipped while we are mid-save so our own writes don't clobber it.
+  useEffect(() => {
+    if (savingRef.current) return;
+    setDraft({
+      priority: ticket.priority,
+      impact: ticket.impact,
+      urgency: ticket.urgency,
+      assigneeId: ticket.assigneeId ?? "none",
+      groupId: ticket.groupId ?? "none",
+      categoryId: ticket.categoryId ?? "none",
+      serviceId: ticket.serviceId ?? "none",
+    });
+  }, [ticket.priority, ticket.impact, ticket.urgency, ticket.assigneeId, ticket.groupId, ticket.categoryId, ticket.serviceId]);
+
+  const dirtyKeys = DRAFT_KEYS.filter((k) => draft[k] !== base[k]);
+  const anyDirty = dirtyKeys.length > 0;
+
+  function setField(k: DraftKey, v: string) {
+    setDraft((d) => ({ ...d, [k]: v }));
+  }
+
+  function saveChanges() {
+    const changes = dirtyKeys.map((field) => ({ field, value: draft[field] }));
+    if (changes.length === 0) return;
+    savingRef.current = true;
+    startSaving(async () => {
+      try {
+        for (const c of changes) {
+          const fd = new FormData();
+          fd.set("id", String(ticket.id));
+          fd.set("field", c.field);
+          fd.set("value", c.value);
+          await updateTicketField(fd);
+        }
+        toast.success(`Saved ${changes.length} change${changes.length > 1 ? "s" : ""}`);
+      } catch {
+        toast.error("Could not save changes.");
+      } finally {
+        savingRef.current = false;
+      }
+    });
+  }
+
+  function discard() {
+    setDraft(base);
+    setDismissed(new Set());
+  }
+
+  // ── Vio triage suggestions (inline, per field) ──
+  const [sugg, setSugg] = useState<Extract<TriageState, { ok: true }> | null>(null);
+  const [dismissed, setDismissed] = useState<Set<string>>(new Set());
+  const triageStarted = useRef(false);
+  useEffect(() => {
+    if (!aiEnabled || aiTeaser || triageStarted.current) return;
+    triageStarted.current = true;
+    suggestTriage(ticket.id).then((res) => { if (res.ok) setSugg(res); }).catch(() => {});
+  }, [aiEnabled, aiTeaser, ticket.id]);
+
+  /** Vio's suggestion for a field, if it still differs from the current draft and
+   *  is worth showing (empty field to fill, or a value Vio flagged as wrong). */
+  function suggestionFor(k: DraftKey): Suggestion | null {
+    if (!sugg || dismissed.has(k)) return null;
+    const flagged = sugg.flagged ?? [];
+    if (k === "priority") {
+      if (draft.priority === sugg.priority) return null;
+      if (base.priority === "MEDIUM" || flagged.includes("priority")) return { value: sugg.priority, label: PRIORITY_META[sugg.priority].label };
+      return null;
+    }
+    if (k === "groupId") {
+      if (!sugg.groupId || draft.groupId === sugg.groupId) return null;
+      if (base.groupId === "none" || flagged.includes("groupId")) return { value: sugg.groupId, label: groupName(sugg.groupId) };
+      return null;
+    }
+    if (k === "categoryId") {
+      if (!sugg.categoryId || draft.categoryId === sugg.categoryId) return null;
+      if (base.categoryId === "none" || flagged.includes("categoryId")) return { value: sugg.categoryId, label: catName(sugg.categoryId) };
+      return null;
+    }
+    return null;
+  }
+
+  const prop = (k: DraftKey, label: string, opts: ComboOption[], searchable = false, placeholder?: string) => {
+    const suggestion = suggestionFor(k);
+    return (
+      <EditProp
+        label={label}
+        value={draft[k]}
+        options={opts}
+        searchable={searchable}
+        placeholder={placeholder}
+        dirty={draft[k] !== base[k]}
+        pending={saving && draft[k] !== base[k]}
+        suggestion={suggestion}
+        onChange={(v) => setField(k, v)}
+        onApply={() => suggestion && setField(k, suggestion.value)}
+        onDismiss={() => setDismissed((s) => new Set(s).add(k))}
+      />
+    );
+  };
+
+  // ── Status stays immediate (its resolution/pending dialogs need notes) ──
   const [statusPending, startStatus] = useTransition();
   const [pendingDlg, setPendingDlg] = useState<{ open: boolean; status: string }>({ open: false, status: "PENDING" });
   const [resDlg, setResDlg] = useState<{ open: boolean; status: string }>({ open: false, status: "RESOLVED" });
 
   const changeStatus = (v: string) => {
-    if (v === "PENDING" || v === "ON_HOLD") {
-      setPendingDlg({ open: true, status: v });
-      return;
-    }
-    if (v === "RESOLVED" || v === "CLOSED" || v === "CANCELLED") {
-      setResDlg({ open: true, status: v });
-      return;
-    }
+    if (v === "PENDING" || v === "ON_HOLD") return setPendingDlg({ open: true, status: v });
+    if (v === "RESOLVED" || v === "CLOSED" || v === "CANCELLED") return setResDlg({ open: true, status: v });
     const fd = new FormData();
     fd.set("id", String(ticket.id));
     fd.set("field", "status");
@@ -270,19 +254,7 @@ export function TicketProperties({
 
   return (
     <div className="grid gap-3">
-      {aiEnabled ? (
-        <AiTriagePanel
-          ticketId={ticket.id}
-          priority={ticket.priority}
-          groupId={ticket.groupId}
-          categoryId={ticket.categoryId}
-          groupName={groupName}
-          catName={catName}
-          teaser={aiTeaser}
-        />
-      ) : null}
-
-      {/* Status — the primary action */}
+      {/* Status — immediate */}
       <div className="grid gap-1.5">
         <span className="text-xs font-medium text-muted-foreground">Status</span>
         <Combobox options={statusOpts} value={ticket.status} pending={statusPending} onChange={changeStatus} />
@@ -302,24 +274,39 @@ export function TicketProperties({
 
       {/* Who owns it */}
       <div className="grid gap-3 border-t pt-3">
-        <Prop label="Assignee" ticketId={ticket.id} field="assigneeId" value={ticket.assigneeId} options={agentOpts} searchable placeholder="Unassigned" />
-        <Prop label="Team" ticketId={ticket.id} field="groupId" value={ticket.groupId} options={groupOpts} searchable placeholder="No team" />
+        {prop("assigneeId", "Assignee", agentOpts, true, "Unassigned")}
+        {prop("groupId", "Team", groupOpts, true, "No team")}
       </div>
 
       {/* How severe it is */}
       <div className="grid gap-3 border-t pt-3">
-        <Prop label="Priority" ticketId={ticket.id} field="priority" value={ticket.priority} options={prioOpts} />
+        {prop("priority", "Priority", prioOpts)}
         <div className="grid grid-cols-2 gap-3">
-          <Prop label="Impact" ticketId={ticket.id} field="impact" value={ticket.impact} options={levelOpts} />
-          <Prop label="Urgency" ticketId={ticket.id} field="urgency" value={ticket.urgency} options={levelOpts} />
+          {prop("impact", "Impact", levelOpts)}
+          {prop("urgency", "Urgency", levelOpts)}
         </div>
       </div>
 
       {/* How it's classified */}
       <div className="grid gap-3 border-t pt-3">
-        <Prop label="Category" ticketId={ticket.id} field="categoryId" value={ticket.categoryId} options={catOpts} searchable placeholder="No category" />
-        <Prop label="Service" ticketId={ticket.id} field="serviceId" value={ticket.serviceId} options={svcOpts} searchable placeholder="No service" />
+        {prop("categoryId", "Category", catOpts, true, "No category")}
+        {prop("serviceId", "Service", svcOpts, true, "No service")}
       </div>
+
+      {/* Save bar — only when there are staged changes */}
+      {anyDirty ? (
+        <div className="sticky bottom-0 -mx-4 flex items-center gap-2 border-t bg-card/95 px-4 pt-2.5 pb-1 backdrop-blur sm:-mx-6 sm:px-6">
+          <span className="text-xs text-muted-foreground">
+            {dirtyKeys.length} unsaved change{dirtyKeys.length > 1 ? "s" : ""}
+          </span>
+          <Button type="button" size="sm" variant="ghost" className="ml-auto" onClick={discard} disabled={saving}>
+            Discard
+          </Button>
+          <Button type="button" size="sm" onClick={saveChanges} disabled={saving}>
+            {saving ? <Loader2 className="size-3.5 animate-spin" /> : null} Save changes
+          </Button>
+        </div>
+      ) : null}
     </div>
   );
 }
