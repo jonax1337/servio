@@ -206,12 +206,12 @@ A hub page (`app/(console)/settings/page.tsx`, MANAGER+) linking to sub-pages:
 See [configuration.md](./configuration.md) for the environment/config side of Mail, SLA, and tokens.
 
 ### Notifications
-Per-user in-app notification feed (not in the sidebar; reached via the topbar bell).
+Per-user in-app notification feed, shown as a **popover** opened from the topbar bell (no dedicated route).
 
 | | |
 | --- | --- |
-| Route | `app/(console)/notifications/page.tsx` |
-| Actions | `lib/actions/notifications.ts` — `markAllRead`, `markRead` |
+| UI | `components/notifications-menu.tsx` — base-ui `Popover` in the topbar bell; loads on open |
+| Actions | `lib/actions/notifications.ts` — `listNotifications`, `markAllRead`, `markRead` |
 | Entity links | `ENTITY_HREF` map routes `Ticket`/`Problem`/`Change` notifications to their detail pages |
 
 ---

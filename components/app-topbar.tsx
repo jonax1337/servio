@@ -2,10 +2,8 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Bell } from "lucide-react";
 import { Fragment } from "react";
 import { SidebarTrigger } from "@/components/ui/sidebar";
-import { LinkButton } from "@/components/link-button";
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -17,6 +15,7 @@ import {
 import { ThemeToggle } from "@/components/theme-toggle";
 import { CommandMenu } from "@/components/command-menu";
 import { CreateMenu } from "@/components/create-menu";
+import { NotificationsMenu } from "@/components/notifications-menu";
 import { UserMenu } from "@/components/user-menu";
 
 function label(seg: string) {
@@ -70,20 +69,7 @@ export function AppTopbar({
       <div className="ml-auto flex items-center gap-1.5">
         <CommandMenu role={user.role} />
         <CreateMenu />
-        <LinkButton
-          href="/notifications"
-          variant="ghost"
-          size="icon"
-          className="relative"
-          aria-label="Notifications"
-        >
-          <Bell className="size-4" />
-          {notifications > 0 ? (
-            <span className="absolute -right-0.5 -top-0.5 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-primary px-1 text-[9px] font-semibold leading-none text-primary-foreground ring-2 ring-background">
-              {notifications > 9 ? "9+" : notifications}
-            </span>
-          ) : null}
-        </LinkButton>
+        <NotificationsMenu unreadCount={notifications} />
         <ThemeToggle />
         <UserMenu {...user} />
       </div>

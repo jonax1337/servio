@@ -2,7 +2,7 @@
 
 import { useRef, useState, useTransition } from "react";
 import { useFormStatus } from "react-dom";
-import { Lock, Send, Loader2, MessageSquare, Activity as ActivityIcon, Sparkles, Wand2 } from "lucide-react";
+import { Lock, Send, Loader2, MessageSquare, Activity as ActivityIcon, Sparkles, Wand2, FileText, RotateCw, X } from "lucide-react";
 import { toast } from "sonner";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
@@ -11,8 +11,8 @@ import { Label } from "@/components/ui/label";
 import { UserAvatar } from "@/components/user-avatar";
 import { RichTextEditor, type MentionUser, type RichTextEditorHandle } from "@/components/ui/rich-text-editor";
 import { AiButton } from "@/components/ui/ai-button";
-import { draftReply, improveText } from "@/lib/actions/ai";
-import { AI_TEASER_MESSAGE } from "@/lib/constants";
+import { draftReply, improveText, summarizeThread } from "@/lib/actions/ai";
+import { AI_TEASER_MESSAGE, AI_ASSISTANT_NAME } from "@/lib/constants";
 import { ComposerAttachments } from "@/components/comments/composer-attachments";
 import { sanitizeCommentHtml } from "@/lib/markdown";
 import { iconForMime, formatBytes, type AttachmentRow } from "@/lib/attachments-ui";
@@ -84,22 +84,26 @@ function AiComposerButtons({
       const res = await draftReply(ticketId);
       setBusy(null);
       if (!res.ok) return void toast.error(res.error);
-      editorRef.current?.setText(res.text);
+      editorRef.current?.setHTML(res.html);
       toast.success("Reply drafted");
     });
   }
 
   function onImprove() {
     if (teaser) return void toast.info(AI_TEASER_MESSAGE);
-    const current = editorRef.current?.getText() ?? "";
-    if (current.trim().length < 2) return void toast.error("Nothing to improve.");
+    // Prefer the current selection — improve only what the agent highlighted.
+    const selection = editorRef.current?.getSelectionText()?.trim() ?? "";
+    const hasSelection = selection.length >= 2;
+    const text = hasSelection ? selection : (editorRef.current?.getText() ?? "");
+    if (text.trim().length < 2) return void toast.error("Nothing to improve. Type or select some text first.");
     setBusy("improve");
     start(async () => {
-      const res = await improveText(current);
+      const res = await improveText(text);
       setBusy(null);
       if (!res.ok) return void toast.error(res.error);
-      editorRef.current?.setText(res.text);
-      toast.success("Text improved");
+      if (hasSelection) editorRef.current?.replaceSelection(res.text);
+      else editorRef.current?.setText(res.text);
+      toast.success(hasSelection ? "Selection improved" : "Text improved");
     });
   }
 
@@ -109,10 +113,80 @@ function AiComposerButtons({
         {pending && busy === "draft" ? <Loader2 className="size-4 animate-spin" /> : <Sparkles className="size-4" />}
         Suggest reply
       </AiButton>
-      <AiButton type="button" onClick={onImprove} disabled={pending}>
+      <AiButton type="button" onClick={onImprove} disabled={pending} title="Improves your whole draft, or just the selected text">
         {pending && busy === "improve" ? <Loader2 className="size-4 animate-spin" /> : <Wand2 className="size-4" />}
         Improve
       </AiButton>
+    </div>
+  );
+}
+
+/** Inline AI summary shown above the thread (no dialog). Can be added to the
+ *  composer as an internal note for a review-then-send flow. */
+function AiSummaryPanel({
+  ticketId,
+  teaser,
+  onAddAsInternal,
+}: {
+  ticketId: number;
+  teaser: boolean;
+  onAddAsInternal: (html: string) => void;
+}) {
+  const [pending, start] = useTransition();
+  const [summary, setSummary] = useState<{ text: string; html: string } | null>(null);
+
+  function run() {
+    if (teaser) return void toast.info(AI_TEASER_MESSAGE);
+    start(async () => {
+      const res = await summarizeThread(ticketId);
+      if (!res.ok) return void toast.error(res.error);
+      setSummary({ text: res.text, html: res.html });
+    });
+  }
+
+  if (!summary && !pending) {
+    return (
+      <div className="flex justify-end">
+        <AiButton type="button" onClick={run}>
+          <FileText className="size-4" /> Summarize thread
+        </AiButton>
+      </div>
+    );
+  }
+
+  return (
+    <div className="rounded-xl border border-violet-500/30 bg-gradient-to-br from-violet-500/[0.06] to-fuchsia-500/[0.06] p-3">
+      <div className="flex items-center gap-2">
+        <span className="grid size-6 shrink-0 place-items-center rounded-full bg-gradient-to-br from-violet-500 to-fuchsia-500 text-white shadow-sm shadow-violet-500/30">
+          <Sparkles className="size-3.5" />
+        </span>
+        <span className="text-sm font-semibold text-violet-600 dark:text-violet-300">{AI_ASSISTANT_NAME}&apos;s summary</span>
+        <div className="ml-auto flex items-center gap-0.5">
+          <Button type="button" variant="ghost" size="icon-sm" onClick={run} disabled={pending} aria-label="Regenerate">
+            <RotateCw className={`size-3.5 ${pending ? "animate-spin" : ""}`} />
+          </Button>
+          <Button type="button" variant="ghost" size="icon-sm" onClick={() => setSummary(null)} disabled={pending} aria-label="Dismiss">
+            <X className="size-3.5" />
+          </Button>
+        </div>
+      </div>
+      {pending ? (
+        <div className="mt-2 flex items-center gap-2 text-sm text-muted-foreground">
+          <Loader2 className="size-4 animate-spin" /> Reading the ticket…
+        </div>
+      ) : summary ? (
+        <>
+          <div
+            className="prose prose-sm mt-2 max-w-none dark:prose-invert prose-p:my-1.5 prose-ul:my-1.5 prose-li:my-0.5 prose-a:font-medium prose-a:text-violet-600 dark:prose-a:text-violet-400"
+            dangerouslySetInnerHTML={{ __html: summary.html }}
+          />
+          <div className="mt-2.5 flex justify-end">
+            <Button type="button" variant="outline" size="sm" onClick={() => onAddAsInternal(summary.html)}>
+              <Lock className="size-3.5" /> Add as internal note
+            </Button>
+          </div>
+        </>
+      ) : null}
     </div>
   );
 }
@@ -146,6 +220,15 @@ export function CommentThread({
 }) {
   const ref = useRef<HTMLFormElement>(null);
   const editorRef = useRef<RichTextEditorHandle | null>(null);
+  const [isInternal, setIsInternal] = useState(false);
+
+  // Drop an AI summary into the composer and mark it internal, for a review-then-send flow.
+  function addSummaryAsInternal(html: string) {
+    editorRef.current?.setHTML(html);
+    setIsInternal(true);
+    editorRef.current?.focus();
+    toast.success("Added to composer as an internal note. Review and send.");
+  }
 
   return (
     <Tabs defaultValue="comments">
@@ -162,6 +245,9 @@ export function CommentThread({
 
       <TabsContent value="comments" className="mt-4">
         <div className="grid gap-4">
+          {aiTicketId ? (
+            <AiSummaryPanel ticketId={aiTicketId} teaser={aiTeaser} onAddAsInternal={addSummaryAsInternal} />
+          ) : null}
           {comments.map((c) => (
             <div key={c.id} className="flex gap-3">
               <UserAvatar name={c.author} className="shrink-0" />
@@ -195,7 +281,7 @@ export function CommentThread({
 
           <form
             ref={ref}
-            action={async (fd) => { await addAction(fd); ref.current?.reset(); }}
+            action={async (fd) => { await addAction(fd); ref.current?.reset(); setIsInternal(false); }}
             className="mt-1 grid gap-2 rounded-xl border bg-card p-3"
           >
             <input type="hidden" name={idField} value={entityId} />
@@ -212,7 +298,12 @@ export function CommentThread({
               <div className="flex flex-wrap items-center gap-2">
                 {allowInternal ? (
                   <div className="flex items-center gap-2">
-                    <Checkbox id={`internal-${entityId}`} name="isInternal" />
+                    <Checkbox
+                      id={`internal-${entityId}`}
+                      name="isInternal"
+                      checked={isInternal}
+                      onCheckedChange={(v) => setIsInternal(v === true)}
+                    />
                     <Label htmlFor={`internal-${entityId}`} className="text-xs text-muted-foreground">
                       Internal note
                     </Label>

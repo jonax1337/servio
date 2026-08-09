@@ -23,7 +23,7 @@ const MAIL_STATUS_META = {
 
 export default async function MailSettingsPage() {
   await requireRole("MANAGER");
-  const configured = smtpConfigured();
+  const configured = await smtpConfigured();
   const [messages, sentCount] = await Promise.all([
     db.emailMessage.findMany({ orderBy: { createdAt: "desc" }, take: 50 }),
     db.emailMessage.count({ where: { status: "SENT" } }),

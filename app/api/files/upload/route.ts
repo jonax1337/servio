@@ -2,9 +2,10 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getCurrentUser, type Role } from "@/lib/session";
 import { writeAudit } from "@/lib/audit";
-import { validateUpload, MAX_UPLOAD_BYTES } from "@/lib/files";
+import { validateUpload } from "@/lib/files";
 import { buildStorageKey, storage } from "@/lib/storage";
 import { canUploadTo, type UploadTarget } from "@/lib/attachments";
+import { getNumberSetting } from "@/lib/settings";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -25,8 +26,11 @@ export async function POST(req: Request) {
 
   // 2b. Ingress cap BEFORE buffering the body (memory-DoS guard). +1MB slack for
   //     multipart overhead; the real per-file cap is re-checked after parsing.
+  //     Cap is admin-configurable (MAX_UPLOAD_MB in Admin Settings) with the env
+  //     default; MAX_UPLOAD_BYTES stays the client-side mirror.
+  const maxBytes = (await getNumberSetting("MAX_UPLOAD_MB", 15)) * 1024 * 1024;
   const declaredLen = Number(req.headers.get("content-length") ?? "0");
-  if (Number.isFinite(declaredLen) && declaredLen > MAX_UPLOAD_BYTES + 1024 * 1024) {
+  if (Number.isFinite(declaredLen) && declaredLen > maxBytes + 1024 * 1024) {
     return err(413, "File is too large.");
   }
 
@@ -58,14 +62,14 @@ export async function POST(req: Request) {
   }
 
   // 4. Size pre-check before reading bytes.
-  if (file.size > MAX_UPLOAD_BYTES) return err(413, "File is too large.");
+  if (file.size > maxBytes) return err(413, "File is too large.");
 
   // 5. Read bytes.
   const buf = Buffer.from(await file.arrayBuffer());
 
   // 6. Validate (size again, mime allow-list, ext↔mime, magic bytes). Use the
   //    CANONICAL mime + sanitized name; ignore the client-declared type.
-  const v = validateUpload(file.name, file.type, buf);
+  const v = validateUpload(file.name, file.type, buf, maxBytes);
   if (!v.ok) {
     const map: Record<string, number> = { TOO_LARGE: 413, EMPTY: 422, MIME_NOT_ALLOWED: 415, EXT_MISMATCH: 415, MAGIC_MISMATCH: 415 };
     return err(map[v.code] ?? 400, "This file type is not allowed.");

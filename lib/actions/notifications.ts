@@ -4,6 +4,22 @@ import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
 import { getSessionUser } from "@/lib/session";
 
+export async function listNotifications(limit = 20) {
+  const me = await getSessionUser();
+  if (!me) return { notifications: [], unreadCount: 0 };
+
+  const [notifications, unreadCount] = await Promise.all([
+    db.notification.findMany({
+      where: { userId: me.id },
+      orderBy: { createdAt: "desc" },
+      take: limit,
+    }),
+    db.notification.count({ where: { userId: me.id, read: false } }),
+  ]);
+
+  return { notifications, unreadCount };
+}
+
 export async function markAllRead() {
   const me = await getSessionUser();
   if (!me) return;
@@ -13,7 +29,7 @@ export async function markAllRead() {
     data: { read: true },
   });
 
-  revalidatePath("/notifications");
+  revalidatePath("/", "layout");
 }
 
 export async function markRead(formData: FormData) {
@@ -28,5 +44,5 @@ export async function markRead(formData: FormData) {
     data: { read: true },
   });
 
-  revalidatePath("/notifications");
+  revalidatePath("/", "layout");
 }

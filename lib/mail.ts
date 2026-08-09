@@ -1,6 +1,7 @@
 import { db } from "@/lib/db";
 import { storage } from "@/lib/storage";
 import { ticketRef } from "@/lib/constants";
+import { getSetting } from "@/lib/settings";
 
 /**
  * Pluggable mailer. If SMTP is configured it sends via nodemailer; otherwise it
@@ -8,8 +9,12 @@ import { ticketRef } from "@/lib/constants";
  * Settings › Mail). Every message is always recorded in the EmailMessage table.
  */
 
-export function smtpConfigured() {
-  return Boolean(process.env.SMTP_HOST && process.env.SMTP_PORT);
+export async function smtpConfigured() {
+  const [host, port] = await Promise.all([
+    getSetting("SMTP_HOST"),
+    getSetting("SMTP_PORT"),
+  ]);
+  return Boolean(host && port);
 }
 
 type SendInput = {
@@ -39,15 +44,21 @@ export async function sendMail(input: SendInput): Promise<void> {
   });
 
   try {
-    if (smtpConfigured()) {
+    if (await smtpConfigured()) {
+      const [host, port, secure, user, pass, from] = await Promise.all([
+        getSetting("SMTP_HOST"),
+        getSetting("SMTP_PORT"),
+        getSetting("SMTP_SECURE"),
+        getSetting("SMTP_USER"),
+        getSetting("SMTP_PASS"), // secret — stored encrypted, decrypted on read
+        getSetting("SMTP_FROM"),
+      ]);
       const nodemailer = await import("nodemailer");
       const transport = nodemailer.createTransport({
-        host: process.env.SMTP_HOST,
-        port: Number(process.env.SMTP_PORT ?? 587),
-        secure: process.env.SMTP_SECURE === "true",
-        auth: process.env.SMTP_USER
-          ? { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS }
-          : undefined,
+        host: host ?? undefined,
+        port: Number(port ?? 587),
+        secure: secure === "true",
+        auth: user ? { user, pass: pass ?? undefined } : undefined,
       });
       // Read stored blobs into stream attachments for nodemailer.
       const mailAttachments = input.attachments?.length
@@ -56,7 +67,7 @@ export async function sendMail(input: SendInput): Promise<void> {
           )
         : undefined;
       await transport.sendMail({
-        from: process.env.SMTP_FROM ?? "Servio <servio@localhost>",
+        from: from ?? "Servio <servio@localhost>",
         to: input.toName ? `${input.toName} <${input.to}>` : input.to,
         subject: input.subject,
         text: input.body,
@@ -111,7 +122,8 @@ Please review and take the next step.
   };
 }
 
-export function tplTicketReply(t: TicketLike, snippet: string) {
+export function tplTicketReply(t: TicketLike, snippet: string, signatureText?: string) {
+  const sig = signatureText?.trim() ? `\n\n${signatureText.trim()}` : "";
   return {
     template: "ticket_reply",
     subject: `[${ticketRef(t.id, t.type)}] New update on your request`,
@@ -119,7 +131,7 @@ export function tplTicketReply(t: TicketLike, snippet: string) {
 
 There's a new update on your request ${ticketRef(t.id, t.type)} — "${t.title}":
 
-  ${snippet}
+  ${snippet}${sig}
 
 Reply in the portal to continue the conversation.
 

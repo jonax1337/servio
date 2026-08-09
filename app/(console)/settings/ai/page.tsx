@@ -1,0 +1,108 @@
+import type { Metadata } from "next";
+import { Bot } from "lucide-react";
+import { requireRole } from "@/lib/session";
+import { getSetting, getBoolSetting, settingIsSet } from "@/lib/settings";
+import { PageHeader, PageBody } from "@/components/page-header";
+import { SettingsForm } from "@/components/settings/settings-form";
+import { saveAiSettings } from "@/lib/actions/settings";
+import { AI_ASSISTANT_NAME } from "@/lib/constants";
+
+export const metadata: Metadata = { title: "AI settings" };
+export const dynamic = "force-dynamic";
+
+export default async function AiSettingsPage() {
+  await requireRole("ADMIN");
+  const [
+    provider,
+    allowExternal,
+    model,
+    ollamaUrl,
+    ollamaModel,
+    maxTokens,
+    teaser,
+    anthropicSet,
+    openaiSet,
+  ] = await Promise.all([
+    getSetting("AI_PROVIDER", "anthropic"),
+    getBoolSetting("AI_ALLOW_EXTERNAL"),
+    getSetting("AI_MODEL", ""),
+    getSetting("OLLAMA_BASE_URL", "http://localhost:11434/v1"),
+    getSetting("OLLAMA_MODEL", "llama3.1"),
+    getSetting("AI_MAX_OUTPUT_TOKENS", "1024"),
+    getBoolSetting("AI_TEASER"),
+    settingIsSet("ANTHROPIC_API_KEY"),
+    settingIsSet("OPENAI_API_KEY"),
+  ]);
+
+  return (
+    <>
+      <PageHeader
+        icon={Bot}
+        title={`${AI_ASSISTANT_NAME} (AI assistant)`}
+        description="Provider, model and keys for the built-in AI assistant. External providers require the privacy toggle."
+      />
+      <PageBody className="max-w-2xl">
+        <SettingsForm
+          action={saveAiSettings}
+          fields={[
+            {
+              type: "select",
+              name: "AI_PROVIDER",
+              label: "Provider",
+              defaultValue: provider ?? "anthropic",
+              options: [
+                { value: "anthropic", label: "Anthropic (external)" },
+                { value: "openai", label: "OpenAI-compatible (external)" },
+                { value: "ollama", label: "Ollama (local, on-box)" },
+              ],
+            },
+            {
+              type: "switch",
+              name: "AI_ALLOW_EXTERNAL",
+              label: "Allow external providers",
+              defaultChecked: allowExternal,
+              hint: "Required for Anthropic/OpenAI. Ollama stays on-box regardless.",
+            },
+            {
+              type: "text",
+              name: "AI_MODEL",
+              label: "Model",
+              defaultValue: model ?? "",
+              placeholder: "Leave blank for the provider default",
+            },
+            { type: "password", name: "ANTHROPIC_API_KEY", label: "Anthropic API key", isSet: anthropicSet },
+            { type: "password", name: "OPENAI_API_KEY", label: "OpenAI API key", isSet: openaiSet },
+            {
+              type: "text",
+              name: "OLLAMA_BASE_URL",
+              label: "Ollama base URL",
+              defaultValue: ollamaUrl ?? "",
+              placeholder: "http://localhost:11434/v1",
+            },
+            {
+              type: "text",
+              name: "OLLAMA_MODEL",
+              label: "Ollama model",
+              defaultValue: ollamaModel ?? "",
+              placeholder: "llama3.1",
+            },
+            {
+              type: "number",
+              name: "AI_MAX_OUTPUT_TOKENS",
+              label: "Max output tokens",
+              defaultValue: maxTokens ?? "1024",
+              placeholder: "1024",
+            },
+            {
+              type: "switch",
+              name: "AI_TEASER",
+              label: "Teaser mode",
+              defaultChecked: teaser,
+              hint: "Show AI buttons as a preview even when not configured.",
+            },
+          ]}
+        />
+      </PageBody>
+    </>
+  );
+}

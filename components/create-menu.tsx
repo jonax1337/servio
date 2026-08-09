@@ -4,6 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { Plus, ChevronDown, Ticket, AlertTriangle, GitPullRequestArrow } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { LinkButton } from "@/components/link-button";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -15,10 +16,26 @@ export function CreateMenu() {
   const [open, setOpen] = useState(false);
   return (
     <DropdownMenu open={open} onOpenChange={setOpen}>
-      <DropdownMenuTrigger render={<Button className="h-9" onMouseEnter={() => setOpen(true)} />}>
-        <Plus className="size-4" /> Create
-        <ChevronDown className="size-3.5 opacity-70" />
-      </DropdownMenuTrigger>
+      <div data-slot="button-group" className="inline-flex items-center">
+        <LinkButton
+          href="/tickets/new"
+          size="lg"
+          className="rounded-r-none border-r border-primary-foreground/20"
+        >
+          <Plus className="size-4" /> Create
+        </LinkButton>
+        <DropdownMenuTrigger
+          render={
+            <Button
+              size="icon-lg"
+              className="rounded-l-none"
+              aria-label="More create options"
+            />
+          }
+        >
+          <ChevronDown className="size-3.5 opacity-70" />
+        </DropdownMenuTrigger>
+      </div>
       <DropdownMenuContent align="end" className="w-44">
         <DropdownMenuItem render={<Link href="/tickets/new" />}>
           <Ticket className="size-4" /> New ticket

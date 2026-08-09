@@ -29,6 +29,7 @@ export default auth((req) => {
   }
 
   // Plain end users live in the self-service portal, not the agent console.
+  // (Account settings is a dialog in the topbar user-menu, available in both.)
   const isPortal = path.startsWith("/portal");
   if (role === "USER" && !isPortal) {
     return NextResponse.redirect(new URL("/portal", nextUrl));

@@ -23,10 +23,18 @@ export type { MentionUser };
 export type RichTextEditorHandle = {
   /** Replace the whole document with plain text (blank lines → paragraphs). */
   setText: (text: string) => void;
+  /** Replace the whole document with (sanitized) rich HTML — e.g. rendered markdown. */
+  setHTML: (html: string) => void;
   /** Current plain-text content. */
   getText: () => string;
   /** True when the editor is empty. */
   isEmpty: () => boolean;
+  /** Plain text of the current selection ("" when nothing is selected). */
+  getSelectionText: () => string;
+  /** Replace the current selection with plain text (kept inline). */
+  replaceSelection: (text: string) => void;
+  /** Move focus into the editor. */
+  focus: () => void;
 };
 
 export type RichTextEditorProps = {
@@ -208,8 +216,21 @@ function RichTextEditor({
       setText: (text: string) => {
         editor.chain().focus().clearContent(true).insertContent(textToHtml(text)).run();
       },
+      setHTML: (html: string) => {
+        editor.chain().focus().clearContent(true).insertContent(sanitizeCommentHtml(html)).run();
+      },
       getText: () => editor.getText(),
       isEmpty: () => editor.isEmpty,
+      getSelectionText: () => {
+        const { from, to } = editor.state.selection;
+        return from === to ? "" : editor.state.doc.textBetween(from, to, "\n");
+      },
+      replaceSelection: (text: string) => {
+        // insertContent replaces the current selection; keep it inline (no <p> wrap).
+        const inline = escapeHtml(text).replace(/\n/g, "<br />");
+        editor.chain().focus().insertContent(inline).run();
+      },
+      focus: () => editor.commands.focus(),
     });
   }, [editor]);
 

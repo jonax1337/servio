@@ -1,8 +1,10 @@
 "use client";
 
-import { LogOut, Settings, LifeBuoy } from "lucide-react";
+import { useState } from "react";
+import { LogOut, Settings, LifeBuoy, User } from "lucide-react";
 import Link from "next/link";
 import { doSignOut } from "@/lib/actions/auth";
+import { AccountSettingsDialog } from "@/components/account/account-settings-dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -24,7 +26,13 @@ export function UserMenu({
   role: string;
   image?: string | null;
 }) {
+  // Mirror lib/session RANK without importing it (that module pulls in server-only
+  // deps like Prisma, which must not land in this client bundle).
+  const RANK: Record<string, number> = { USER: 0, AGENT: 1, MANAGER: 2, ADMIN: 3 };
+  const isManager = (RANK[role] ?? 0) >= RANK.MANAGER;
+  const [accountOpen, setAccountOpen] = useState(false);
   return (
+    <>
     <DropdownMenu>
       <DropdownMenuTrigger className="flex items-center gap-2 rounded-full outline-none focus-visible:ring-2 focus-visible:ring-ring">
         <UserAvatar name={name} email={email} image={image} className="border" />
@@ -43,12 +51,17 @@ export function UserMenu({
           </span>
         </div>
         <DropdownMenuSeparator />
+        <DropdownMenuItem onClick={() => setAccountOpen(true)}>
+          <User className="size-4" /> Account settings
+        </DropdownMenuItem>
         <DropdownMenuItem render={<Link href="/portal" />}>
           <LifeBuoy className="size-4" /> Self-service portal
         </DropdownMenuItem>
-        <DropdownMenuItem render={<Link href="/settings" />}>
-          <Settings className="size-4" /> Settings
-        </DropdownMenuItem>
+        {isManager ? (
+          <DropdownMenuItem render={<Link href="/settings" />}>
+            <Settings className="size-4" /> Admin settings
+          </DropdownMenuItem>
+        ) : null}
         <DropdownMenuSeparator />
         <form action={doSignOut}>
           <DropdownMenuItem
@@ -62,5 +75,7 @@ export function UserMenu({
         </form>
       </DropdownMenuContent>
     </DropdownMenu>
+    <AccountSettingsDialog open={accountOpen} onOpenChange={setAccountOpen} />
+    </>
   );
 }

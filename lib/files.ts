@@ -72,9 +72,14 @@ export type ValidationResult =
  * Validate an upload against the allow-list. Returns the CANONICAL mime to
  * persist (never the raw client-declared string) and the sanitized filename.
  */
-export function validateUpload(filename: string, declaredMime: string, data: Buffer): ValidationResult {
+export function validateUpload(
+  filename: string,
+  declaredMime: string,
+  data: Buffer,
+  maxBytes: number = MAX_UPLOAD_BYTES,
+): ValidationResult {
   if (data.length === 0) return { ok: false, code: "EMPTY" };
-  if (data.length > MAX_UPLOAD_BYTES) return { ok: false, code: "TOO_LARGE" };
+  if (data.length > maxBytes) return { ok: false, code: "TOO_LARGE" };
 
   const safeName = sanitizeFilename(filename);
   const mime = (declaredMime || "").split(";")[0].trim().toLowerCase();
