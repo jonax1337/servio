@@ -33,9 +33,10 @@ Enums, status/priority metadata, and reference helpers (`ticketRef`, `problemRef
 | Group | Modules |
 | --- | --- |
 | Overview | Dashboard (`/`), Vio (`/assistant`) |
-| Service Operations | Tickets, Problems, Changes, Approvals |
-| Catalog & CMDB | Services, Service Catalog (MANAGER+), Assets, Locations, Categories, Knowledge Base |
-| Organisation | Groups, People |
+| Service Desk | Tickets, Problems, Changes, Approvals, Knowledge Base |
+| Catalog | Services, Service Catalog (MANAGER+) |
+| CMDB | Assets, Locations |
+| Organisation | Groups, People, Categories |
 | Administration | Automations (MANAGER+), Syncs (MANAGER+), Settings (MANAGER+) |
 
 ---
@@ -210,7 +211,10 @@ Rule engine (trigger → conditions → actions), MANAGER+.
 | --- | --- |
 | Route | `app/(console)/automations/page.tsx` |
 | Actions | `lib/actions/automations.ts` — `createRule`, `updateRule`, `toggleRule`, `deleteRule` |
+| Engine | `lib/automations.ts` — `runAutomations(trigger, ticketId)` (direct DB writes, never user actions, so it can't recurse) |
 | Components | `components/automations/` — `rule-builder`, `toggle-switch` |
+
+Internal-note actions are authored by a pseudo **"Automation"** system account (inactive, no login) via `getAutomationUserId()` in `lib/system-user.ts`, so automated comments are clearly attributed to the system rather than an admin.
 
 ### Syncs / Integrations
 External data sync connectors (e.g. directory/asset imports), MANAGER+.

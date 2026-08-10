@@ -1,5 +1,6 @@
 import { db } from "@/lib/db";
 import { writeAudit, notify } from "@/lib/audit";
+import { getAutomationUserId } from "@/lib/system-user";
 import { parseJson, type Condition, type AutomationAction } from "@/lib/automation-defs";
 
 const PRIORITY_ORDER = ["LOW", "MEDIUM", "HIGH", "CRITICAL"] as const;
@@ -79,8 +80,8 @@ export async function runAutomations(trigger: Trigger, ticketId: number) {
           if (a.value) await notify(a.value, { type: "AUTOMATION", title: `Automation: ${rule.name}`, body: t.title, entity: "Ticket", entityId: String(ticketId) });
           break;
         case "internal_note": {
-          const sys = await db.user.findFirst({ where: { role: "ADMIN" }, select: { id: true } });
-          if (sys) await db.ticketComment.create({ data: { ticketId, authorId: sys.id, isInternal: true, body: a.value || `Automation "${rule.name}" ran.` } });
+          const authorId = await getAutomationUserId();
+          await db.ticketComment.create({ data: { ticketId, authorId, isInternal: true, body: a.value || `Automation "${rule.name}" ran.` } });
           break;
         }
       }

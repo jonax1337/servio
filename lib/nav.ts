@@ -37,23 +37,27 @@ export const consoleNav: NavGroup[] = [
     ],
   },
   {
-    label: "Service Operations",
+    label: "Service Desk",
     items: [
       { title: "Tickets", href: "/tickets", icon: Ticket },
       { title: "Problems", href: "/problems", icon: AlertTriangle },
       { title: "Changes", href: "/changes", icon: GitPullRequestArrow },
       { title: "Approvals", href: "/approvals", icon: CheckSquare },
+      { title: "Knowledge Base", href: "/knowledge", icon: BookOpen },
     ],
   },
   {
-    label: "Catalog & CMDB",
+    label: "Catalog",
     items: [
       { title: "Services", href: "/services", icon: LifeBuoy },
       { title: "Service Catalog", href: "/catalog", icon: ShoppingBag, minRole: "MANAGER" },
+    ],
+  },
+  {
+    label: "CMDB",
+    items: [
       { title: "Assets", href: "/assets", icon: Server },
       { title: "Locations", href: "/locations", icon: MapPin },
-      { title: "Categories", href: "/categories", icon: FolderTree },
-      { title: "Knowledge Base", href: "/knowledge", icon: BookOpen },
     ],
   },
   {
@@ -61,6 +65,7 @@ export const consoleNav: NavGroup[] = [
     items: [
       { title: "Groups", href: "/groups", icon: Users },
       { title: "People", href: "/people", icon: Boxes },
+      { title: "Categories", href: "/categories", icon: FolderTree },
     ],
   },
   {
