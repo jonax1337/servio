@@ -118,9 +118,6 @@ export default async function DashboardPage() {
         title={`Good ${greeting()}, ${me?.name?.split(" ")[0] ?? "there"}`}
         description="Here's what's happening across your service desk today."
       >
-        <LinkButton href="/queues" variant="outline">
-          Open queues
-        </LinkButton>
         <LinkButton href="/tickets/new">New ticket</LinkButton>
       </PageHeader>
 
@@ -200,7 +197,7 @@ export default async function DashboardPage() {
                       className="flex items-center gap-3 px-6 py-3 transition-colors hover:bg-muted/50"
                     >
                       <span className="w-16 shrink-0 font-mono text-xs text-muted-foreground">
-                        {ticketRef(t.id, t.type)}
+                        {ticketRef(t.id, t.prefix)}
                       </span>
                       <span className="min-w-0 flex-1 truncate text-sm font-medium">
                         {t.title}

@@ -5,7 +5,7 @@ import { db } from "@/lib/db";
 import { getSessionUser, isAgent, type Role } from "@/lib/session";
 import { getFormOptions } from "@/lib/data/options";
 import { aiConfigured, generateAiText, generateAiObject } from "@/lib/ai";
-import { PRIORITIES, ticketRef, AI_ASSISTANT_NAME } from "@/lib/constants";
+import { PRIORITIES, IMPACT_URGENCY, TICKET_TYPES, ticketRef, AI_ASSISTANT_NAME } from "@/lib/constants";
 import { parseFormSchema, answersToText } from "@/lib/service-forms";
 import { renderMarkdown } from "@/lib/markdown";
 import { getOrgDirectory } from "@/lib/ai-context";
@@ -35,7 +35,6 @@ async function loadTicketContext(id: number) {
       category: { select: { name: true } },
       group: { select: { name: true } },
       sla: { select: { name: true } },
-      tags: { select: { tag: { select: { name: true } } } },
       assets: { select: { asset: { select: { name: true } } } },
       watchers: { select: { userId: true } },
       comments: {
@@ -140,7 +139,6 @@ function renderTicket(t: TicketContext): string {
     `Requester: ${r?.name ?? "Unknown"}${r?.isVip ? " (VIP)" : ""}` +
     `${r?.jobTitle ? `, ${r.jobTitle}` : ""}${r?.department ? `, ${r.department} dept` : ""}` +
     `${r?.email ? ` <${r.email}>` : ""}`;
-  const tags = t.tags.map((x) => x.tag.name);
   const assets = t.assets.map((x) => x.asset.name);
 
   const header = [
@@ -151,7 +149,6 @@ function renderTicket(t: TicketContext): string {
     t.category ? `Category: ${t.category.name}` : "Category: none",
     t.group ? `Team: ${t.group.name}` : "Team: none",
     t.sla ? `SLA policy: ${t.sla.name}` : null,
-    tags.length ? `Tags: ${tags.join(", ")}` : null,
     assets.length ? `Linked assets: ${assets.join(", ")}` : null,
     t.watchers.length ? `Watchers: ${t.watchers.length}` : null,
     "",
@@ -218,14 +215,18 @@ export async function getTicketAiContext(ticketId: number): Promise<string | nul
 
 /* ── 1. suggestTriage — generateObject constrained to REAL category/team ids ── */
 
-export type TriageField = "priority" | "groupId" | "categoryId";
+export type TriageField = "priority" | "impact" | "urgency" | "type" | "groupId" | "categoryId" | "serviceId";
 
 export type TriageState =
   | {
       ok: true;
       priority: (typeof PRIORITIES)[number];
+      impact: (typeof IMPACT_URGENCY)[number];
+      urgency: (typeof IMPACT_URGENCY)[number];
+      type: (typeof TICKET_TYPES)[number];
       groupId: string | null;
       categoryId: string | null;
+      serviceId: string | null;
       /** Already-set fields the AI thinks are clearly wrong. */
       flagged: TriageField[];
       reasoning: string;
@@ -240,22 +241,29 @@ export async function suggestTriage(ticketId: number): Promise<TriageState> {
   const ticket = await loadTicketContext(ticketId);
   if (!ticket) return { ok: false, error: "Ticket not found" };
 
-  // Valid id sets (cached round-trip). categories/groups are string cuids.
-  const { categories, groups } = await getFormOptions();
+  // Valid id sets (cached round-trip). categories/groups/services are string cuids.
+  const { categories, groups, services } = await getFormOptions();
   const catIds = categories.map((c) => c.id);
   const groupIds = groups.map((g) => g.id);
+  const serviceIds = services.map((s) => s.id);
 
   // Enums built from the real ids → the model can't return a nonexistent id.
   const categoryEnum =
     catIds.length > 0 ? z.enum(["none", ...catIds] as [string, ...string[]]) : z.literal("none");
   const groupEnum =
     groupIds.length > 0 ? z.enum(["none", ...groupIds] as [string, ...string[]]) : z.literal("none");
+  const serviceEnum =
+    serviceIds.length > 0 ? z.enum(["none", ...serviceIds] as [string, ...string[]]) : z.literal("none");
 
   const schema = z.object({
     priority: z.enum(PRIORITIES),
+    impact: z.enum(IMPACT_URGENCY),
+    urgency: z.enum(IMPACT_URGENCY),
+    type: z.enum(TICKET_TYPES),
     categoryId: categoryEnum,
     groupId: groupEnum,
-    flagged: z.array(z.enum(["priority", "groupId", "categoryId"])),
+    serviceId: serviceEnum,
+    flagged: z.array(z.enum(["priority", "impact", "urgency", "type", "groupId", "categoryId", "serviceId"])),
     reasoning: z.string(),
   });
 
@@ -263,8 +271,10 @@ export async function suggestTriage(ticketId: number): Promise<TriageState> {
   const orgDirectory = await getOrgDirectory();
   const catLegend = categories.map((c) => `- ${c.id}: ${c.name}`).join("\n") || "(none)";
   const groupLegend = groups.map((g) => `- ${g.id}: ${g.name}`).join("\n") || "(none)";
+  const serviceLegend = services.map((s) => `- ${s.id}: ${s.name}`).join("\n") || "(none)";
   const curCat = ticket.categoryId ? (categories.find((c) => c.id === ticket.categoryId)?.name ?? "unknown") : "none";
   const curGroup = ticket.groupId ? (groups.find((g) => g.id === ticket.groupId)?.name ?? "unknown") : "none";
+  const curSvc = ticket.serviceId ? (services.find((s) => s.id === ticket.serviceId)?.name ?? "unknown") : "none";
 
   // Ground the decision in how similar past tickets were actually routed/prioritised.
   const similar = await findSimilarTickets(ticket);
@@ -278,28 +288,38 @@ export async function suggestTriage(ticketId: number): Promise<TriageState> {
 
   const system =
     `You are ${AI_ASSISTANT_NAME}, the triage brain of the Servio ITSM system. Read the whole ticket ` +
-    "(state + discussion), then classify it. Set priority from impact + urgency and real business " +
+    "(state + discussion), then classify it. Decide the TYPE: INCIDENT when something is broken / not " +
+    "working / degraded, REQUEST when the user asks for something new, standard or provisioned (access, " +
+    "hardware, software, onboarding). Set IMPACT (how widespread the effect is: one person=LOW, a " +
+    "team/site=MEDIUM, whole org or critical service=HIGH) and URGENCY (how time-critical: can wait=LOW, " +
+    "soon=MEDIUM, work stopped/deadline=HIGH). Derive PRIORITY from impact + urgency and real business " +
     "effect (many people blocked / major incident → HIGH or CRITICAL). Choose the best-fitting " +
     'categoryId and groupId ONLY from the provided id legends (or "none" if truly nothing fits) — do ' +
     "not guess ids. Use the 'similar past tickets' as strong evidence for how THIS organisation routes " +
     "and prioritises comparable issues; stay consistent with that pattern unless the ticket clearly " +
-    "differs. ALSO review the ticket's CURRENT values: if an already-set field (priority, groupId or " +
-    'categoryId) is clearly WRONG, add its key to "flagged" — but leave "flagged" empty when the ' +
-    "current values are reasonable. Keep reasoning to ONE short sentence (max ~16 words); you may cite " +
-    "one ticket ref. Do not restate the suggested values, just the why.";
+    "differs. Also pick the best-fitting serviceId (the affected business/IT service) ONLY from the " +
+    'provided service id legend, or "none" if nothing fits. ALSO review the ticket\'s CURRENT values: ' +
+    "if an already-set field (priority, impact, urgency, type, groupId, categoryId or serviceId) is " +
+    'clearly WRONG, add its key to "flagged" — but leave "flagged" empty when the current values are ' +
+    "reasonable. Keep reasoning to ONE short sentence (max ~16 words); you may cite one ticket ref. " +
+    "Do not restate the suggested values, just the why.";
 
   const prompt = [
     `Allowed priorities: ${PRIORITIES.join(", ")}`,
+    `Allowed impact & urgency: ${IMPACT_URGENCY.join(", ")}`,
+    `Allowed types: ${TICKET_TYPES.join(", ")} (INCIDENT = something broken, REQUEST = asking for something)`,
     "",
     `Category ids (id: name):\n${catLegend}`,
     "",
     `Team/Group ids (id: name):\n${groupLegend}`,
     "",
+    `Service ids (id: name):\n${serviceLegend}`,
+    "",
     `Organisation directory (understand teams, services & owners to route well):\n${orgDirectory}`,
     "",
     `Similar past tickets (routing/priority evidence):\n${similarLegend}`,
     "",
-    `Current values on the ticket. Priority: ${ticket.priority}, Team: ${curGroup}, Category: ${curCat}.`,
+    `Current values on the ticket. Type: ${ticket.type}, Priority: ${ticket.priority}, Impact: ${ticket.impact}, Urgency: ${ticket.urgency}, Team: ${curGroup}, Category: ${curCat}, Service: ${curSvc}.`,
     "",
     `Ticket:\n${renderTicket(ticket)}`,
   ].join("\n");
@@ -313,12 +333,18 @@ export async function suggestTriage(ticketId: number): Promise<TriageState> {
       out.categoryId !== "none" && catIds.includes(out.categoryId) ? out.categoryId : null;
     const groupId =
       out.groupId !== "none" && groupIds.includes(out.groupId) ? out.groupId : null;
+    const serviceId =
+      out.serviceId !== "none" && serviceIds.includes(out.serviceId) ? out.serviceId : null;
 
     return {
       ok: true,
       priority: out.priority,
+      impact: out.impact,
+      urgency: out.urgency,
+      type: out.type,
       categoryId,
       groupId,
+      serviceId,
       flagged: (out.flagged ?? []) as TriageField[],
       reasoning: plain(out.reasoning),
     };

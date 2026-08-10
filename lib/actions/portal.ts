@@ -10,7 +10,7 @@ import { sendMail, tplTicketReceived } from "@/lib/mail";
 import { runAutomations } from "@/lib/automations";
 import { slaCreateData } from "@/lib/sla";
 import { sanitizeCommentHtml, htmlToText } from "@/lib/markdown";
-import { TICKET_TYPES, PRIORITIES } from "@/lib/constants";
+import { TICKET_TYPES, PRIORITIES, prefixForType } from "@/lib/constants";
 
 export type PortalState = { error?: string; fieldErrors?: Record<string, string[]> } | undefined;
 
@@ -37,18 +37,17 @@ export async function createPortalTicket(_prev: PortalState, formData: FormData)
     return { error: "Please fix the highlighted fields.", fieldErrors: parsed.error.flatten().fieldErrors };
   }
 
-  const triage = await db.queue.findFirst({ where: { name: "Triage" } });
   const sla = await slaCreateData({ serviceId: parsed.data.serviceId, priority: parsed.data.priority });
   const ticket = await db.ticket.create({
     data: {
       ...parsed.data,
+      prefix: prefixForType(parsed.data.type),
       ...sla,
       status: "NEW",
       source: "PORTAL",
       impact: "MEDIUM",
       urgency: "MEDIUM",
       requesterId: me.id,
-      queueId: triage?.id ?? null,
     },
   });
   await writeAudit({ userId: me.id, action: "CREATE", entity: "Ticket", entityId: ticket.id, summary: "Submitted via self-service portal" });

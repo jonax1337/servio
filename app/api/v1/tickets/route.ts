@@ -7,6 +7,7 @@ import { slaCreateData } from "@/lib/sla";
 import { serializeTicket } from "../_serializers";
 import {
   TICKET_TYPES, TICKET_STATUSES, PRIORITIES, IMPACT_URGENCY, OPEN_TICKET_STATUSES,
+  prefixForType,
 } from "@/lib/constants";
 
 export const runtime = "nodejs";
@@ -61,7 +62,6 @@ const createSchema = z.object({
   status: z.enum(TICKET_STATUSES).optional().default("NEW"),
   requesterId: z.string().optional(),
   assigneeId: z.string().optional(),
-  queueId: z.string().optional(),
   categoryId: z.string().optional(),
   serviceId: z.string().optional(),
 });
@@ -90,11 +90,12 @@ export async function POST(req: Request) {
   // — those fall back to schema defaults. Prevents self-assign / pre-resolved
   // tickets that would skew SLA and metrics.
   const data = isAgentPrincipal
-    ? { ...parsed.data, ...sla, requesterId, source: "API" as const }
+    ? { ...parsed.data, prefix: prefixForType(parsed.data.type), ...sla, requesterId, source: "API" as const }
     : {
         title: parsed.data.title,
         description: parsed.data.description,
         type: parsed.data.type,
+        prefix: prefixForType(parsed.data.type),
         priority: parsed.data.priority,
         impact: parsed.data.impact,
         urgency: parsed.data.urgency,

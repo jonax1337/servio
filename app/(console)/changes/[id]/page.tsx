@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import {
   ArrowLeft, Server, AlertTriangle, Ticket as TicketIcon,
-  ClipboardList, RotateCcw, FileText,
+  ClipboardList, RotateCcw, FileText, X,
 } from "lucide-react";
 import { db } from "@/lib/db";
 import { getFormOptions } from "@/lib/data/options";
@@ -16,6 +16,8 @@ import { ApprovalPanel, type ApprovalRow } from "@/components/changes/approval-p
 import { CommentThread } from "@/components/comments/comment-thread";
 import { EditEntityDialog } from "@/components/edit-entity-dialog";
 import { addChangeComment, updateChangeDetails } from "@/lib/actions/changes";
+import { setTicketChange } from "@/lib/actions/tickets";
+import { LinkPicker } from "@/components/link-picker";
 import { sanitizeCommentHtml } from "@/lib/markdown";
 import { initials } from "@/lib/avatar";
 import type { ComboOption } from "@/components/combobox";
@@ -47,7 +49,7 @@ export default async function ChangeDetailPage({
   const changeId = Number(id);
   if (!Number.isFinite(changeId)) notFound();
 
-  const [change, options, audits] = await Promise.all([
+  const [change, options, audits, linkableTickets] = await Promise.all([
     db.change.findUnique({
       where: { id: changeId },
       include: {
@@ -65,8 +67,16 @@ export default async function ChangeDetailPage({
       include: { user: true },
       orderBy: { createdAt: "asc" },
     }),
+    db.ticket.findMany({
+      where: { changeId: null, status: { notIn: ["CLOSED", "CANCELLED"] } },
+      select: { id: true, title: true, prefix: true },
+      orderBy: { updatedAt: "desc" },
+      take: 100,
+    }),
   ]);
   if (!change) notFound();
+
+  const ticketOpts = linkableTickets.map((t) => ({ value: String(t.id), label: `${ticketRef(t.id, t.prefix)} · ${t.title}` }));
 
   const me = await getSessionUser();
   // Manager+ curate the approval board (not the owner — SoD, matches the server).
@@ -152,25 +162,59 @@ export default async function ChangeDetailPage({
           </div>
 
           {/* Linked records */}
-          {(change.problem || change.tickets.length > 0 || change.assets.length > 0) && (
-            <div className="mt-4 flex flex-wrap gap-2">
-              {change.problem ? (
-                <Link href={`/problems/${change.problem.id}`} className="inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs hover:border-primary/40">
-                  <AlertTriangle className="size-3.5 text-amber-500" /> {problemRef(change.problem.id)} · {change.problem.title}
-                </Link>
+          <div className="mt-6">
+            <div className="mb-3 flex items-center justify-between gap-2">
+              <h2 className="flex items-center gap-2 text-sm font-semibold">
+                <TicketIcon className="size-4 text-muted-foreground" /> Linked records
+              </h2>
+              {isAgentUser ? (
+                <LinkPicker
+                  action={setTicketChange}
+                  triggerLabel="Link incident"
+                  title="Link an incident"
+                  description="Attach an existing ticket to this change."
+                  hidden={{ changeId: change.id }}
+                  valueName="ticketId"
+                  options={ticketOpts}
+                  placeholder="Choose a ticket"
+                  searchPlaceholder="Search tickets…"
+                  emptyText="No unlinked tickets available."
+                />
               ) : null}
-              {change.tickets.map((t) => (
-                <Link key={t.id} href={`/tickets/${t.id}`} className="inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs hover:border-primary/40">
-                  <TicketIcon className="size-3.5 text-primary" /> {ticketRef(t.id, t.type)}
-                </Link>
-              ))}
-              {change.assets.map((a) => (
-                <Link key={a.assetId} href={`/assets/${a.assetId}`} className="inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs hover:border-primary/40">
-                  <Server className="size-3.5 text-indigo-500" /> {a.asset.name}
-                </Link>
-              ))}
             </div>
-          )}
+            {(change.problem || change.tickets.length > 0 || change.assets.length > 0) ? (
+              <div className="flex flex-wrap gap-2">
+                {change.problem ? (
+                  <Link href={`/problems/${change.problem.id}`} className="inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs hover:border-primary/40">
+                    <AlertTriangle className="size-3.5 text-amber-500" /> {problemRef(change.problem.id)} · {change.problem.title}
+                  </Link>
+                ) : null}
+                {change.tickets.map((t) => (
+                  <span key={t.id} className="group/chip inline-flex items-center rounded-lg border text-xs transition-colors hover:border-primary/40">
+                    <Link href={`/tickets/${t.id}`} className="inline-flex items-center gap-1.5 py-1 pl-2.5 pr-1.5">
+                      <TicketIcon className="size-3.5 text-primary" /> {ticketRef(t.id, t.prefix)} · {t.title}
+                    </Link>
+                    {isAgentUser ? (
+                      <form action={setTicketChange} className="flex">
+                        <input type="hidden" name="ticketId" value={t.id} />
+                        <input type="hidden" name="changeId" value="" />
+                        <button type="submit" aria-label="Unlink" className="mr-1 grid size-5 place-items-center rounded text-muted-foreground opacity-0 transition-opacity hover:text-destructive group-hover/chip:opacity-100">
+                          <X className="size-3.5" />
+                        </button>
+                      </form>
+                    ) : null}
+                  </span>
+                ))}
+                {change.assets.map((a) => (
+                  <Link key={a.assetId} href={`/assets/${a.assetId}`} className="inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs hover:border-primary/40">
+                    <Server className="size-3.5 text-indigo-500" /> {a.asset.name}
+                  </Link>
+                ))}
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground">No linked records yet.</p>
+            )}
+          </div>
 
           {/* Approvals / CAB */}
           <ApprovalPanel

@@ -21,7 +21,7 @@ import {
 
 type Opt = { value: string; label: string }[];
 export type AutomationOptions = {
-  agents: Opt; groups: Opt; queues: Opt; categories: Opt; services: Opt; tags: Opt;
+  agents: Opt; groups: Opt; categories: Opt; services: Opt;
 };
 
 const enumOpts = (arr: readonly string[], meta: Record<string, { label: string }>): ComboOption[] =>
@@ -38,7 +38,6 @@ function conditionValueOptions(field: string, o: AutomationOptions): ComboOption
     case "urgency": return enumOpts(IMPACT_URGENCY, LEVEL_META);
     case "source": return enumOpts(TICKET_SOURCES, SOURCE_META);
     case "categoryId": return toCombo(o.categories);
-    case "queueId": return toCombo(o.queues);
     case "groupId": return toCombo(o.groups);
     case "serviceId": return toCombo(o.services);
     case "assigneeId": return toCombo(o.agents);
@@ -55,8 +54,6 @@ function actionValueOptions(type: string, o: AutomationOptions): ComboOption[] |
     case "assign":
     case "notify": return toCombo(o.agents);
     case "set_group": return toCombo(o.groups);
-    case "set_queue": return toCombo(o.queues);
-    case "add_tag": return toCombo(o.tags);
     case "internal_note": return "text";
     default: return "none"; // escalate, major_incident
   }

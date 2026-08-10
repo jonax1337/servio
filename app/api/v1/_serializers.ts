@@ -11,6 +11,7 @@ export function serializeTicket(t: {
   title: string;
   description: string;
   type: string;
+  prefix?: string | null;
   status: string;
   priority: string;
   impact: string;
@@ -18,7 +19,6 @@ export function serializeTicket(t: {
   source: string;
   requester?: Userish;
   assignee?: Userish;
-  queueId: string | null;
   categoryId: string | null;
   serviceId: string | null;
   dueAt: Date | null;
@@ -28,7 +28,7 @@ export function serializeTicket(t: {
 }) {
   return {
     id: t.id,
-    ref: ticketRef(t.id, t.type),
+    ref: ticketRef(t.id, t.prefix ?? t.type),
     title: t.title,
     description: t.description,
     type: t.type,
@@ -39,7 +39,6 @@ export function serializeTicket(t: {
     source: t.source,
     requester: user(t.requester ?? null),
     assignee: user(t.assignee ?? null),
-    queue_id: t.queueId,
     category_id: t.categoryId,
     service_id: t.serviceId,
     due_at: t.dueAt?.toISOString() ?? null,

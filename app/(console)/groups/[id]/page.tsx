@@ -1,7 +1,6 @@
-import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
-import { ArrowLeft, Users, Inbox, Mail, Ticket as TicketIcon } from "lucide-react";
+import { ArrowLeft, Users, Mail, Ticket as TicketIcon } from "lucide-react";
 import { db } from "@/lib/db";
 import { LinkButton } from "@/components/link-button";
 import { StatusBadge } from "@/components/status-badge";
@@ -35,7 +34,6 @@ export default async function GroupDetailPage({
     include: {
       manager: true,
       members: { include: { user: true }, orderBy: { role: "asc" } },
-      queues: { orderBy: { order: "asc" } },
     },
   });
   if (!group) notFound();
@@ -76,7 +74,6 @@ export default async function GroupDetailPage({
             tone="primary"
           />
           <StatCard label="Members" value={group.members.length} icon={Users} tone="muted" />
-          <StatCard label="Queues" value={group.queues.length} icon={Inbox} tone="muted" />
         </div>
 
         <div className="mt-6 grid gap-4 lg:grid-cols-[1fr_320px]">
@@ -160,35 +157,6 @@ export default async function GroupDetailPage({
               </CardContent>
             </Card>
 
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-sm">Queues · {group.queues.length}</CardTitle>
-              </CardHeader>
-              <CardContent>
-                {group.queues.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">No queues assigned.</p>
-                ) : (
-                  <div className="grid gap-1.5">
-                    {group.queues.map((qq) => (
-                      <Link
-                        key={qq.id}
-                        href={`/queues/${qq.id}`}
-                        className="flex items-center gap-2.5 rounded-lg border px-3 py-2 text-sm hover:border-primary/40"
-                      >
-                        <span
-                          className="size-2.5 shrink-0 rounded-full"
-                          style={{ backgroundColor: qq.color }}
-                        />
-                        <span className="line-clamp-1 font-medium">{qq.name}</span>
-                        {!qq.isActive ? (
-                          <span className="ml-auto text-xs text-muted-foreground">Inactive</span>
-                        ) : null}
-                      </Link>
-                    ))}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
           </div>
         </div>
       </div>

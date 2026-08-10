@@ -6,7 +6,7 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { getSessionUser, isAgent, type Role } from "@/lib/session";
 import { writeAudit } from "@/lib/audit";
-import { ASSET_TYPES, ASSET_STATUSES } from "@/lib/constants";
+import { ASSET_TYPES, ASSET_STATUSES, ASSET_RELATION_TYPES } from "@/lib/constants";
 
 const optionalId = z
   .string()
@@ -170,4 +170,55 @@ export async function updateAsset(formData: FormData) {
   });
   revalidatePath(`/assets/${id}`);
   revalidatePath("/assets");
+}
+
+// ── Delete ───────────────────────────────────────────────────────────────────
+
+/**
+ * Delete an asset. Related edges (AssetRelation, TicketAsset, ChangeAsset) are
+ * removed automatically via `onDelete: Cascade` in the schema, so this never
+ * orphans a join row or blocks on an FK. Redirects to the list on success.
+ */
+export async function deleteAsset(formData: FormData) {
+  const me = await requireAgentA();
+  if (!me) return;
+  const id = String(formData.get("id") ?? "");
+  const asset = await db.asset.findUnique({ where: { id }, select: { name: true } });
+  if (!asset) return;
+  await db.asset.delete({ where: { id } });
+  await writeAudit({ userId: me.id, action: "DELETE", entity: "Asset", entityId: id, summary: `Deleted asset "${asset.name}"` });
+  revalidatePath("/assets");
+  redirect("/assets");
+}
+
+// ── Asset-to-asset relations (CMDB dependency graph) ─────────────────────────
+
+export async function addAssetRelation(formData: FormData) {
+  const me = await requireAgentA();
+  if (!me) return;
+  const sourceId = String(formData.get("sourceId") ?? "").trim();
+  const targetId = String(formData.get("targetId") ?? "").trim();
+  const type = String(formData.get("type") ?? "DEPENDS_ON");
+  // No self-links, and the type must be a known relation kind.
+  if (!sourceId || !targetId || sourceId === targetId) return;
+  if (!ASSET_RELATION_TYPES.includes(type as (typeof ASSET_RELATION_TYPES)[number])) return;
+  await db.assetRelation.upsert({
+    where: { sourceId_targetId_type: { sourceId, targetId, type } },
+    create: { sourceId, targetId, type },
+    update: {},
+  });
+  await writeAudit({ userId: me.id, action: "UPDATE", entity: "Asset", entityId: sourceId, summary: "Added a relationship" });
+  revalidatePath(`/assets/${sourceId}`);
+  revalidatePath(`/assets/${targetId}`);
+}
+
+export async function deleteAssetRelation(formData: FormData) {
+  const me = await requireAgentA();
+  if (!me) return;
+  const relationId = String(formData.get("relationId") ?? "");
+  const assetId = String(formData.get("assetId") ?? "");
+  if (!relationId) return;
+  await db.assetRelation.delete({ where: { id: relationId } }).catch(() => {});
+  await writeAudit({ userId: me.id, action: "UPDATE", entity: "Asset", entityId: assetId, summary: "Removed a relationship" });
+  revalidatePath(`/assets/${assetId}`);
 }

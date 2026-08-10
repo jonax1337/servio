@@ -30,7 +30,6 @@ async function main() {
     db.emailMessage.deleteMany(),
     db.apiToken.deleteMany(),
     db.syncRun.deleteMany(),
-    db.ticketTag.deleteMany(),
     db.ticketAsset.deleteMany(),
     db.changeAsset.deleteMany(),
     db.ticketWatcher.deleteMany(),
@@ -44,8 +43,6 @@ async function main() {
     db.asset.deleteMany(),
     db.service.deleteMany(),
     db.sLA.deleteMany(),
-    db.queue.deleteMany(),
-    db.tag.deleteMany(),
     db.article.deleteMany(),
     db.category.deleteMany(),
     db.groupMember.deleteMany(),
@@ -128,20 +125,6 @@ async function main() {
     ],
   });
 
-  // ---- Queues ----
-  const queues = await Promise.all(
-    [
-      ["Service Desk", "#6366f1", gServiceDesk.id, 0],
-      ["Infrastructure", "#8b5cf6", gInfra.id, 1],
-      ["Applications", "#0ea5e9", gApps.id, 2],
-      ["Network", "#f59e0b", gInfra.id, 3],
-      ["Triage", "#64748b", null, 4],
-    ].map(([name, color, groupId, order]) =>
-      db.queue.create({ data: { name: name as string, color: color as string, groupId: groupId as string | null, order: order as number, description: `${name} work queue` } }),
-    ),
-  );
-  const qByName = (n: string) => queues.find((q) => q.name === n)!;
-
   // ---- Categories (tree) ----
   // Clean, type-independent 2-level taxonomy (categories apply to any ticket)
   const mkCat = (name: string, icon: string, color: string, parentId?: string) =>
@@ -192,14 +175,6 @@ async function main() {
         },
       }),
     ),
-  );
-
-  // ---- Tags ----
-  const tags = await Promise.all(
-    [
-      ["outage", "#ef4444"], ["password", "#8b5cf6"], ["hardware", "#6366f1"],
-      ["vip", "#f59e0b"], ["recurring", "#0ea5e9"], ["security", "#10b981"],
-    ].map(([name, color]) => db.tag.create({ data: { name, color } })),
   );
 
   // ---- Assets (CMDB) ----
@@ -311,6 +286,7 @@ async function main() {
         title,
         description: `${title}. Reported by the user via the ${pick(["portal", "phone", "email"])}. Please investigate and follow up.`,
         type,
+        prefix: type === "REQUEST" ? "REQ" : "INC",
         status,
         priority,
         impact: pick(["LOW", "MEDIUM", "HIGH"]),
@@ -319,7 +295,6 @@ async function main() {
         requesterId: pick(endUsers).id,
         assigneeId: assignee?.id ?? null,
         groupId: grp.id,
-        queueId: pick(queues).id,
         categoryId: cat.id,
         serviceId: svc.id,
         slaId: pick(slas).id,
@@ -353,9 +328,7 @@ async function main() {
       });
     }
 
-    // tags / watchers / assets
-    for (const tg of pickN(tags, Math.floor(rand() * 2)))
-      await db.ticketTag.create({ data: { ticketId: t.id, tagId: tg.id } }).catch(() => {});
+    // watchers / assets
     if (rand() > 0.6)
       await db.ticketWatcher.create({ data: { ticketId: t.id, userId: pick(users).id } }).catch(() => {});
     if (rand() > 0.5)

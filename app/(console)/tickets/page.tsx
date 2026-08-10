@@ -136,7 +136,7 @@ export default async function TicketsPage({
                 {tickets.map((t) => (
                   <TableRow key={t.id} className="group">
                     <TableCell className="font-mono text-xs text-muted-foreground">
-                      {ticketRef(t.id, t.type)}
+                      {ticketRef(t.id, t.prefix)}
                     </TableCell>
                     <TableCell className="max-w-[420px]">
                       <Link href={`/tickets/${t.id}`} className="block">

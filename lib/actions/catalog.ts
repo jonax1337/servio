@@ -51,6 +51,7 @@ export async function createCatalogRequest(
       // not dumped into the body. The description stays a short one-liner.
       description: `Catalog request: ${item.name}.`,
       type: "REQUEST",
+      prefix: "REQ",
       status: needsApproval ? "PENDING" : "NEW",
       source: "PORTAL",
       priority: "MEDIUM",

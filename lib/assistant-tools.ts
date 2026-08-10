@@ -203,7 +203,6 @@ export function buildAssistantGeneralTools(ctx: AssistantUserContext): ToolSet {
           group: { select: { name: true } },
           category: { select: { name: true } },
           service: { select: { name: true } },
-          queue: { select: { name: true } },
           sla: { select: { name: true } },
           comments: {
             orderBy: { createdAt: "desc" },
@@ -232,7 +231,6 @@ export function buildAssistantGeneralTools(ctx: AssistantUserContext): ToolSet {
           team: t.group?.name ?? null,
           category: t.category?.name ?? null,
           service: t.service?.name ?? null,
-          queue: t.queue?.name ?? null,
           sla: t.sla?.name ?? null,
           responseDueAt: fmt(t.responseDueAt),
           resolveDueAt: fmt(t.resolveDueAt),

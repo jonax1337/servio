@@ -29,6 +29,9 @@ import {
   IMPACT_URGENCY,
   TICKET_SOURCES,
   ticketRef,
+  problemRef,
+  changeRef,
+  prefixForType,
 } from "@/lib/constants";
 
 const optionalId = z
@@ -47,7 +50,6 @@ const createSchema = z.object({
   requesterId: z.string().min(1, "Requester is required"),
   assigneeId: optionalId,
   groupId: optionalId,
-  queueId: optionalId,
   categoryId: optionalId,
   serviceId: optionalId,
   slaId: optionalId,
@@ -70,7 +72,9 @@ export async function createTicketCore(
   // Resolve the SLA and stamp response/resolve deadlines at creation time.
   const sla = await slaCreateData({ slaId: data.slaId, serviceId: data.serviceId, priority: data.priority });
   const ticket = await db.ticket.create({
-    data: { ...data, ...sla, status: "NEW" },
+    // `prefix` is fixed here from the initial type and never changes afterwards,
+    // so switching the type later leaves the ticket's ref number untouched.
+    data: { ...data, prefix: prefixForType(data.type), ...sla, status: "NEW" },
     include: { requester: true, assignee: true },
   });
 
@@ -122,7 +126,7 @@ const updateSchema = z.object({
   id: z.coerce.number(),
   field: z.enum([
     "status", "priority", "impact", "urgency", "type",
-    "assigneeId", "groupId", "queueId", "categoryId", "serviceId", "slaId",
+    "assigneeId", "groupId", "categoryId", "serviceId", "slaId",
   ]),
   value: z.string(),
 });
@@ -550,6 +554,65 @@ export async function unlinkRelation(formData: FormData) {
   if (!ticketId || !["problem", "change"].includes(kind)) return;
   await db.ticket.update({ where: { id: ticketId }, data: kind === "problem" ? { problemId: null } : { changeId: null } });
   revalidatePath(`/tickets/${ticketId}`);
+  revalidatePath("/problems");
+  revalidatePath("/changes");
+}
+
+/**
+ * Attach (or, with an empty value, detach) a ticket to a Problem. Works from
+ * either side: the ticket detail page passes its own ticketId + a chosen problemId;
+ * the problem detail page passes its own problemId + a chosen ticketId.
+ */
+export async function setTicketProblem(formData: FormData) {
+  const me = await requireAgent();
+  if (!me) return;
+  const ticketId = Number(formData.get("ticketId"));
+  const raw = String(formData.get("problemId") ?? "").trim();
+  const problemId = raw && raw !== "none" ? Number(raw) : null;
+  if (!ticketId) return;
+  await db.ticket.update({ where: { id: ticketId }, data: { problemId } });
+  await writeAudit({
+    userId: me.id, action: "UPDATE", entity: "Ticket", entityId: ticketId,
+    summary: problemId ? `Linked to ${problemRef(problemId)}` : "Unlinked from problem",
+  });
+  revalidatePath(`/tickets/${ticketId}`);
+  if (problemId) revalidatePath(`/problems/${problemId}`);
+  revalidatePath("/problems");
+}
+
+/** Attach/detach a ticket to a Change. Symmetric to setTicketProblem. */
+export async function setTicketChange(formData: FormData) {
+  const me = await requireAgent();
+  if (!me) return;
+  const ticketId = Number(formData.get("ticketId"));
+  const raw = String(formData.get("changeId") ?? "").trim();
+  const changeId = raw && raw !== "none" ? Number(raw) : null;
+  if (!ticketId) return;
+  await db.ticket.update({ where: { id: ticketId }, data: { changeId } });
+  await writeAudit({
+    userId: me.id, action: "UPDATE", entity: "Ticket", entityId: ticketId,
+    summary: changeId ? `Linked to ${changeRef(changeId)}` : "Unlinked from change",
+  });
+  revalidatePath(`/tickets/${ticketId}`);
+  if (changeId) revalidatePath(`/changes/${changeId}`);
+  revalidatePath("/changes");
+}
+
+/** Link an asset (CMDB configuration item) to a ticket. */
+export async function linkAsset(formData: FormData) {
+  const me = await requireAgent();
+  if (!me) return;
+  const ticketId = Number(formData.get("ticketId"));
+  const assetId = String(formData.get("assetId") ?? "").trim();
+  if (!ticketId || !assetId) return;
+  await db.ticketAsset.upsert({
+    where: { ticketId_assetId: { ticketId, assetId } },
+    create: { ticketId, assetId },
+    update: {},
+  });
+  await writeAudit({ userId: me.id, action: "UPDATE", entity: "Ticket", entityId: ticketId, summary: "Linked an asset" });
+  revalidatePath(`/tickets/${ticketId}`);
+  revalidatePath(`/assets/${assetId}`);
 }
 
 // ── Tasks ──────────────────────────────────────────────────────────────────

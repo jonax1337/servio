@@ -66,7 +66,6 @@ export async function runAutomations(trigger: Trigger, ticketId: number) {
         case "set_priority": patch.priority = a.value; break;
         case "assign": patch.assigneeId = a.value || null; break;
         case "set_group": patch.groupId = a.value || null; break;
-        case "set_queue": patch.queueId = a.value || null; break;
         case "escalate": {
           const i = PRIORITY_ORDER.indexOf(t.priority as (typeof PRIORITY_ORDER)[number]);
           patch.priority = PRIORITY_ORDER[Math.min(i + 1, 3)];
@@ -75,9 +74,6 @@ export async function runAutomations(trigger: Trigger, ticketId: number) {
         case "major_incident":
           patch.isMajorIncident = true;
           patch.priority = "CRITICAL";
-          break;
-        case "add_tag":
-          if (a.value) await db.ticketTag.create({ data: { ticketId, tagId: a.value } }).catch(() => {});
           break;
         case "notify":
           if (a.value) await notify(a.value, { type: "AUTOMATION", title: `Automation: ${rule.name}`, body: t.title, entity: "Ticket", entityId: String(ticketId) });

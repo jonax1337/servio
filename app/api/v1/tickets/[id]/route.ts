@@ -38,7 +38,6 @@ const patchSchema = z.object({
   status: z.enum(TICKET_STATUSES).optional(),
   priority: z.enum(PRIORITIES).optional(),
   assigneeId: z.string().nullable().optional(),
-  queueId: z.string().nullable().optional(),
 });
 
 export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }> }) {
