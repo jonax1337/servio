@@ -1,9 +1,27 @@
 import Link from "next/link";
+import { cn } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { VolumeChart, BarRow, DonutChart, GaugeChart } from "@/components/charts";
 import { StatusBadge } from "@/components/status-badge";
 import { TICKET_STATUS_META, PRIORITY_META, ticketRef } from "@/lib/constants";
-import type { Widget, Computed } from "@/lib/dashboard/types";
+import type { Widget, Computed, Tone } from "@/lib/dashboard/types";
+
+const TONE_TEXT: Record<Tone, string> = {
+  primary: "text-primary",
+  success: "text-emerald-500",
+  warning: "text-amber-500",
+  danger: "text-red-500",
+  info: "text-sky-500",
+  neutral: "text-muted-foreground",
+};
+const ACCENT_BORDER: Record<Tone, string> = {
+  primary: "border-l-primary",
+  success: "border-l-emerald-500",
+  warning: "border-l-amber-500",
+  danger: "border-l-red-500",
+  info: "border-l-sky-500",
+  neutral: "border-l-border",
+};
 
 const PALETTE = [
   "var(--chart-1)",
@@ -16,13 +34,30 @@ const PALETTE = [
 
 /** Renders one dashboard widget from its server-computed data. */
 export function WidgetCard({ widget, data }: { widget: Widget; data: Computed }) {
-  return (
-    <Card className="flex h-full flex-col">
+  const accent = widget.options?.accent;
+  // Single-metric cards drill into their filtered ticket list from anywhere on the card.
+  const cardHref = data.kind === "stat" || data.kind === "sla" ? data.href : undefined;
+
+  const card = (
+    <Card
+      className={cn(
+        "flex h-full flex-col",
+        accent && "border-l-4",
+        accent && ACCENT_BORDER[accent],
+        cardHref && "transition-colors hover:border-primary/40",
+      )}
+    >
       <CardHeader className="pb-2">
         <CardTitle className="text-sm">{widget.title}</CardTitle>
       </CardHeader>
       <CardContent className="min-h-0 flex-1 overflow-auto">{renderBody(data)}</CardContent>
     </Card>
+  );
+
+  return cardHref ? (
+    <Link href={cardHref} className="block h-full">{card}</Link>
+  ) : (
+    card
   );
 }
 
@@ -33,20 +68,14 @@ export function WidgetBody({ data }: { data: Computed }) {
 
 function renderBody(data: Computed) {
   switch (data.kind) {
-    case "stat": {
-      const num = (
-        <span className="font-display text-4xl font-semibold tabular-nums tracking-tight">{data.value}</span>
-      );
+    case "stat":
       return (
         <div className="flex h-full items-center">
-          {data.href ? (
-            <Link href={data.href} className="transition-colors hover:text-primary">{num}</Link>
-          ) : (
-            num
-          )}
+          <span className={cn("font-display text-4xl font-semibold tabular-nums tracking-tight", data.tone && TONE_TEXT[data.tone])}>
+            {data.value}
+          </span>
         </div>
       );
-    }
 
     case "breakdown": {
       const total = data.rows.reduce((a, r) => a + r.value, 0);

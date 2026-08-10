@@ -21,6 +21,12 @@ export type BreakdownField =
   | "priority" | "status" | "type" | "assignee" | "group" | "category"
   | "service" | "source" | "impact" | "urgency";
 
+/** A tone/colour a widget can use for its accent or a threshold state. */
+export type Tone = "primary" | "success" | "warning" | "danger" | "info" | "neutral";
+
+/** A value-based colouring rule for a "stat" widget (first match wins). */
+export type Threshold = { op: "lt" | "lte" | "gt" | "gte" | "eq"; value: number; tone: Tone };
+
 export type Widget = {
   id: string;
   type: WidgetType;
@@ -30,16 +36,23 @@ export type Widget = {
   y: number;
   w: number; // columns (1–12)
   h: number; // row units
-  options?: { groupBy?: BreakdownField; chartType?: "bar" | "donut" };
+  options?: {
+    groupBy?: BreakdownField;
+    chartType?: "bar" | "donut";
+    /** Fixed accent colour for the card. */
+    accent?: Tone;
+    /** Value-based colouring for stat widgets. */
+    thresholds?: Threshold[];
+  };
 };
 
 /** The computed payload the renderer switches on (data resolved server-side). */
 export type Computed =
-  | { kind: "stat"; value: number; href?: string }
+  | { kind: "stat"; value: number; href?: string; tone?: Tone }
   | { kind: "breakdown"; rows: { label: string; value: number; href?: string }[]; chartType?: "bar" | "donut" }
   | { kind: "aging"; rows: { label: string; value: number }[] }
   | { kind: "volume"; data: { label: string; created: number; resolved: number }[] }
-  | { kind: "sla"; pct: number | null; mttrHours: number | null; resolved: number }
+  | { kind: "sla"; pct: number | null; mttrHours: number | null; resolved: number; href?: string }
   | { kind: "list"; tickets: { id: number; prefix: string; title: string; status: string; priority: string }[] }
   | { kind: "empty" };
 

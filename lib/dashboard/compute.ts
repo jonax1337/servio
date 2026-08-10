@@ -8,7 +8,22 @@ import {
   LEVEL_META,
   SOURCE_META,
 } from "@/lib/constants";
-import type { Widget, Computed, TicketFilters, BreakdownField } from "@/lib/dashboard/types";
+import type { Widget, Computed, TicketFilters, BreakdownField, Threshold, Tone } from "@/lib/dashboard/types";
+
+/** First matching threshold wins; falls back to undefined (caller uses the accent). */
+function resolveThresholdTone(value: number, thresholds?: Threshold[]): Tone | undefined {
+  if (!thresholds?.length) return undefined;
+  for (const t of thresholds) {
+    const ok =
+      t.op === "lt" ? value < t.value
+      : t.op === "lte" ? value <= t.value
+      : t.op === "gt" ? value > t.value
+      : t.op === "gte" ? value >= t.value
+      : value === t.value;
+    if (ok) return t.tone;
+  }
+  return undefined;
+}
 
 /** Turn a widget's filter map into a Prisma ticket `where`. Mirrors /tickets. */
 export function buildTicketWhere(f: TicketFilters): Prisma.TicketWhereInput {
@@ -165,7 +180,8 @@ async function computeSla(filters: TicketFilters): Promise<Computed> {
     select: { createdAt: true, resolvedAt: true, resolveBreached: true },
   });
   const resolved = rows.length;
-  if (resolved === 0) return { kind: "sla", pct: null, mttrHours: null, resolved: 0 };
+  const href = ticketsHref(filters);
+  if (resolved === 0) return { kind: "sla", pct: null, mttrHours: null, resolved: 0, href };
   const met = rows.filter((r) => !r.resolveBreached).length;
   const totalMs = rows.reduce((a, r) => a + (r.resolvedAt!.getTime() - r.createdAt.getTime()), 0);
   return {
@@ -173,6 +189,7 @@ async function computeSla(filters: TicketFilters): Promise<Computed> {
     pct: Math.round((met / resolved) * 100),
     mttrHours: Math.round(totalMs / resolved / 3600000),
     resolved,
+    href,
   };
 }
 
@@ -199,8 +216,11 @@ async function computeAging(where: Prisma.TicketWhereInput): Promise<Computed> {
 export async function computeWidget(widget: Widget): Promise<Computed> {
   const where = buildTicketWhere(widget.filters);
   switch (widget.type) {
-    case "stat":
-      return { kind: "stat", value: await db.ticket.count({ where }), href: ticketsHref(widget.filters) };
+    case "stat": {
+      const value = await db.ticket.count({ where });
+      const tone = resolveThresholdTone(value, widget.options?.thresholds) ?? widget.options?.accent;
+      return { kind: "stat", value, href: ticketsHref(widget.filters), tone };
+    }
     case "breakdown":
       return computeBreakdown(widget, where);
     case "volume":

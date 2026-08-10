@@ -3,7 +3,34 @@
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
 import { getSessionUser, isAgent, hasRole, type Role } from "@/lib/session";
-import { DEFAULT_LAYOUT, type Widget, type WidgetType } from "@/lib/dashboard/types";
+import { DEFAULT_LAYOUT, type Widget, type WidgetType, type Tone, type Threshold } from "@/lib/dashboard/types";
+
+const TONES = ["primary", "success", "warning", "danger", "info", "neutral"];
+const OPS = ["lt", "lte", "gt", "gte", "eq"];
+
+/** Validate + normalise a widget's options (colours/thresholds are never trusted). */
+function sanitizeOptions(o: unknown): Widget["options"] | undefined {
+  if (!o || typeof o !== "object") return undefined;
+  const w = o as Record<string, unknown>;
+  const out: NonNullable<Widget["options"]> = {};
+  if (typeof w.groupBy === "string") out.groupBy = w.groupBy as NonNullable<Widget["options"]>["groupBy"];
+  if (w.chartType === "bar" || w.chartType === "donut") out.chartType = w.chartType;
+  if (typeof w.accent === "string" && TONES.includes(w.accent)) out.accent = w.accent as Tone;
+  if (Array.isArray(w.thresholds)) {
+    const cleaned = w.thresholds
+      .slice(0, 5)
+      .map((t) => {
+        const tt = t as Record<string, unknown>;
+        const value = Number(tt.value);
+        return OPS.includes(tt.op as string) && Number.isFinite(value) && TONES.includes(tt.tone as string)
+          ? ({ op: tt.op as Threshold["op"], value, tone: tt.tone as Tone } satisfies Threshold)
+          : null;
+      })
+      .filter((t): t is Threshold => t !== null);
+    if (cleaned.length) out.thresholds = cleaned;
+  }
+  return Object.keys(out).length ? out : undefined;
+}
 
 async function requireAgent() {
   const me = await getSessionUser();
@@ -41,13 +68,7 @@ function sanitizeLayout(raw: string): string {
       y: clampInt(w.y, 0, 200),
       w: clampInt(w.w, 1, 12),
       h: clampInt(w.h, 1, 8),
-      options:
-        w.options && typeof w.options === "object"
-          ? {
-              groupBy: (w.options as Record<string, unknown>).groupBy as NonNullable<Widget["options"]>["groupBy"],
-              chartType: (w.options as Record<string, unknown>).chartType as NonNullable<Widget["options"]>["chartType"],
-            }
-          : undefined,
+      options: sanitizeOptions(w.options),
     });
   }
   return JSON.stringify(clean);
