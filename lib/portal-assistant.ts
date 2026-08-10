@@ -76,6 +76,7 @@ const listCategoriesTool = tool({
   inputSchema: z.object({}),
   execute: async () => {
     const rows = await db.category.findMany({
+      where: { archived: false },
       orderBy: { name: "asc" },
       select: { id: true, name: true, group: { select: { name: true } } },
     });

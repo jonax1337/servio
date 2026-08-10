@@ -1,8 +1,8 @@
 "use client";
 
 import { useActionState } from "react";
-import { Loader2, Plus } from "lucide-react";
-import { createCategory, type ActionState } from "@/lib/actions/categories";
+import { Loader2, Plus, Save } from "lucide-react";
+import { createCategory, updateCategory, type ActionState } from "@/lib/actions/categories";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -12,6 +12,14 @@ import type { ComboOption } from "@/components/combobox";
 
 export type ParentOption = { id: string; name: string };
 export type TeamOption = { id: string; name: string };
+export type CategoryData = {
+  id: string;
+  name: string;
+  description: string | null;
+  color: string;
+  parentId: string | null;
+  groupId: string | null;
+};
 
 function Field({
   label, error, children, hint,
@@ -31,17 +39,30 @@ function Field({
   );
 }
 
-export function CategoryForm({ parents, teams }: { parents: ParentOption[]; teams: TeamOption[] }) {
+export function CategoryForm({
+  parents,
+  teams,
+  category,
+}: {
+  parents: ParentOption[];
+  teams: TeamOption[];
+  category?: CategoryData;
+}) {
+  const editing = !!category;
   const [state, action, pending] = useActionState<ActionState, FormData>(
-    createCategory,
+    editing ? updateCategory : createCategory,
     undefined,
   );
   const fe = state?.fieldErrors ?? {};
-  const parentOpts: ComboOption[] = parents.map((p) => ({ value: p.id, label: p.name }));
+  // A category can't be nested under itself.
+  const parentOpts: ComboOption[] = parents
+    .filter((p) => p.id !== category?.id)
+    .map((p) => ({ value: p.id, label: p.name }));
   const teamOpts: ComboOption[] = teams.map((t) => ({ value: t.id, label: t.name }));
 
   return (
     <form action={action} className="grid gap-5">
+      {editing ? <input type="hidden" name="id" value={category.id} /> : null}
       {state?.error ? (
         <p className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
           {state.error}
@@ -49,7 +70,7 @@ export function CategoryForm({ parents, teams }: { parents: ParentOption[]; team
       ) : null}
 
       <Field label="Name" error={fe.name}>
-        <Input name="name" placeholder="e.g. Network, Laptop, Access" required />
+        <Input name="name" defaultValue={category?.name} placeholder="e.g. Network, Laptop, Access" required />
       </Field>
 
       <div className="grid gap-5 sm:grid-cols-2">
@@ -58,11 +79,11 @@ export function CategoryForm({ parents, teams }: { parents: ParentOption[]; team
           error={fe.parentId}
           hint="Nest under an existing category, or leave as a top-level category."
         >
-          <ComboField name="parentId" options={parentOpts} includeNone noneLabel="— Top level —" />
+          <ComboField name="parentId" options={parentOpts} defaultValue={category?.parentId ?? undefined} includeNone noneLabel="— Top level —" />
         </Field>
 
         <Field label="Color" error={fe.color} hint="Hex color for the category dot.">
-          <Input name="color" defaultValue="#64748b" placeholder="#64748b" />
+          <Input name="color" defaultValue={category?.color ?? "#64748b"} placeholder="#64748b" />
         </Field>
       </div>
 
@@ -71,12 +92,13 @@ export function CategoryForm({ parents, teams }: { parents: ParentOption[]; team
         error={fe.groupId}
         hint="Optional. Recorded so Vio knows who owns this category — it does not auto-route tickets."
       >
-        <ComboField name="groupId" options={teamOpts} includeNone noneLabel="— No team —" />
+        <ComboField name="groupId" options={teamOpts} defaultValue={category?.groupId ?? undefined} includeNone noneLabel="— No team —" />
       </Field>
 
       <Field label="Description" error={fe.description}>
         <Textarea
           name="description"
+          defaultValue={category?.description ?? ""}
           placeholder="Optional context describing when to use this category…"
           className="min-h-24"
         />
@@ -84,8 +106,8 @@ export function CategoryForm({ parents, teams }: { parents: ParentOption[]; team
 
       <div className="flex items-center justify-end gap-2 border-t pt-4">
         <Button type="submit" disabled={pending}>
-          {pending ? <Loader2 className="size-4 animate-spin" /> : <Plus className="size-4" />}
-          Create category
+          {pending ? <Loader2 className="size-4 animate-spin" /> : editing ? <Save className="size-4" /> : <Plus className="size-4" />}
+          {editing ? "Save changes" : "Create category"}
         </Button>
       </div>
     </form>

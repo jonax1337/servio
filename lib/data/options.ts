@@ -11,6 +11,7 @@ export const getFormOptions = cache(async () => {
     }),
     db.group.findMany({ select: { id: true, name: true }, orderBy: { name: "asc" } }),
     db.category.findMany({
+      where: { archived: false },
       select: { id: true, name: true, parentId: true },
       orderBy: { name: "asc" },
     }),

@@ -5,40 +5,67 @@ import { PageHeader, PageBody } from "@/components/page-header";
 import { EmptyState } from "@/components/empty-state";
 import { Card, CardContent } from "@/components/ui/card";
 import { CreateCategoryDialog } from "@/components/categories/create-category-dialog";
+import { CategoryRowActions } from "@/components/categories/category-row-actions";
+import type { CategoryData } from "@/components/categories/category-form";
+import { cn } from "@/lib/utils";
 
 export const metadata: Metadata = { title: "Categories" };
 export const dynamic = "force-dynamic";
 
+type Team = { id: string; name: string };
+
 type Node = {
-  id: string;
-  name: string;
-  description: string | null;
-  color: string;
-  parentId: string | null;
+  data: CategoryData;
   team: string | null;
+  archived: boolean;
   ticketCount: number;
+  deletable: boolean;
   children: Node[];
 };
 
-function Tree({ nodes, depth = 0 }: { nodes: Node[]; depth?: number }) {
+function Tree({
+  nodes,
+  parents,
+  teams,
+  depth = 0,
+}: {
+  nodes: Node[];
+  parents: { id: string; name: string }[];
+  teams: Team[];
+  depth?: number;
+}) {
   return (
     <ul className={depth > 0 ? "ml-3 border-l pl-3" : "grid gap-0.5"}>
       {nodes.map((n) => (
-        <li key={n.id} className="py-0.5">
-          <div className="flex items-center gap-2.5 rounded-md px-2 py-1.5">
-            <span className="size-2.5 shrink-0 rounded-full" style={{ background: n.color }} />
-            <span className="font-medium">{n.name}</span>
-            {n.description ? (
-              <span className="truncate text-xs text-muted-foreground">{n.description}</span>
+        <li key={n.data.id} className="py-0.5">
+          <div className={cn("group flex items-center gap-2.5 rounded-md px-2 py-1.5 hover:bg-muted/40", n.archived && "opacity-60")}>
+            <span className="size-2.5 shrink-0 rounded-full" style={{ background: n.data.color }} />
+            <span className="font-medium">{n.data.name}</span>
+            {n.data.description ? (
+              <span className="truncate text-xs text-muted-foreground">{n.data.description}</span>
             ) : null}
             {n.team ? (
               <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">{n.team}</span>
             ) : null}
-            {n.ticketCount > 0 ? (
-              <span className="ml-auto text-xs text-muted-foreground">{n.ticketCount} tickets</span>
+            {n.archived ? (
+              <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">Archived</span>
             ) : null}
+            <div className="ml-auto flex items-center gap-2">
+              {n.ticketCount > 0 ? (
+                <span className="text-xs text-muted-foreground">{n.ticketCount} tickets</span>
+              ) : null}
+              <div className="opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+                <CategoryRowActions
+                  category={n.data}
+                  parents={parents}
+                  teams={teams}
+                  archived={n.archived}
+                  deletable={n.deletable}
+                />
+              </div>
+            </div>
           </div>
-          {n.children.length > 0 ? <Tree nodes={n.children} depth={depth + 1} /> : null}
+          {n.children.length > 0 ? <Tree nodes={n.children} parents={parents} teams={teams} depth={depth + 1} /> : null}
         </li>
       ))}
     </ul>
@@ -49,20 +76,36 @@ export default async function CategoriesPage() {
   const [categories, teams] = await Promise.all([
     db.category.findMany({
       orderBy: { name: "asc" },
-      include: { _count: { select: { tickets: true } }, group: { select: { name: true } } },
+      include: {
+        group: { select: { name: true } },
+        _count: {
+          select: {
+            children: true, tickets: true, problems: true, changes: true, services: true, articles: true, catalogItems: true,
+          },
+        },
+      },
     }),
     db.group.findMany({ select: { id: true, name: true }, orderBy: { name: "asc" } }),
   ]);
-  const parents = categories.map((c) => ({ id: c.id, name: c.name }));
 
-  const nodes: Node[] = categories.map((c) => ({
-    id: c.id, name: c.name, description: c.description, color: c.color,
-    parentId: c.parentId, team: c.group?.name ?? null, ticketCount: c._count.tickets, children: [],
-  }));
-  const byId = new Map(nodes.map((n) => [n.id, n]));
+  // Only non-archived categories are offered as parents for new/edited ones.
+  const parents = categories.filter((c) => !c.archived).map((c) => ({ id: c.id, name: c.name }));
+
+  const nodes: Node[] = categories.map((c) => {
+    const refs = c._count.tickets + c._count.problems + c._count.changes + c._count.services + c._count.articles + c._count.catalogItems;
+    return {
+      data: { id: c.id, name: c.name, description: c.description, color: c.color, parentId: c.parentId, groupId: c.groupId },
+      team: c.group?.name ?? null,
+      archived: c.archived,
+      ticketCount: c._count.tickets,
+      deletable: refs === 0 && c._count.children === 0,
+      children: [],
+    };
+  });
+  const byId = new Map(nodes.map((n) => [n.data.id, n]));
   const roots: Node[] = [];
   for (const n of nodes) {
-    if (n.parentId && byId.get(n.parentId)) byId.get(n.parentId)!.children.push(n);
+    if (n.data.parentId && byId.get(n.data.parentId)) byId.get(n.data.parentId)!.children.push(n);
     else roots.push(n);
   }
 
@@ -71,7 +114,7 @@ export default async function CategoriesPage() {
       <PageHeader
         icon={FolderTree}
         title="Categories"
-        description="Your classification taxonomy — nest categories to organise tickets, problems, changes and assets."
+        description="Your classification taxonomy — nest categories, assign a handling team, and archive ones you no longer use."
       >
         <CreateCategoryDialog parents={parents} teams={teams} />
       </PageHeader>
@@ -88,7 +131,7 @@ export default async function CategoriesPage() {
         ) : (
           <Card>
             <CardContent className="pt-6">
-              <Tree nodes={roots} />
+              <Tree nodes={roots} parents={parents} teams={teams} />
             </CardContent>
           </Card>
         )}

@@ -123,3 +123,51 @@ export async function updateCategory(
   revalidatePath("/categories");
   redirect("/categories");
 }
+
+/** Toggle a category's archived flag (soft-hide from pickers/portal, keep history). */
+export async function setCategoryArchived(formData: FormData): Promise<void> {
+  const me = await getSessionUser();
+  if (!me) return;
+  const id = String(formData.get("id") ?? "");
+  const archived = String(formData.get("archived") ?? "") === "true";
+  if (!id) return;
+
+  await db.category.update({ where: { id }, data: { archived } });
+  await writeAudit({
+    userId: me.id,
+    action: "UPDATE",
+    entity: "Category",
+    entityId: id,
+    summary: archived ? "Archived category" : "Restored category",
+  });
+  revalidatePath("/categories");
+}
+
+/**
+ * Hard-delete a category. Blocked while it still has subcategories or is
+ * referenced anywhere (tickets, services, catalog items, …) — archive instead.
+ */
+export async function deleteCategory(formData: FormData): Promise<{ error?: string } | void> {
+  const me = await getSessionUser();
+  if (!me) return { error: "Not authorised" };
+  const id = String(formData.get("id") ?? "");
+  if (!id) return;
+
+  const cat = await db.category.findUnique({
+    where: { id },
+    select: {
+      name: true,
+      _count: { select: { children: true, tickets: true, problems: true, changes: true, services: true, articles: true, catalogItems: true } },
+    },
+  });
+  if (!cat) return; // already gone (idempotent)
+
+  const c = cat._count;
+  if (c.children > 0) return { error: "Move or remove its subcategories first." };
+  const refs = c.tickets + c.problems + c.changes + c.services + c.articles + c.catalogItems;
+  if (refs > 0) return { error: `In use by ${refs} record${refs === 1 ? "" : "s"} — archive it instead of deleting.` };
+
+  await db.category.delete({ where: { id } });
+  await writeAudit({ userId: me.id, action: "DELETE", entity: "Category", entityId: id, summary: `Deleted category "${cat.name}"` });
+  revalidatePath("/categories");
+}

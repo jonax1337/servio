@@ -20,7 +20,7 @@ export default async function CatalogAdminPage() {
   await requireRole("MANAGER");
   const [items, categories, services, agents] = await Promise.all([
     db.catalogItem.findMany({ orderBy: [{ order: "asc" }, { name: "asc" }], include: { category: true, _count: { select: { tickets: true } } } }),
-    db.category.findMany({ select: { id: true, name: true }, orderBy: { name: "asc" } }),
+    db.category.findMany({ where: { archived: false }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
     db.service.findMany({ select: { id: true, name: true }, orderBy: { name: "asc" } }),
     db.user.findMany({ where: { role: { in: ["ADMIN", "MANAGER", "AGENT"] }, isActive: true }, select: { id: true, name: true, email: true }, orderBy: { name: "asc" } }),
   ]);
