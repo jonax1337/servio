@@ -49,7 +49,7 @@ export type Widget = {
 /** The computed payload the renderer switches on (data resolved server-side). */
 export type Computed =
   | { kind: "stat"; value: number; href?: string; tone?: Tone }
-  | { kind: "breakdown"; rows: { label: string; value: number; href?: string }[]; chartType?: "bar" | "donut" }
+  | { kind: "breakdown"; rows: { label: string; value: number; href?: string; color?: string }[]; chartType?: "bar" | "donut" }
   | { kind: "aging"; rows: { label: string; value: number }[] }
   | { kind: "volume"; data: { label: string; created: number; resolved: number }[] }
   | { kind: "sla"; pct: number | null; mttrHours: number | null; resolved: number; href?: string }

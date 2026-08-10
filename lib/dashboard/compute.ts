@@ -92,6 +92,17 @@ const GROUP_COL: Record<BreakdownField, string> = {
   urgency: "urgency",
 };
 
+/** Map the app's badge `tone`s to a solid chart colour so charts match the UI. */
+const TONE_COLOR: Record<string, string> = {
+  neutral: "var(--muted-foreground)",
+  info: "#0ea5e9", // sky-500
+  success: "#10b981", // emerald-500
+  warning: "#f59e0b", // amber-500
+  danger: "#ef4444", // red-500
+  purple: "#a855f7", // purple-500
+  indigo: "#6366f1", // indigo-500
+};
+
 async function computeBreakdown(widget: Widget, where: Prisma.TicketWhereInput): Promise<Computed> {
   const field = widget.options?.groupBy ?? "priority";
   const col = GROUP_COL[field];
@@ -100,14 +111,20 @@ async function computeBreakdown(widget: Widget, where: Prisma.TicketWhereInput):
     Array<Record<string, unknown> & { _count: { _all: number } }>
   >)({ by: [col], where, _count: { _all: true } }));
 
-  // Resolve human labels for id-based groupings.
+  // Enum groupings share the app's *_META (labels + tones, so charts match the badges);
+  // id-based groupings (assignee/group/category/service) need a name lookup instead.
+  const metaRec: Record<string, { label: string; tone: string }> | null =
+    field === "priority" ? PRIORITY_META
+    : field === "status" ? TICKET_STATUS_META
+    : field === "type" ? TICKET_TYPE_META
+    : field === "impact" || field === "urgency" ? LEVEL_META
+    : field === "source" ? SOURCE_META
+    : null;
+
   let labelFor: (key: string | null) => string;
-  if (field === "priority") labelFor = (k) => (k ? PRIORITY_META[k]?.label ?? k : "—");
-  else if (field === "status") labelFor = (k) => (k ? TICKET_STATUS_META[k]?.label ?? k : "—");
-  else if (field === "type") labelFor = (k) => (k ? TICKET_TYPE_META[k]?.label ?? k : "—");
-  else if (field === "impact" || field === "urgency") labelFor = (k) => (k ? LEVEL_META[k]?.label ?? k : "—");
-  else if (field === "source") labelFor = (k) => (k ? SOURCE_META[k]?.label ?? k : "—");
-  else {
+  if (metaRec) {
+    labelFor = (k) => (k ? metaRec[k]?.label ?? k : "—");
+  } else {
     const ids = grouped.map((g) => g[col]).filter((v): v is string => typeof v === "string");
     const map = new Map<string, string>();
     if (field === "assignee") {
@@ -125,6 +142,10 @@ async function computeBreakdown(widget: Widget, where: Prisma.TicketWhereInput):
     }
     labelFor = (k) => (k ? map.get(k) ?? k : field === "assignee" ? "Unassigned" : "None");
   }
+  // Semantic colour from the value's tone (enum groupings only); id groupings fall
+  // back to the renderer's palette.
+  const colorFor = (k: string | null): string | undefined =>
+    metaRec && k ? TONE_COLOR[metaRec[k]?.tone ?? "neutral"] ?? TONE_COLOR.neutral : undefined;
 
   const rows = grouped
     .map((g) => {
@@ -133,6 +154,7 @@ async function computeBreakdown(widget: Widget, where: Prisma.TicketWhereInput):
         label: labelFor(raw),
         value: g._count._all,
         href: ticketsHref(widget.filters, { field, value: raw }),
+        color: colorFor(raw),
       };
     })
     .sort((a, b) => b.value - a.value)
