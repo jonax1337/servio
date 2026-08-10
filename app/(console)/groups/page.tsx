@@ -8,6 +8,7 @@ import { getParam, getPage, PAGE_SIZE, type SearchParams } from "@/lib/query";
 import { PageHeader, PageBody } from "@/components/page-header";
 import { CreateGroupDialog } from "@/components/groups/create-group-dialog";
 import { ListToolbar, type FilterDef } from "@/components/list-toolbar";
+import { SortableHead } from "@/components/sort-header";
 import { PaginationBar } from "@/components/pagination-bar";
 import { StatusBadge } from "@/components/status-badge";
 import { EmptyState } from "@/components/empty-state";
@@ -38,12 +39,22 @@ export default async function GroupsPage({
   if (q) where.name = { contains: q };
   if (type && type !== "all") where.type = type;
 
+  const sort = getParam(sp, "sort") ?? "name";
+  const dir: "asc" | "desc" = getParam(sp, "dir") === "desc" ? "desc" : "asc";
+  const ORDER: Record<string, Prisma.GroupOrderByWithRelationInput> = {
+    name: { name: dir },
+    manager: { manager: { name: dir } },
+    email: { email: dir },
+    members: { members: { _count: dir } },
+  };
+  const orderBy = ORDER[sort] ?? ORDER.name;
+
   const [total, groups, options] = await Promise.all([
     db.group.count({ where }),
     db.group.findMany({
       where,
       include: { manager: true, _count: { select: { members: true } } },
-      orderBy: [{ name: "asc" }],
+      orderBy: [orderBy],
       skip: (page - 1) * PAGE_SIZE,
       take: PAGE_SIZE,
     }),
@@ -84,11 +95,11 @@ export default async function GroupsPage({
             <Table>
               <TableHeader>
                 <TableRow className="hover:bg-transparent">
-                  <TableHead>Name</TableHead>
+                  <SortableHead k="name" label="Name" sort={sort} dir={dir} />
                   <TableHead>Type</TableHead>
-                  <TableHead className="hidden md:table-cell">Manager</TableHead>
-                  <TableHead className="hidden lg:table-cell">Email</TableHead>
-                  <TableHead className="text-right">Members</TableHead>
+                  <SortableHead k="manager" label="Manager" sort={sort} dir={dir} className="hidden md:table-cell" />
+                  <SortableHead k="email" label="Email" sort={sort} dir={dir} className="hidden lg:table-cell" />
+                  <SortableHead k="members" label="Members" sort={sort} dir={dir} numeric className="text-right" />
                 </TableRow>
               </TableHeader>
               <TableBody>

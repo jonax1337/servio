@@ -6,10 +6,12 @@ import { db } from "@/lib/db";
 import { getParam, getPage, PAGE_SIZE, type SearchParams } from "@/lib/query";
 import { PageHeader, PageBody } from "@/components/page-header";
 import { ListToolbar, type FilterDef } from "@/components/list-toolbar";
+import { SortableHead } from "@/components/sort-header";
 import { PaginationBar } from "@/components/pagination-bar";
 import { StatusBadge, VipBadge } from "@/components/status-badge";
 import { EmptyState } from "@/components/empty-state";
 import { UserAvatar } from "@/components/user-avatar";
+import { AUTOMATION_EMAIL } from "@/lib/system-user";
 import {
   Table,
   TableBody,
@@ -35,17 +37,29 @@ export default async function PeoplePage({
   const role = getParam(sp, "role");
   const active = getParam(sp, "active");
 
-  const where: Prisma.UserWhereInput = {};
+  const where: Prisma.UserWhereInput = { email: { not: AUTOMATION_EMAIL } };
   if (q) where.OR = [{ name: { contains: q } }, { email: { contains: q } }];
   if (role && role !== "all") where.role = role;
   if (active === "true") where.isActive = true;
   else if (active === "false") where.isActive = false;
 
+  const sort = getParam(sp, "sort") ?? "name";
+  const dir: "asc" | "desc" = getParam(sp, "dir") === "desc" ? "desc" : "asc";
+  const ORDER: Record<string, Prisma.UserOrderByWithRelationInput> = {
+    name: { name: dir },
+    email: { email: dir },
+    department: { department: dir },
+    jobTitle: { jobTitle: dir },
+    isActive: { isActive: dir },
+    lastLoginAt: { lastLoginAt: dir },
+  };
+  const orderBy = ORDER[sort] ?? ORDER.name;
+
   const [total, users] = await Promise.all([
     db.user.count({ where }),
     db.user.findMany({
       where,
-      orderBy: [{ name: "asc" }],
+      orderBy: [orderBy],
       skip: (page - 1) * PAGE_SIZE,
       take: PAGE_SIZE,
     }),
@@ -89,15 +103,13 @@ export default async function PeoplePage({
             <Table>
               <TableHeader>
                 <TableRow className="hover:bg-transparent">
-                  <TableHead>Name</TableHead>
-                  <TableHead className="hidden lg:table-cell">Email</TableHead>
+                  <SortableHead k="name" label="Name" sort={sort} dir={dir} />
+                  <SortableHead k="email" label="Email" sort={sort} dir={dir} className="hidden lg:table-cell" />
                   <TableHead>Role</TableHead>
-                  <TableHead className="hidden md:table-cell">Department</TableHead>
-                  <TableHead className="hidden xl:table-cell">Job title</TableHead>
-                  <TableHead>Active</TableHead>
-                  <TableHead className="hidden xl:table-cell text-right">
-                    Last login
-                  </TableHead>
+                  <SortableHead k="department" label="Department" sort={sort} dir={dir} className="hidden md:table-cell" />
+                  <SortableHead k="jobTitle" label="Job title" sort={sort} dir={dir} className="hidden xl:table-cell" />
+                  <SortableHead k="isActive" label="Active" sort={sort} dir={dir} />
+                  <SortableHead k="lastLoginAt" label="Last login" sort={sort} dir={dir} numeric className="hidden xl:table-cell text-right" />
                 </TableRow>
               </TableHeader>
               <TableBody>

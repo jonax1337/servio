@@ -7,6 +7,7 @@ import { getParam, getPage, PAGE_SIZE, type SearchParams } from "@/lib/query";
 import { PageHeader, PageBody } from "@/components/page-header";
 import { LinkButton } from "@/components/link-button";
 import { ListToolbar, type FilterDef } from "@/components/list-toolbar";
+import { SortableHead } from "@/components/sort-header";
 import { PaginationBar } from "@/components/pagination-bar";
 import { StatusBadge } from "@/components/status-badge";
 import { EmptyState } from "@/components/empty-state";
@@ -49,12 +50,24 @@ export default async function AssetsPage({
   if (type && type !== "all") where.type = type;
   if (status && status !== "all") where.status = status;
 
+  const sort = getParam(sp, "sort") ?? "updatedAt";
+  const dir: "asc" | "desc" = getParam(sp, "dir") === "asc" ? "asc" : "desc";
+  const ORDER: Record<string, Prisma.AssetOrderByWithRelationInput> = {
+    name: { name: dir },
+    status: { status: dir },
+    owner: { owner: { name: dir } },
+    location: { location: dir },
+    ipAddress: { ipAddress: dir },
+    updatedAt: { updatedAt: dir },
+  };
+  const orderBy = ORDER[sort] ?? ORDER.updatedAt;
+
   const [total, assets] = await Promise.all([
     db.asset.count({ where }),
     db.asset.findMany({
       where,
       include: { owner: true },
-      orderBy: [{ updatedAt: "desc" }],
+      orderBy: [orderBy],
       skip: (page - 1) * PAGE_SIZE,
       take: PAGE_SIZE,
     }),
@@ -109,12 +122,12 @@ export default async function AssetsPage({
             <Table>
               <TableHeader>
                 <TableRow className="hover:bg-transparent">
-                  <TableHead>Name</TableHead>
+                  <SortableHead k="name" label="Name" sort={sort} dir={dir} />
                   <TableHead>Type</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead className="hidden md:table-cell">Owner</TableHead>
-                  <TableHead className="hidden lg:table-cell">Location</TableHead>
-                  <TableHead className="hidden xl:table-cell">IP address</TableHead>
+                  <SortableHead k="status" label="Status" sort={sort} dir={dir} />
+                  <SortableHead k="owner" label="Owner" sort={sort} dir={dir} className="hidden md:table-cell" />
+                  <SortableHead k="location" label="Location" sort={sort} dir={dir} className="hidden lg:table-cell" />
+                  <SortableHead k="ipAddress" label="IP address" sort={sort} dir={dir} className="hidden xl:table-cell" />
                 </TableRow>
               </TableHeader>
               <TableBody>

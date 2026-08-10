@@ -17,7 +17,7 @@ Console modules follow one consistent shape. When adding a feature, mirror this 
 
 | Concern | Location | Notes |
 | --- | --- | --- |
-| List page | `app/(console)/<mod>/page.tsx` | Server Component; queries `lib/db`, renders table/cards. `export const dynamic = "force-dynamic"`. |
+| List page | `app/(console)/<mod>/page.tsx` | Server Component; queries `lib/db`, renders table/cards. `export const dynamic = "force-dynamic"`. Filters + pagination are URL-driven; tables sort via `<SortableHead>` (`?sort=&dir=`, mapped to a Prisma `orderBy`). |
 | Detail page | `app/(console)/<mod>/[id]/page.tsx` | Loads one record + related data; renders a `*-properties` panel and action components. |
 | Create page | `app/(console)/<mod>/new/page.tsx` | Renders the `*-form` component. Some modules create via a dialog instead (e.g. Locations, Categories). |
 | Server actions | `lib/actions/<mod>.ts` | All mutations. `"use server"`, Zod-validated, role-checked via `lib/session`, then `revalidatePath`. |
@@ -79,6 +79,8 @@ The core incident/request module and the richest one in the codebase.
 Actions include `createTicket`, `updateTicketField` (incl. switching `type` — the ref prefix stays fixed), `updateTicketDetails`, `addTicketComment`, `escalateTicket`, `toggleMajorIncident`, `toggleWatch`, `addParticipant`, `linkTicket`/`unlinkTicket`, `mergeTicket`, cross-entity linking (`setTicketProblem`, `setTicketChange`, `linkAsset`/`unlinkAsset`, `unlinkRelation`), `setTicketResolution`, `setTicketPending`, `setTicketDueDate`, `forwardTicketExternal`, and work-log entries (`addWorkLog`, `deleteWorkLog`). Key components: `ticket-form`, `ticket-properties` (staged edits incl. type + due date), `ticket-actions`, `comment-composer`, `work-log`, `resolution-dialog`, `pending-reason-dialog`, `due-date-picker`, `sla-badge`, `form-answers`, plus the reusable `link-picker` (attach problems/changes/assets) and `saved-views-bar`.
 
 **Saved views:** `/tickets` carries a searchable list of saved filter sets (`SavedView`) — apply/save/delete named filters, personal or (MANAGER+) shared with a team. Actions in `lib/actions/saved-views.ts`.
+
+**Bulk actions & sorting:** the tickets table (`components/tickets/tickets-table.tsx`) has row checkboxes + a bulk bar to set assignee/team/priority/status on many tickets at once (`bulkUpdateTickets` re-runs `updateTicketField` per ticket, so transitions/SLA/automations stay correct). All list tables (tickets, problems, changes, assets, people, groups) have sortable columns via `components/sort-header.tsx`.
 
 ### Problems
 

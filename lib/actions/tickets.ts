@@ -199,6 +199,33 @@ export async function updateTicketField(formData: FormData) {
   revalidatePath("/tickets");
 }
 
+/**
+ * Apply one field change to many tickets at once (bulk action). Reuses
+ * updateTicketField per ticket so transitions, the SLA clock, automations and
+ * notifications all still run correctly; invalid status transitions are skipped.
+ */
+export async function bulkUpdateTickets(formData: FormData) {
+  const me = await requireAgent();
+  if (!me) return;
+  const ids = String(formData.get("ids") ?? "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .slice(0, 200);
+  const field = String(formData.get("field") ?? "");
+  const value = String(formData.get("value") ?? "");
+  if (!ids.length || !["status", "priority", "assigneeId", "groupId"].includes(field)) return;
+
+  for (const id of ids) {
+    const fd = new FormData();
+    fd.set("id", id);
+    fd.set("field", field);
+    fd.set("value", value);
+    await updateTicketField(fd);
+  }
+  revalidatePath("/tickets");
+}
+
 export async function addTicketComment(formData: FormData) {
   const me = await requireAgent();
   if (!me) return;

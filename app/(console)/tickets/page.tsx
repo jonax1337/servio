@@ -1,12 +1,12 @@
-import Link from "next/link";
 import { Ticket as TicketIcon, Plus } from "lucide-react";
 import type { Metadata } from "next";
 import type { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { getFormOptions } from "@/lib/data/options";
-import { getSessionUser, hasRole, type Role } from "@/lib/session";
+import { getSessionUser, hasRole, isAgent, type Role } from "@/lib/session";
 import { getVisibleSavedViews } from "@/lib/actions/saved-views";
 import { SavedViewsBar } from "@/components/saved-views-bar";
+import { TicketsTable } from "@/components/tickets/tickets-table";
 import { buildTicketWhere } from "@/lib/dashboard/compute";
 import type { TicketFilters } from "@/lib/dashboard/types";
 import { getParam, getPage, PAGE_SIZE, type SearchParams } from "@/lib/query";
@@ -14,17 +14,7 @@ import { PageHeader, PageBody } from "@/components/page-header";
 import { LinkButton } from "@/components/link-button";
 import { ListToolbar, type FilterDef } from "@/components/list-toolbar";
 import { PaginationBar } from "@/components/pagination-bar";
-import { StatusBadge, VipBadge } from "@/components/status-badge";
 import { EmptyState } from "@/components/empty-state";
-import { UserAvatar } from "@/components/user-avatar";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import {
   TICKET_STATUS_META,
   PRIORITY_META,
@@ -32,9 +22,7 @@ import {
   TICKET_STATUSES,
   PRIORITIES,
   TICKET_TYPES,
-  ticketRef,
 } from "@/lib/constants";
-import { formatDistanceToNow } from "date-fns";
 
 export const metadata: Metadata = { title: "Tickets" };
 export const dynamic = "force-dynamic";
@@ -74,16 +62,45 @@ export default async function TicketsPage({
   const where: Prisma.TicketWhereInput = buildTicketWhere(filterParams);
   if (q) where.title = { contains: q };
 
+  // Sorting (URL-driven, so it survives pagination + filters).
+  const sort = getParam(sp, "sort") ?? "updatedAt";
+  const dir: "asc" | "desc" = getParam(sp, "dir") === "asc" ? "asc" : "desc";
+  const ORDER: Record<string, Prisma.TicketOrderByWithRelationInput> = {
+    id: { id: dir },
+    title: { title: dir },
+    status: { status: dir },
+    priority: { priority: dir },
+    updatedAt: { updatedAt: dir },
+    createdAt: { createdAt: dir },
+    requester: { requester: { name: dir } },
+    assignee: { assignee: { name: dir } },
+  };
+  const orderBy = ORDER[sort] ?? ORDER.updatedAt;
+
   const [total, tickets] = await Promise.all([
     db.ticket.count({ where }),
     db.ticket.findMany({
       where,
       include: { assignee: true, requester: true, group: true, category: true },
-      orderBy: [{ updatedAt: "desc" }],
+      orderBy: [orderBy],
       skip: (page - 1) * PAGE_SIZE,
       take: PAGE_SIZE,
     }),
   ]);
+
+  const rows = tickets.map((t) => ({
+    id: t.id,
+    prefix: t.prefix,
+    title: t.title,
+    category: t.category?.name ?? null,
+    requesterName: t.requester.name ?? t.requester.email,
+    requesterVip: t.requester.isVip,
+    priority: t.priority,
+    status: t.status,
+    assignee: t.assignee ? { name: t.assignee.name, email: t.assignee.email } : null,
+    createdAt: t.createdAt,
+    updatedAt: t.updatedAt,
+  }));
 
   const filters: FilterDef[] = [
     {
@@ -144,71 +161,14 @@ export default async function TicketsPage({
             </LinkButton>
           </EmptyState>
         ) : (
-          <div className="overflow-hidden rounded-xl border bg-card">
-            <Table>
-              <TableHeader>
-                <TableRow className="hover:bg-transparent">
-                  <TableHead className="w-[92px]">Ref</TableHead>
-                  <TableHead>Subject</TableHead>
-                  <TableHead className="hidden lg:table-cell">Requester</TableHead>
-                  <TableHead>Priority</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead className="hidden md:table-cell">Assignee</TableHead>
-                  <TableHead className="hidden xl:table-cell text-right">Updated</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {tickets.map((t) => (
-                  <TableRow key={t.id} className="group">
-                    <TableCell className="font-mono text-xs text-muted-foreground">
-                      {ticketRef(t.id, t.prefix)}
-                    </TableCell>
-                    <TableCell className="max-w-[420px]">
-                      <Link href={`/tickets/${t.id}`} className="block">
-                        <span className="line-clamp-1 font-medium group-hover:text-primary">
-                          {t.title}
-                        </span>
-                        {t.category ? (
-                          <span className="text-xs text-muted-foreground">{t.category.name}</span>
-                        ) : null}
-                      </Link>
-                    </TableCell>
-                    <TableCell className="hidden lg:table-cell text-sm text-muted-foreground">
-                      <span className="inline-flex items-center gap-1.5">
-                        {t.requester.isVip ? <VipBadge label={false} /> : null}
-                        {t.requester.name ?? t.requester.email}
-                      </span>
-                    </TableCell>
-                    <TableCell>
-                      <StatusBadge map={PRIORITY_META} value={t.priority} dot />
-                    </TableCell>
-                    <TableCell>
-                      <StatusBadge map={TICKET_STATUS_META} value={t.status} />
-                    </TableCell>
-                    <TableCell className="hidden md:table-cell">
-                      {t.assignee ? (
-                        <div className="flex items-center gap-2">
-                          <UserAvatar
-                            name={t.assignee.name}
-                            email={t.assignee.email}
-                            size="sm"
-                          />
-                          <span className="text-sm text-muted-foreground">
-                            {t.assignee.name?.split(" ")[0] ?? t.assignee.email}
-                          </span>
-                        </div>
-                      ) : (
-                        <span className="text-xs text-muted-foreground">—</span>
-                      )}
-                    </TableCell>
-                    <TableCell className="hidden xl:table-cell text-right text-xs text-muted-foreground">
-                      {formatDistanceToNow(t.updatedAt, { addSuffix: true })}
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
+          <TicketsTable
+            rows={rows}
+            sort={sort}
+            dir={dir}
+            canBulk={!!me && isAgent(me.role as Role)}
+            agents={opts.agents.map((a) => ({ value: a.id, label: a.name ?? a.email }))}
+            groups={opts.groups.map((g) => ({ value: g.id, label: g.name }))}
+          />
         )}
 
         <PaginationBar
