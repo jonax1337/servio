@@ -6,7 +6,7 @@ import type { AiOperation } from "../types";
 import { ok, err, str } from "../helpers";
 
 /**
- * Categories + Tags. Reference module: every domain module follows this shape —
+ * Categories. Reference module: every domain module follows this shape —
  * export `OPERATIONS: AiOperation[]`, one entry per capability, guarded Prisma
  * writes + writeAudit (the underlying form actions redirect() or use checkbox
  * quirks, so we write directly and mirror their validation).
@@ -89,52 +89,6 @@ export const OPERATIONS: AiOperation[] = [
       await db.category.update({ where: { id: target.id }, data });
       await writeAudit({ userId: ctx.userId, action: "UPDATE", entity: "Category", entityId: target.id, summary: `Updated category "${target.name}" via Vio` });
       return ok(`Updated category "${target.name}"`);
-    },
-  },
-  {
-    id: "tag.create",
-    group: "Tags",
-    kind: "write",
-    minRole: "AGENT",
-    description: "Create a tag (a short label) with an optional hex colour.",
-    input: z.object({
-      name: z.string().min(1).describe("tag name (a leading # is stripped)"),
-      color: z.string().optional(),
-    }),
-    label: (a) => `Create tag “${a.name}”`,
-    run: async (a, ctx) => {
-      const name = str(a.name)?.replace(/^#/, "").slice(0, 40);
-      if (!name) return err("Tag name is required.");
-      const color = str(a.color);
-      try {
-        const row = await db.tag.create({
-          data: { name, color: color && HEX.test(color) ? color : "#64748b" },
-          select: { id: true },
-        });
-        await writeAudit({ userId: ctx.userId, action: "CREATE", entity: "Tag", entityId: row.id, summary: `Created tag "${name}" via Vio` });
-        return ok(`Created tag "${name}"`);
-      } catch (e) {
-        if ((e as { code?: string })?.code === "P2002") return err("A tag with that name already exists.");
-        throw e;
-      }
-    },
-  },
-  {
-    id: "tag.delete",
-    group: "Tags",
-    kind: "write",
-    minRole: "AGENT",
-    description: "Delete a tag by name (also removes it from any tickets it's on).",
-    input: z.object({ name: z.string().describe("tag name to delete") }),
-    label: (a) => `Delete tag “${a.name}”`,
-    run: async (a, ctx) => {
-      const name = str(a.name)?.replace(/^#/, "");
-      if (!name) return err("Tag name is required.");
-      const tag = await db.tag.findFirst({ where: { name }, select: { id: true, name: true } });
-      if (!tag) return err(`Tag not found: ${name}`);
-      await db.tag.delete({ where: { id: tag.id } });
-      await writeAudit({ userId: ctx.userId, action: "DELETE", entity: "Tag", entityId: tag.id, summary: `Deleted tag "${tag.name}" via Vio` });
-      return ok(`Deleted tag "${tag.name}"`);
     },
   },
 ];

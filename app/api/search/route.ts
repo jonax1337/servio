@@ -17,7 +17,7 @@ export async function GET(req: Request) {
   const byId = Number.isFinite(idNum) ? [{ id: idNum }] : [];
 
   const [tickets, problems, changes, assets, people, services] = await Promise.all([
-    db.ticket.findMany({ where: { OR: [{ title: { contains: q } }, ...byId] }, take: 6, orderBy: { updatedAt: "desc" }, select: { id: true, title: true, type: true } }),
+    db.ticket.findMany({ where: { OR: [{ title: { contains: q } }, ...byId] }, take: 6, orderBy: { updatedAt: "desc" }, select: { id: true, title: true, prefix: true } }),
     db.problem.findMany({ where: { OR: [{ title: { contains: q } }, ...byId] }, take: 4, select: { id: true, title: true } }),
     db.change.findMany({ where: { OR: [{ title: { contains: q } }, ...byId] }, take: 4, select: { id: true, title: true } }),
     db.asset.findMany({ where: { OR: [{ name: { contains: q } }, { assetTag: { contains: q } }, { serial: { contains: q } }] }, take: 5, select: { id: true, name: true, assetTag: true } }),
@@ -26,7 +26,7 @@ export async function GET(req: Request) {
   ]);
 
   const results = [
-    ...tickets.map((t) => ({ group: "Tickets", href: `/tickets/${t.id}`, title: t.title, sub: ticketRef(t.id, t.type) })),
+    ...tickets.map((t) => ({ group: "Tickets", href: `/tickets/${t.id}`, title: t.title, sub: ticketRef(t.id, t.prefix) })),
     ...problems.map((p) => ({ group: "Problems", href: `/problems/${p.id}`, title: p.title, sub: problemRef(p.id) })),
     ...changes.map((c) => ({ group: "Changes", href: `/changes/${c.id}`, title: c.title, sub: changeRef(c.id) })),
     ...assets.map((a) => ({ group: "Assets", href: `/assets/${a.id}`, title: a.name, sub: a.assetTag ?? "Asset" })),

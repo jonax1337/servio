@@ -101,7 +101,6 @@ export const OPERATIONS: AiOperation[] = [
           requesterId,
           assigneeId: null,
           groupId: team?.id ?? null,
-          queueId: null,
           categoryId: category?.id ?? null,
           serviceId: null,
           slaId: null,
@@ -117,13 +116,13 @@ export const OPERATIONS: AiOperation[] = [
     kind: "write",
     minRole: "AGENT",
     description:
-      "Change one field on a ticket. Field is one of: status, priority, impact, urgency, type, team, category, assignee, service, queue, sla. " +
+      "Change one field on a ticket. Field is one of: status, priority, impact, urgency, type, team, category, assignee, service, sla. " +
       "Use a human value/name (e.g. status 'RESOLVED', team 'Infrastructure', assignee 'Nora K', service 'Email', sla 'Gold'). Runs the real state-machine, SLA clock and notifications.",
     input: z.object({
       ref: z.string().describe("ticket ref or number, e.g. 'INC-0042' or '42'"),
       field: z.enum([
         "status", "priority", "impact", "urgency", "type",
-        "team", "category", "assignee", "service", "queue", "sla",
+        "team", "category", "assignee", "service", "sla",
       ]),
       value: z.string().describe("target value or name"),
     }),
@@ -161,14 +160,6 @@ export const OPERATIONS: AiOperation[] = [
         if (!s) return err(`Service not found: ${value}`);
         realField = "serviceId";
         realValue = s.id;
-      } else if (field === "queue") {
-        const q = await db.queue.findFirst({
-          where: { name: { contains: value } },
-          select: { id: true },
-        });
-        if (!q) return err(`Queue not found: ${value}`);
-        realField = "queueId";
-        realValue = q.id;
       } else if (field === "sla") {
         const s = await db.sLA.findFirst({
           where: { name: { contains: value } },
@@ -331,55 +322,6 @@ export const OPERATIONS: AiOperation[] = [
       );
       if (res && "error" in res && res.error) return err(res.error);
       return ok(`Logged ${minutes} min on ${ticketRef(ticket.id, ticket.type)}`);
-    },
-  },
-  {
-    id: "ticket.add_tag",
-    group: "Tickets",
-    kind: "write",
-    minRole: "AGENT",
-    description:
-      "Attach a tag to a ticket (creates the tag definition if it doesn't exist yet). Give the ticket ref and the tag name.",
-    input: z.object({
-      ref: z.string().describe("ticket ref or number"),
-      tag: z.string().min(1).describe("tag name (a leading # is stripped)"),
-    }),
-    label: (a) => `Tag ${a.ref} “${a.tag}”`,
-    run: async (a, ctx) => {
-      const ticket = await resolveTicket(a.ref);
-      if (!ticket) return err(`Ticket not found: ${a.ref}`);
-      const name = str(a.tag)?.replace(/^#/, "").slice(0, 40);
-      if (!name) return err("Tag name is required.");
-      let tag = await db.tag.findFirst({ where: { name }, select: { id: true } });
-      if (!tag) tag = await db.tag.create({ data: { name, color: "#64748b" }, select: { id: true } });
-      await db.ticketTag.create({ data: { ticketId: ticket.id, tagId: tag.id } }).catch(() => {});
-      await writeAudit({ userId: ctx.userId, action: "UPDATE", entity: "Ticket", entityId: ticket.id, summary: `Tagged "${name}" via Vio` });
-      return ok(`Tagged ${ticketRef(ticket.id, ticket.type)} with "${name}"`);
-    },
-  },
-  {
-    id: "ticket.remove_tag",
-    group: "Tickets",
-    kind: "write",
-    minRole: "AGENT",
-    description: "Remove a tag from a ticket (the tag definition itself is kept). Give the ticket ref and the tag name.",
-    input: z.object({
-      ref: z.string().describe("ticket ref or number"),
-      tag: z.string().min(1).describe("tag name to remove"),
-    }),
-    label: (a) => `Untag ${a.ref} “${a.tag}”`,
-    run: async (a, ctx) => {
-      const ticket = await resolveTicket(a.ref);
-      if (!ticket) return err(`Ticket not found: ${a.ref}`);
-      const name = str(a.tag)?.replace(/^#/, "");
-      if (!name) return err("Tag name is required.");
-      const tag = await db.tag.findFirst({ where: { name }, select: { id: true } });
-      if (!tag) return err(`Tag not found: ${name}`);
-      await db.ticketTag
-        .delete({ where: { ticketId_tagId: { ticketId: ticket.id, tagId: tag.id } } })
-        .catch(() => {});
-      await writeAudit({ userId: ctx.userId, action: "UPDATE", entity: "Ticket", entityId: ticket.id, summary: `Removed tag "${name}" via Vio` });
-      return ok(`Removed tag "${name}" from ${ticketRef(ticket.id, ticket.type)}`);
     },
   },
   {

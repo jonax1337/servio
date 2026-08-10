@@ -16,19 +16,18 @@ export function CreateMenu() {
   const [open, setOpen] = useState(false);
   return (
     <DropdownMenu open={open} onOpenChange={setOpen}>
+      {/* Split button: one cohesive pill. The halves sit perfectly flush — no gap,
+          no divider. The chevron overlaps by 1px (-ml-px) so sub-pixel rounding
+          can never open a hairline between them. */}
       <div data-slot="button-group" className="inline-flex items-center">
-        <LinkButton
-          href="/tickets/new"
-          size="lg"
-          className="rounded-r-none border-r border-primary-foreground/20"
-        >
+        <LinkButton href="/tickets/new" size="lg" className="rounded-r-none">
           <Plus className="size-4" /> Create
         </LinkButton>
         <DropdownMenuTrigger
           render={
             <Button
               size="icon-lg"
-              className="rounded-l-none"
+              className="-ml-px rounded-l-none"
               aria-label="More create options"
             />
           }

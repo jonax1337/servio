@@ -416,8 +416,24 @@ export const PREFIX = {
   change: "CHG",
 } as const;
 
-export function ticketRef(id: number, type = "INCIDENT") {
-  return `${type === "REQUEST" ? "REQ" : "INC"}-${String(id).padStart(4, "0")}`;
+/** The fixed ref prefix a ticket gets at creation, derived from its initial type. */
+export function prefixForType(type: string | null | undefined) {
+  return type === "REQUEST" ? "REQ" : "INC";
+}
+
+/**
+ * Human ref for a ticket. The second arg is the STORED `ticket.prefix` (preferred —
+ * stable across type changes). For backward-compat it also accepts a raw type
+ * ("INCIDENT"/"REQUEST") and maps it, so legacy callers keep working.
+ */
+export function ticketRef(id: number, prefixOrType = "INC") {
+  const prefix =
+    prefixOrType === "INCIDENT"
+      ? "INC"
+      : prefixOrType === "REQUEST"
+        ? "REQ"
+        : prefixOrType || "INC";
+  return `${prefix}-${String(id).padStart(4, "0")}`;
 }
 export function problemRef(id: number) {
   return `PRB-${String(id).padStart(4, "0")}`;

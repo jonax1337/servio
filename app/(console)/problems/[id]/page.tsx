@@ -2,16 +2,19 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import {
-  ArrowLeft, Ticket as TicketIcon, GitPullRequestArrow, Search, ShieldCheck,
+  ArrowLeft, Ticket as TicketIcon, GitPullRequestArrow, Search, ShieldCheck, X,
 } from "lucide-react";
 import { db } from "@/lib/db";
 import { getFormOptions } from "@/lib/data/options";
+import { getSessionUser, isAgent, type Role } from "@/lib/session";
 import { LinkButton } from "@/components/link-button";
 import { StatusBadge } from "@/components/status-badge";
 import { ProblemProperties } from "@/components/problems/problem-properties";
 import { CommentThread } from "@/components/comments/comment-thread";
 import { EditEntityDialog } from "@/components/edit-entity-dialog";
+import { LinkPicker } from "@/components/link-picker";
 import { addProblemComment, updateProblemDetails } from "@/lib/actions/problems";
+import { setTicketProblem } from "@/lib/actions/tickets";
 import { sanitizeCommentHtml } from "@/lib/markdown";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -41,7 +44,8 @@ export default async function ProblemDetailPage({
   const problemId = Number(id);
   if (!Number.isFinite(problemId)) notFound();
 
-  const [problem, options, audits] = await Promise.all([
+  const me = await getSessionUser();
+  const [problem, options, audits, linkableTickets] = await Promise.all([
     db.problem.findUnique({
       where: { id: problemId },
       include: {
@@ -59,8 +63,17 @@ export default async function ProblemDetailPage({
       include: { user: true },
       orderBy: { createdAt: "asc" },
     }),
+    db.ticket.findMany({
+      where: { problemId: null, status: { notIn: ["CLOSED", "CANCELLED"] } },
+      select: { id: true, title: true, prefix: true },
+      orderBy: { updatedAt: "desc" },
+      take: 100,
+    }),
   ]);
   if (!problem) notFound();
+
+  const isAgentUser = !!me && isAgent(me.role as Role);
+  const ticketOpts = linkableTickets.map((t) => ({ value: String(t.id), label: `${ticketRef(t.id, t.prefix)} · ${t.title}` }));
 
   const comments = problem.comments.map((c) => ({
     id: c.id, author: c.author.name ?? c.author.email, body: c.body, bodyHtml: c.bodyHtml, isInternal: c.isInternal, createdAt: c.createdAt, attachments: [],
@@ -139,26 +152,57 @@ export default async function ProblemDetailPage({
 
           {/* Linked incidents */}
           <div className="mt-8">
-            <h2 className="mb-4 flex items-center gap-2 text-sm font-semibold">
-              <TicketIcon className="size-4 text-muted-foreground" />
-              Linked incidents · {problem.tickets.length}
-            </h2>
+            <div className="mb-4 flex items-center justify-between gap-2">
+              <h2 className="flex items-center gap-2 text-sm font-semibold">
+                <TicketIcon className="size-4 text-muted-foreground" />
+                Linked incidents · {problem.tickets.length}
+              </h2>
+              {isAgentUser ? (
+                <LinkPicker
+                  action={setTicketProblem}
+                  triggerLabel="Link incident"
+                  title="Link an incident"
+                  description="Attach an existing ticket to this problem."
+                  hidden={{ problemId: problem.id }}
+                  valueName="ticketId"
+                  options={ticketOpts}
+                  placeholder="Choose a ticket"
+                  searchPlaceholder="Search tickets…"
+                  emptyText="No unlinked tickets available."
+                />
+              ) : null}
+            </div>
             {problem.tickets.length === 0 ? (
               <p className="text-sm text-muted-foreground">No incidents linked to this problem yet.</p>
             ) : (
               <div className="overflow-hidden rounded-xl border bg-card">
                 {problem.tickets.map((t) => (
-                  <Link
+                  <div
                     key={t.id}
-                    href={`/tickets/${t.id}`}
-                    className="flex items-center gap-3 border-b px-4 py-3 last:border-b-0 hover:bg-accent"
+                    className="group flex items-center gap-3 border-b px-4 py-3 last:border-b-0 hover:bg-accent"
                   >
-                    <span className="font-mono text-xs text-muted-foreground">
-                      {ticketRef(t.id, t.type)}
-                    </span>
-                    <span className="line-clamp-1 flex-1 text-sm font-medium">{t.title}</span>
-                    <StatusBadge map={TICKET_STATUS_META} value={t.status} />
-                  </Link>
+                    <Link href={`/tickets/${t.id}`} className="flex min-w-0 flex-1 items-center gap-3">
+                      <span className="font-mono text-xs text-muted-foreground">
+                        {ticketRef(t.id, t.prefix)}
+                      </span>
+                      <span className="line-clamp-1 flex-1 text-sm font-medium">{t.title}</span>
+                      <StatusBadge map={TICKET_STATUS_META} value={t.status} />
+                    </Link>
+                    {isAgentUser ? (
+                      <form action={setTicketProblem}>
+                        <input type="hidden" name="ticketId" value={t.id} />
+                        <input type="hidden" name="problemId" value="" />
+                        <button
+                          type="submit"
+                          aria-label="Unlink incident"
+                          title="Unlink incident"
+                          className="grid size-6 place-items-center rounded text-muted-foreground opacity-0 transition-opacity hover:text-destructive group-hover:opacity-100"
+                        >
+                          <X className="size-3.5" />
+                        </button>
+                      </form>
+                    ) : null}
+                  </div>
                 ))}
               </div>
             )}

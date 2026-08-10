@@ -25,19 +25,16 @@ export const dynamic = "force-dynamic";
 
 export default async function AutomationsPage() {
   await requireRole("MANAGER");
-  const [rules, opts, tags] = await Promise.all([
+  const [rules, opts] = await Promise.all([
     db.automationRule.findMany({ orderBy: { order: "asc" } }),
     getFormOptions(),
-    db.tag.findMany({ select: { id: true, name: true }, orderBy: { name: "asc" } }),
   ]);
 
   const options: AutomationOptions = {
     agents: opts.agents.map((a) => ({ value: a.id, label: a.name ?? a.email })),
     groups: opts.groups.map((g) => ({ value: g.id, label: g.name })),
-    queues: opts.queues.map((q) => ({ value: q.id, label: q.name })),
     categories: opts.categories.map((c) => ({ value: c.id, label: c.name })),
     services: opts.services.map((s) => ({ value: s.id, label: s.name })),
-    tags: tags.map((t) => ({ value: t.id, label: t.name })),
   };
 
   // value → label lookup for readable summaries

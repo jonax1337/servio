@@ -63,7 +63,7 @@ export default async function ApprovalsPage() {
                     <div className="min-w-0">
                       <div className="flex items-center gap-2">
                         <Link href={`/tickets/${t.id}`} className="font-mono text-xs text-muted-foreground hover:text-foreground">
-                          {ticketRef(t.id, t.type)}
+                          {ticketRef(t.id, t.prefix)}
                         </Link>
                         <span className="font-medium">{t.catalogItem?.name ?? t.title}</span>
                       </div>

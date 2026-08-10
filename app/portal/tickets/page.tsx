@@ -39,7 +39,7 @@ export default async function PortalTickets() {
           <CardContent className="divide-y p-0">
             {tickets.map((t) => (
               <Link key={t.id} href={`/portal/tickets/${t.id}`} className="flex flex-wrap items-center gap-3 p-4 transition-colors hover:bg-muted/50">
-                <span className="w-16 shrink-0 font-mono text-xs text-muted-foreground">{ticketRef(t.id, t.type)}</span>
+                <span className="w-16 shrink-0 font-mono text-xs text-muted-foreground">{ticketRef(t.id, t.prefix)}</span>
                 <span className="min-w-0 flex-1 truncate font-medium">{t.title}</span>
                 <StatusBadge map={TICKET_TYPE_META} value={t.type} dot />
                 <StatusBadge map={PRIORITY_META} value={t.priority} dot />

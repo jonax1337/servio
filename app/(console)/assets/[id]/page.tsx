@@ -1,19 +1,24 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
-import { ArrowLeft, Ticket as TicketIcon, Network, HardDrive } from "lucide-react";
+import { ArrowLeft, Ticket as TicketIcon, Network, HardDrive, X } from "lucide-react";
 import { db } from "@/lib/db";
 import { getFormOptions } from "@/lib/data/options";
+import { getSessionUser, isAgent, type Role } from "@/lib/session";
 import { LinkButton } from "@/components/link-button";
 import { StatusBadge, ToneBadge } from "@/components/status-badge";
 import { AssetProperties } from "@/components/assets/asset-properties";
 import { AssetEditDialog } from "@/components/assets/asset-edit-dialog";
+import { DeleteAssetButton } from "@/components/assets/delete-asset-button";
+import { LinkPicker } from "@/components/link-picker";
+import { addAssetRelation, deleteAssetRelation } from "@/lib/actions/assets";
 import { EntityHistory, HistoryHeading } from "@/components/history/entity-history";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   ASSET_TYPE_META,
   ASSET_STATUS_META,
   ASSET_RELATION_META,
+  ASSET_RELATION_TYPES,
   TICKET_STATUS_META,
   metaFor,
   ticketRef,
@@ -42,7 +47,8 @@ export default async function AssetDetailPage({
 }) {
   const { id } = await params;
 
-  const [asset, options, locations] = await Promise.all([
+  const me = await getSessionUser();
+  const [asset, options, locations, otherAssets] = await Promise.all([
     db.asset.findUnique({
       where: { id },
       include: {
@@ -57,8 +63,18 @@ export default async function AssetDetailPage({
     }),
     getFormOptions(),
     db.location.findMany({ select: { id: true, name: true }, orderBy: { name: "asc" } }),
+    db.asset.findMany({
+      where: { id: { not: id } },
+      select: { id: true, name: true, assetTag: true },
+      orderBy: { name: "asc" },
+      take: 300,
+    }),
   ]);
   if (!asset) notFound();
+
+  const isAgentUser = !!me && isAgent(me.role as Role);
+  const relationTargetOpts = otherAssets.map((a) => ({ value: a.id, label: a.assetTag ? `${a.name} · ${a.assetTag}` : a.name }));
+  const relationTypeOpts = ASSET_RELATION_TYPES.map((t) => ({ value: t, label: ASSET_RELATION_META[t].label, tone: ASSET_RELATION_META[t].tone }));
 
   const editOptions = {
     locations: locations.map((l) => ({ value: l.id, label: l.name })),
@@ -111,6 +127,7 @@ export default async function AssetDetailPage({
           <StatusBadge map={ASSET_TYPE_META} value={asset.type} dot />
           <div className="ml-auto flex items-center gap-2">
             <AssetEditDialog asset={asset} options={editOptions} />
+            {isAgentUser ? <DeleteAssetButton assetId={asset.id} assetName={asset.name} /> : null}
             <StatusBadge map={ASSET_STATUS_META} value={asset.status} />
           </div>
         </div>
@@ -148,11 +165,31 @@ export default async function AssetDetailPage({
 
           {/* Relationships */}
           <div className="mt-8">
-            <h2 className="mb-4 flex items-center gap-2 text-sm font-semibold">
-              <Network className="size-4 text-muted-foreground" />
-              Relationships ·{" "}
-              {asset.relationsFrom.length + asset.relationsTo.length}
-            </h2>
+            <div className="mb-4 flex items-center justify-between gap-2">
+              <h2 className="flex items-center gap-2 text-sm font-semibold">
+                <Network className="size-4 text-muted-foreground" />
+                Relationships ·{" "}
+                {asset.relationsFrom.length + asset.relationsTo.length}
+              </h2>
+              {isAgentUser ? (
+                <LinkPicker
+                  action={addAssetRelation}
+                  triggerLabel="Add relation"
+                  title="Add a relationship"
+                  description="Define how this configuration item relates to another."
+                  hidden={{ sourceId: asset.id }}
+                  valueName="targetId"
+                  options={relationTargetOpts}
+                  placeholder="Choose an asset"
+                  searchPlaceholder="Search assets…"
+                  emptyText="No other assets to relate to."
+                  submitLabel="Add relationship"
+                  typeName="type"
+                  typeOptions={relationTypeOpts}
+                  typeDefault="DEPENDS_ON"
+                />
+              ) : null}
+            </div>
             {asset.relationsFrom.length + asset.relationsTo.length === 0 ? (
               <p className="text-sm text-muted-foreground">
                 No related configuration items.
@@ -160,28 +197,32 @@ export default async function AssetDetailPage({
             ) : (
               <div className="grid gap-2">
                 {asset.relationsFrom.map((r) => (
-                  <Link
+                  <div
                     key={r.id}
-                    href={`/assets/${r.targetId}`}
-                    className="flex items-center gap-2 rounded-lg border bg-card px-3 py-2 text-sm hover:border-primary/40"
+                    className="group flex items-center gap-2 rounded-lg border bg-card px-3 py-2 text-sm hover:border-primary/40"
                   >
-                    <HardDrive className="size-4 text-indigo-500" />
-                    <span className="text-muted-foreground">This</span>
-                    <ToneBadge meta={metaFor(ASSET_RELATION_META, r.type)} />
-                    <span className="font-medium">{r.target.name}</span>
-                  </Link>
+                    <Link href={`/assets/${r.targetId}`} className="flex min-w-0 flex-1 items-center gap-2">
+                      <HardDrive className="size-4 text-indigo-500" />
+                      <span className="text-muted-foreground">This</span>
+                      <ToneBadge meta={metaFor(ASSET_RELATION_META, r.type)} />
+                      <span className="font-medium">{r.target.name}</span>
+                    </Link>
+                    {isAgentUser ? <RelationUnlink relationId={r.id} assetId={asset.id} /> : null}
+                  </div>
                 ))}
                 {asset.relationsTo.map((r) => (
-                  <Link
+                  <div
                     key={r.id}
-                    href={`/assets/${r.sourceId}`}
-                    className="flex items-center gap-2 rounded-lg border bg-card px-3 py-2 text-sm hover:border-primary/40"
+                    className="group flex items-center gap-2 rounded-lg border bg-card px-3 py-2 text-sm hover:border-primary/40"
                   >
-                    <HardDrive className="size-4 text-indigo-500" />
-                    <span className="font-medium">{r.source.name}</span>
-                    <ToneBadge meta={metaFor(ASSET_RELATION_META, r.type)} />
-                    <span className="text-muted-foreground">this</span>
-                  </Link>
+                    <Link href={`/assets/${r.sourceId}`} className="flex min-w-0 flex-1 items-center gap-2">
+                      <HardDrive className="size-4 text-indigo-500" />
+                      <span className="font-medium">{r.source.name}</span>
+                      <ToneBadge meta={metaFor(ASSET_RELATION_META, r.type)} />
+                      <span className="text-muted-foreground">this</span>
+                    </Link>
+                    {isAgentUser ? <RelationUnlink relationId={r.id} assetId={asset.id} /> : null}
+                  </div>
                 ))}
               </div>
             )}
@@ -206,7 +247,7 @@ export default async function AssetDetailPage({
                     className="flex items-center gap-3 rounded-lg border bg-card px-3 py-2 text-sm hover:border-primary/40"
                   >
                     <span className="font-mono text-xs text-muted-foreground">
-                      {ticketRef(ta.ticket.id, ta.ticket.type)}
+                      {ticketRef(ta.ticket.id, ta.ticket.prefix)}
                     </span>
                     <span className="line-clamp-1 flex-1 font-medium">
                       {ta.ticket.title}
@@ -286,5 +327,22 @@ function Meta({ label, value }: { label: string; value: string }) {
       <span className="text-muted-foreground">{label}</span>
       <span className="text-right font-medium tabular-nums">{value}</span>
     </div>
+  );
+}
+
+function RelationUnlink({ relationId, assetId }: { relationId: string; assetId: string }) {
+  return (
+    <form action={deleteAssetRelation} className="flex">
+      <input type="hidden" name="relationId" value={relationId} />
+      <input type="hidden" name="assetId" value={assetId} />
+      <button
+        type="submit"
+        aria-label="Remove relationship"
+        title="Remove relationship"
+        className="grid size-6 shrink-0 place-items-center rounded text-muted-foreground opacity-0 transition-opacity hover:text-destructive group-hover:opacity-100"
+      >
+        <X className="size-3.5" />
+      </button>
+    </form>
   );
 }

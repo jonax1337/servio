@@ -4,11 +4,9 @@ import {
   Ticket,
   AlertTriangle,
   GitPullRequestArrow,
-  Inbox,
   Server,
   Boxes,
   Users,
-  Tags,
   FolderTree,
   RefreshCw,
   BookOpen,
@@ -42,7 +40,6 @@ export const consoleNav: NavGroup[] = [
     label: "Service Operations",
     items: [
       { title: "Tickets", href: "/tickets", icon: Ticket },
-      { title: "Board", href: "/queues", icon: Inbox },
       { title: "Problems", href: "/problems", icon: AlertTriangle },
       { title: "Changes", href: "/changes", icon: GitPullRequestArrow },
       { title: "Approvals", href: "/approvals", icon: CheckSquare },
@@ -64,7 +61,6 @@ export const consoleNav: NavGroup[] = [
     items: [
       { title: "Groups", href: "/groups", icon: Users },
       { title: "People", href: "/people", icon: Boxes },
-      { title: "Tags", href: "/tags", icon: Tags },
     ],
   },
   {

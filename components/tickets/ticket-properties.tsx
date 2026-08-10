@@ -10,20 +10,23 @@ import { Button } from "@/components/ui/button";
 import { Combobox, type ComboOption } from "@/components/combobox";
 import { PendingReasonDialog } from "@/components/tickets/pending-reason-dialog";
 import { ResolutionDialog } from "@/components/tickets/resolution-dialog";
+import { DueDatePicker } from "@/components/tickets/due-date-picker";
 import {
   TICKET_STATUSES,
+  TICKET_TYPES,
   PRIORITIES,
   IMPACT_URGENCY,
   PENDING_REASONS,
   TICKET_STATUS_META,
+  TICKET_TYPE_META,
   PRIORITY_META,
   LEVEL_META,
 } from "@/lib/constants";
 import type { FormOptions } from "@/lib/data/options";
 
 /** Editable fields staged in the local draft (saved together via "Save changes"). */
-type DraftKey = "status" | "priority" | "impact" | "urgency" | "assigneeId" | "groupId" | "categoryId" | "serviceId";
-const DRAFT_KEYS: DraftKey[] = ["status", "priority", "impact", "urgency", "assigneeId", "groupId", "categoryId", "serviceId"];
+type DraftKey = "status" | "type" | "priority" | "impact" | "urgency" | "assigneeId" | "groupId" | "categoryId" | "serviceId";
+const DRAFT_KEYS: DraftKey[] = ["status", "type", "priority", "impact", "urgency", "assigneeId", "groupId", "categoryId", "serviceId"];
 
 /** Extra data captured for status changes that need a note (resolution / pending). */
 type StatusPayload = { code?: string | null; reason?: string; noteHtml: string; isInternal: boolean } | null;
@@ -91,14 +94,15 @@ export function TicketProperties({
   ticket: {
     id: number;
     status: string;
+    type: string;
     priority: string;
     impact: string;
     urgency: string;
     assigneeId: string | null;
     groupId: string | null;
-    queueId: string | null;
     categoryId: string | null;
     serviceId: string | null;
+    dueDate: Date | null;
   };
   options: FormOptions;
   aiEnabled?: boolean;
@@ -112,6 +116,9 @@ export function TicketProperties({
     value: p, label: PRIORITY_META[p].label, tone: PRIORITY_META[p].tone, icon: PRIORITY_META[p].icon,
   }));
   const levelOpts: ComboOption[] = IMPACT_URGENCY.map((l) => ({ value: l, label: LEVEL_META[l].label, tone: LEVEL_META[l].tone }));
+  const typeOpts: ComboOption[] = TICKET_TYPES.map((t) => ({
+    value: t, label: TICKET_TYPE_META[t].label, tone: TICKET_TYPE_META[t].tone, icon: TICKET_TYPE_META[t].icon,
+  }));
   const none = (label: string): ComboOption => ({ value: "none", label });
   const agentOpts: ComboOption[] = [
     none("Unassigned"),
@@ -122,10 +129,12 @@ export function TicketProperties({
   const svcOpts: ComboOption[] = [none("No service"), ...options.services.map((s) => ({ value: s.id, label: s.name }))];
   const groupName = (id: string) => options.groups.find((g) => g.id === id)?.name ?? id;
   const catName = (id: string) => options.categories.find((c) => c.id === id)?.name ?? id;
+  const svcName = (id: string) => options.services.find((s) => s.id === id)?.name ?? id;
 
   // ── Draft state (staged edits) vs the saved ticket baseline ──
   const base: Record<DraftKey, string> = {
     status: ticket.status,
+    type: ticket.type,
     priority: ticket.priority,
     impact: ticket.impact,
     urgency: ticket.urgency,
@@ -144,6 +153,7 @@ export function TicketProperties({
     if (savingRef.current) return;
     setDraft({
       status: ticket.status,
+      type: ticket.type,
       priority: ticket.priority,
       impact: ticket.impact,
       urgency: ticket.urgency,
@@ -153,7 +163,7 @@ export function TicketProperties({
       serviceId: ticket.serviceId ?? "none",
     });
     setStatusPayload(null);
-  }, [ticket.status, ticket.priority, ticket.impact, ticket.urgency, ticket.assigneeId, ticket.groupId, ticket.categoryId, ticket.serviceId]);
+  }, [ticket.status, ticket.type, ticket.priority, ticket.impact, ticket.urgency, ticket.assigneeId, ticket.groupId, ticket.categoryId, ticket.serviceId]);
 
   const dirtyKeys = DRAFT_KEYS.filter((k) => draft[k] !== base[k]);
   const anyDirty = dirtyKeys.length > 0;
@@ -250,6 +260,21 @@ export function TicketProperties({
       if (base.priority === "MEDIUM" || flagged.includes("priority")) return { value: sugg.priority, label: PRIORITY_META[sugg.priority].label };
       return null;
     }
+    if (k === "type") {
+      if (draft.type === sugg.type) return null;
+      if (base.type === "INCIDENT" || flagged.includes("type")) return { value: sugg.type, label: TICKET_TYPE_META[sugg.type].label };
+      return null;
+    }
+    if (k === "impact") {
+      if (draft.impact === sugg.impact) return null;
+      if (base.impact === "MEDIUM" || flagged.includes("impact")) return { value: sugg.impact, label: LEVEL_META[sugg.impact].label };
+      return null;
+    }
+    if (k === "urgency") {
+      if (draft.urgency === sugg.urgency) return null;
+      if (base.urgency === "MEDIUM" || flagged.includes("urgency")) return { value: sugg.urgency, label: LEVEL_META[sugg.urgency].label };
+      return null;
+    }
     if (k === "groupId") {
       if (!sugg.groupId || draft.groupId === sugg.groupId) return null;
       if (base.groupId === "none" || flagged.includes("groupId")) return { value: sugg.groupId, label: groupName(sugg.groupId) };
@@ -258,6 +283,11 @@ export function TicketProperties({
     if (k === "categoryId") {
       if (!sugg.categoryId || draft.categoryId === sugg.categoryId) return null;
       if (base.categoryId === "none" || flagged.includes("categoryId")) return { value: sugg.categoryId, label: catName(sugg.categoryId) };
+      return null;
+    }
+    if (k === "serviceId") {
+      if (!sugg.serviceId || draft.serviceId === sugg.serviceId) return null;
+      if (base.serviceId === "none" || flagged.includes("serviceId")) return { value: sugg.serviceId, label: svcName(sugg.serviceId) };
       return null;
     }
     return null;
@@ -338,8 +368,15 @@ export function TicketProperties({
 
       {/* How it's classified */}
       <div className="grid gap-3 border-t pt-3">
+        {prop("type", "Type", typeOpts)}
         {prop("categoryId", "Category", catOpts, true, "No category")}
         {prop("serviceId", "Service", svcOpts, true, "No service")}
+      </div>
+
+      {/* Due date — lives with the rest of the properties */}
+      <div className="grid gap-1.5 border-t pt-3">
+        <span className="text-xs font-medium text-muted-foreground">Due date</span>
+        <DueDatePicker ticketId={ticket.id} dueDate={ticket.dueDate} />
       </div>
 
       {/* Save bar — only when there are staged changes */}

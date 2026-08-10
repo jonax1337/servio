@@ -155,7 +155,7 @@ model VerificationToken {
 }
 
 // ---------------------------------------------------------------------------
-// Organisation: groups & queues
+// Organisation: groups
 // ---------------------------------------------------------------------------
 
 model Group {
@@ -173,7 +173,6 @@ model Group {
 
   manager  User?         @relation("GroupManager", fields: [managerId], references: [id])
   members  GroupMember[]
-  queues   Queue[]
   tickets  Ticket[]
   problems Problem[]
   changes  Change[]
@@ -189,20 +188,6 @@ model GroupMember {
   user     User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([groupId, userId])
-}
-
-model Queue {
-  id          String  @id @default(cuid())
-  name        String  @unique
-  description String?
-  color       String  @default("#6366f1")
-  groupId     String?
-  isActive    Boolean @default(true)
-  order       Int     @default(0)
-  createdAt   DateTime @default(now())
-
-  group   Group?   @relation(fields: [groupId], references: [id])
-  tickets Ticket[]
 }
 
 // ---------------------------------------------------------------------------
@@ -294,7 +279,8 @@ model Ticket {
   title       String
   description String   @default("") // plaintext twin
   descriptionHtml String? // sanitized rich-text HTML; null = plaintext-only
-  type        String   @default("INCIDENT") // INCIDENT | REQUEST
+  type        String   @default("INCIDENT") // INCIDENT | REQUEST — freely switchable
+  prefix      String   @default("INC") // human-ref prefix (INC/REQ), fixed at creation; stays stable when `type` changes
   status      String   @default("NEW") // NEW | OPEN | PENDING | ON_HOLD | RESOLVED | CLOSED | CANCELLED
   priority    String   @default("MEDIUM") // LOW | MEDIUM | HIGH | CRITICAL
   impact      String   @default("MEDIUM") // LOW | MEDIUM | HIGH
@@ -310,7 +296,6 @@ model Ticket {
   requesterId String
   assigneeId  String?
   groupId     String?
-  queueId     String?
   categoryId  String?
   serviceId   String?
   catalogItemId String?
@@ -339,7 +324,6 @@ model Ticket {
   requester User      @relation("TicketRequester", fields: [requesterId], references: [id])
   assignee  User?     @relation("TicketAssignee", fields: [assigneeId], references: [id])
   group     Group?    @relation(fields: [groupId], references: [id])
-  queue     Queue?    @relation(fields: [queueId], references: [id])
   category  Category? @relation(fields: [categoryId], references: [id])
   service   Service?  @relation(fields: [serviceId], references: [id])
   catalogItem CatalogItem? @relation(fields: [catalogItemId], references: [id])
@@ -351,7 +335,6 @@ model Ticket {
   watchers    TicketWatcher[]
   attachments Attachment[]
   assets      TicketAsset[]
-  tags        TicketTag[]
   tasks       Task[]
   worklogs    WorkLog[]
   approvals   TicketApproval[]
@@ -363,7 +346,6 @@ model Ticket {
   @@index([status])
   @@index([priority])
   @@index([assigneeId])
-  @@index([queueId])
   @@index([requesterId])
 }
 
@@ -452,21 +434,6 @@ model TicketWatcher {
   @@id([ticketId, userId])
 }
 
-model Tag {
-  id      String      @id @default(cuid())
-  name    String      @unique
-  color   String      @default("#64748b")
-  tickets TicketTag[]
-}
-
-model TicketTag {
-  ticketId Int
-  tagId    String
-  ticket   Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
-  tag      Tag    @relation(fields: [tagId], references: [id], onDelete: Cascade)
-
-  @@id([ticketId, tagId])
-}
 
 // ---------------------------------------------------------------------------
 // Problem management

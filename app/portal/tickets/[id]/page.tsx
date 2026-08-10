@@ -57,7 +57,7 @@ export default async function PortalTicketDetail({
 
       <div className="rounded-2xl border bg-card p-6">
         <div className="flex flex-wrap items-center gap-2">
-          <span className="font-mono text-sm text-muted-foreground">{ticketRef(ticket.id, ticket.type)}</span>
+          <span className="font-mono text-sm text-muted-foreground">{ticketRef(ticket.id, ticket.prefix)}</span>
           <StatusBadge map={TICKET_TYPE_META} value={ticket.type} dot />
           <div className="ml-auto flex items-center gap-2">
             <StatusBadge map={PRIORITY_META} value={ticket.priority} dot />

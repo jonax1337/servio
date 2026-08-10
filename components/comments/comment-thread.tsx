@@ -2,7 +2,7 @@
 
 import { useRef, useState, useTransition } from "react";
 import { useFormStatus } from "react-dom";
-import { Lock, Send, Loader2, MessageSquare, Activity as ActivityIcon, Sparkles, Wand2, FileText, RotateCw, X } from "lucide-react";
+import { Lock, Send, Loader2, MessageSquare, Activity as ActivityIcon, Sparkles, Wand2, FileText, X } from "lucide-react";
 import { toast } from "sonner";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
@@ -12,7 +12,7 @@ import { UserAvatar } from "@/components/user-avatar";
 import { RichTextEditor, type MentionUser, type RichTextEditorHandle } from "@/components/ui/rich-text-editor";
 import { AiButton } from "@/components/ui/ai-button";
 import { draftReply, improveText, summarizeThread } from "@/lib/actions/ai";
-import { AI_TEASER_MESSAGE, AI_ASSISTANT_NAME } from "@/lib/constants";
+import { AI_TEASER_MESSAGE } from "@/lib/constants";
 import { ComposerAttachments } from "@/components/comments/composer-attachments";
 import { sanitizeCommentHtml } from "@/lib/markdown";
 import { iconForMime, formatBytes, type AttachmentRow } from "@/lib/attachments-ui";
@@ -121,21 +121,13 @@ function AiComposerButtons({
   );
 }
 
-/** Inline AI summary shown above the thread (no dialog). Can be added to the
- *  composer as an internal note for a review-then-send flow. */
-function AiSummaryPanel({
-  ticketId,
-  teaser,
-  onAddAsInternal,
-}: {
-  ticketId: number;
-  teaser: boolean;
-  onAddAsInternal: (html: string) => void;
-}) {
+/** Thread-summary state, shared between the tab-row trigger and the result box. */
+function useThreadSummary(ticketId: number | undefined, teaser: boolean) {
   const [pending, start] = useTransition();
   const [summary, setSummary] = useState<{ text: string; html: string } | null>(null);
 
   function run() {
+    if (!ticketId) return;
     if (teaser) return void toast.info(AI_TEASER_MESSAGE);
     start(async () => {
       const res = await summarizeThread(ticketId);
@@ -144,40 +136,41 @@ function AiSummaryPanel({
     });
   }
 
-  if (!summary && !pending) {
-    return (
-      <div className="flex justify-end">
-        <AiButton type="button" onClick={run}>
-          <FileText className="size-4" /> Summarize thread
-        </AiButton>
-      </div>
-    );
-  }
+  return { pending, summary, run, dismiss: () => setSummary(null) };
+}
 
+/** The rendered summary — just the content (no title/icon), added inline above the thread. */
+function AiSummaryBox({
+  pending,
+  summary,
+  onDismiss,
+  onAddAsInternal,
+}: {
+  pending: boolean;
+  summary: { text: string; html: string } | null;
+  onDismiss: () => void;
+  onAddAsInternal: (html: string) => void;
+}) {
   return (
-    <div className="rounded-xl border border-violet-500/30 bg-gradient-to-br from-violet-500/[0.06] to-fuchsia-500/[0.06] p-3">
-      <div className="flex items-center gap-2">
-        <span className="grid size-6 shrink-0 place-items-center rounded-full bg-gradient-to-br from-violet-500 to-fuchsia-500 text-white shadow-sm shadow-violet-500/30">
-          <Sparkles className="size-3.5" />
-        </span>
-        <span className="text-sm font-semibold text-violet-600 dark:text-violet-300">{AI_ASSISTANT_NAME}&apos;s summary</span>
-        <div className="ml-auto flex items-center gap-0.5">
-          <Button type="button" variant="ghost" size="icon-sm" onClick={run} disabled={pending} aria-label="Regenerate">
-            <RotateCw className={`size-3.5 ${pending ? "animate-spin" : ""}`} />
-          </Button>
-          <Button type="button" variant="ghost" size="icon-sm" onClick={() => setSummary(null)} disabled={pending} aria-label="Dismiss">
-            <X className="size-3.5" />
-          </Button>
-        </div>
-      </div>
+    <div className="relative rounded-xl border border-violet-500/30 bg-gradient-to-br from-violet-500/[0.06] to-fuchsia-500/[0.06] p-3">
+      {summary && !pending ? (
+        <button
+          type="button"
+          onClick={onDismiss}
+          aria-label="Dismiss summary"
+          className="absolute right-2 top-2 grid size-6 place-items-center rounded text-muted-foreground hover:text-foreground"
+        >
+          <X className="size-3.5" />
+        </button>
+      ) : null}
       {pending ? (
-        <div className="mt-2 flex items-center gap-2 text-sm text-muted-foreground">
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
           <Loader2 className="size-4 animate-spin" /> Reading the ticket…
         </div>
       ) : summary ? (
         <>
           <div
-            className="prose prose-sm mt-2 max-w-none dark:prose-invert prose-p:my-1.5 prose-ul:my-1.5 prose-li:my-0.5 prose-a:font-medium prose-a:text-violet-600 dark:prose-a:text-violet-400"
+            className="prose prose-sm max-w-none pr-6 dark:prose-invert prose-p:my-1.5 prose-ul:my-1.5 prose-li:my-0.5 prose-a:font-medium prose-a:text-violet-600 dark:prose-a:text-violet-400"
             dangerouslySetInnerHTML={{ __html: summary.html }}
           />
           <div className="mt-2.5 flex justify-end">
@@ -221,6 +214,7 @@ export function CommentThread({
   const ref = useRef<HTMLFormElement>(null);
   const editorRef = useRef<RichTextEditorHandle | null>(null);
   const [isInternal, setIsInternal] = useState(false);
+  const sum = useThreadSummary(aiTicketId, aiTeaser);
 
   // Drop an AI summary into the composer and mark it internal, for a review-then-send flow.
   function addSummaryAsInternal(html: string) {
@@ -232,21 +226,34 @@ export function CommentThread({
 
   return (
     <Tabs defaultValue="comments">
-      <TabsList>
-        <TabsTrigger value="comments">
-          <MessageSquare className="size-4" /> Comments
-          <span className="ml-1 rounded-full bg-muted px-1.5 text-xs tabular-nums">{comments.length}</span>
-        </TabsTrigger>
-        <TabsTrigger value="activity">
-          <ActivityIcon className="size-4" /> Activity
-          <span className="ml-1 rounded-full bg-muted px-1.5 text-xs tabular-nums">{activity.length}</span>
-        </TabsTrigger>
-      </TabsList>
+      {/* Tabs on the left, the AI summarize action on the right — one row. */}
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <TabsList>
+          <TabsTrigger value="comments">
+            <MessageSquare className="size-4" /> Comments
+            <span className="ml-1 rounded-full bg-muted px-1.5 text-xs tabular-nums">{comments.length}</span>
+          </TabsTrigger>
+          <TabsTrigger value="activity">
+            <ActivityIcon className="size-4" /> Activity
+            <span className="ml-1 rounded-full bg-muted px-1.5 text-xs tabular-nums">{activity.length}</span>
+          </TabsTrigger>
+        </TabsList>
+        {aiTicketId ? (
+          <AiButton type="button" onClick={sum.run} disabled={sum.pending}>
+            <FileText className="size-4" /> Summarize thread
+          </AiButton>
+        ) : null}
+      </div>
 
       <TabsContent value="comments" className="mt-4">
         <div className="grid gap-4">
-          {aiTicketId ? (
-            <AiSummaryPanel ticketId={aiTicketId} teaser={aiTeaser} onAddAsInternal={addSummaryAsInternal} />
+          {aiTicketId && (sum.pending || sum.summary) ? (
+            <AiSummaryBox
+              pending={sum.pending}
+              summary={sum.summary}
+              onDismiss={sum.dismiss}
+              onAddAsInternal={addSummaryAsInternal}
+            />
           ) : null}
           {comments.map((c) => (
             <div key={c.id} className="flex gap-3">

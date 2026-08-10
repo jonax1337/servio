@@ -119,7 +119,7 @@ export default async function ServiceDetailPage({
                     className="group flex items-center gap-3 border-b px-4 py-3 last:border-b-0 hover:bg-muted/40"
                   >
                     <span className="w-[76px] shrink-0 font-mono text-xs text-muted-foreground">
-                      {ticketRef(t.id, t.type)}
+                      {ticketRef(t.id, t.prefix)}
                     </span>
                     <span className="min-w-0 flex-1 truncate text-sm font-medium group-hover:text-primary">
                       {t.title}
