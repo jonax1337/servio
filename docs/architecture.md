@@ -61,10 +61,10 @@ lib/actions/
   account.ts      ai.ts           ai-assistant.ts approvals.ts
   assets.ts       attachments.ts  auth.ts         automations.ts
   catalog.ts      catalog-admin.ts categories.ts  changes.ts
-  groups.ts       knowledge.ts    locations.ts    notifications.ts
-  people.ts       portal.ts       problems.ts     services.ts
-  settings.ts     sla-admin.ts    syncs.ts        tags.ts
-  tickets.ts      tokens.ts
+  dashboards.ts   groups.ts       knowledge.ts    locations.ts
+  notifications.ts people.ts      portal.ts       problems.ts
+  saved-views.ts  services.ts     settings.ts     sla-admin.ts
+  syncs.ts        tickets.ts      tokens.ts
 ```
 
 AI mutations are a special case: **Vio never writes directly**. Its write operations live in
@@ -157,9 +157,8 @@ E:\DEV\servio
 │  │  ├─ layout.tsx           # requireRole("AGENT")
 │  │  ├─ page.tsx             # dashboard
 │  │  ├─ tickets/  problems/  changes/  approvals/
-│  │  ├─ queues/              # "Team board" — groups open tickets by team
 │  │  ├─ services/  catalog/  assets/  locations/  categories/  knowledge/
-│  │  ├─ groups/  people/  tags/
+│  │  ├─ groups/  people/
 │  │  ├─ automations/  syncs/  settings/  notifications/
 │  ├─ portal/                 # self-service (any authenticated user)
 │  │  ├─ layout.tsx           # requireUser()
@@ -184,11 +183,10 @@ E:\DEV\servio
 └─ next.config.ts  proxy.ts  package.json  tsconfig.json
 ```
 
-> **Queues module drift:** the blueprint lists a "Queues" module. In reality
-> queues were dissolved into **Teams/Groups**. `app/(console)/queues/page.tsx` is
-> a thin "Team board" page that groups open tickets by `Group` (excluding
-> vendors), not a standalone queue entity. The sidebar still labels it "Board"
-> (`lib/nav.ts` maps `title: "Board"` to `/queues`).
+> **Routing centres on Teams/Groups.** The old "Queues"/"Board" module and the `Queue`
+> model were removed; assignment and auto-routing are driven entirely by `Group`.
+> Freeform ticket **Tags** were also removed. The dashboard (`app/(console)/page.tsx`)
+> is a customizable widget builder — see [modules.md](./modules.md#dashboards).
 
 Console navigation is data-driven from [`lib/nav.ts`](../lib/nav.ts). Each
 `NavItem` may carry a `minRole` (`MANAGER`/`ADMIN`); `filterNav()` hides items the

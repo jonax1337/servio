@@ -19,7 +19,7 @@ Console modules follow one consistent shape. When adding a feature, mirror this 
 | --- | --- | --- |
 | List page | `app/(console)/<mod>/page.tsx` | Server Component; queries `lib/db`, renders table/cards. `export const dynamic = "force-dynamic"`. |
 | Detail page | `app/(console)/<mod>/[id]/page.tsx` | Loads one record + related data; renders a `*-properties` panel and action components. |
-| Create page | `app/(console)/<mod>/new/page.tsx` | Renders the `*-form` component. Some modules create via a dialog instead (e.g. Locations, Tags). |
+| Create page | `app/(console)/<mod>/new/page.tsx` | Renders the `*-form` component. Some modules create via a dialog instead (e.g. Locations, Categories). |
 | Server actions | `lib/actions/<mod>.ts` | All mutations. `"use server"`, Zod-validated, role-checked via `lib/session`, then `revalidatePath`. |
 | UI components | `components/<mod>/` | Client components: forms, dialogs, property panels, action buttons. |
 | Select options | `lib/data/options.ts` | Single cached `getFormOptions()` supplies dropdown data (users, groups, categories, services, etc.) to every form. |
@@ -33,9 +33,9 @@ Enums, status/priority metadata, and reference helpers (`ticketRef`, `problemRef
 | Group | Modules |
 | --- | --- |
 | Overview | Dashboard (`/`), Vio (`/assistant`) |
-| Service Operations | Tickets, Board (`/queues`), Problems, Changes, Approvals |
+| Service Operations | Tickets, Problems, Changes, Approvals |
 | Catalog & CMDB | Services, Service Catalog (MANAGER+), Assets, Locations, Categories, Knowledge Base |
-| Organisation | Groups, People, Tags |
+| Organisation | Groups, People |
 | Administration | Automations (MANAGER+), Syncs (MANAGER+), Settings (MANAGER+) |
 
 ---
@@ -75,10 +75,9 @@ The core incident/request module and the richest one in the codebase.
 | Actions | `lib/actions/tickets.ts` |
 | Components | `components/tickets/` |
 
-Actions include `createTicket`, `updateTicketField`, `updateTicketDetails`, `addTicketComment`, `escalateTicket`, `toggleMajorIncident`, `toggleWatch`, `addParticipant`, `linkTicket`/`unlinkTicket`, `mergeTicket`, `setTicketResolution`, `setTicketPending`, `setTicketDueDate`, `forwardTicketExternal`, `unlinkAsset`, `unlinkRelation`, task CRUD (`addTask`, `toggleTask`, `deleteTask`), and work-log entries (`addWorkLog`, `deleteWorkLog`). Key components: `ticket-form`, `ticket-properties`, `ticket-actions`, `ticket-tasks`, `comment-composer`, `work-log`, `log-time-popover`, `resolution-dialog`, `pending-reason-dialog`, `due-date-picker`, `sla-badge`, `form-answers` (renders catalog service-form answers).
+Actions include `createTicket`, `updateTicketField` (incl. switching `type` — the ref prefix stays fixed), `updateTicketDetails`, `addTicketComment`, `escalateTicket`, `toggleMajorIncident`, `toggleWatch`, `addParticipant`, `linkTicket`/`unlinkTicket`, `mergeTicket`, cross-entity linking (`setTicketProblem`, `setTicketChange`, `linkAsset`/`unlinkAsset`, `unlinkRelation`), `setTicketResolution`, `setTicketPending`, `setTicketDueDate`, `forwardTicketExternal`, and work-log entries (`addWorkLog`, `deleteWorkLog`). Key components: `ticket-form`, `ticket-properties` (staged edits incl. type + due date), `ticket-actions`, `comment-composer`, `work-log`, `resolution-dialog`, `pending-reason-dialog`, `due-date-picker`, `sla-badge`, `form-answers`, plus the reusable `link-picker` (attach problems/changes/assets) and `saved-views-bar`.
 
-### Board (Queues)
-`app/(console)/queues/page.tsx` — a thin, single-file page. Queues were dissolved into Teams/Groups; the board simply groups open tickets by `Group` (excluding `VENDOR` groups) into columns, with an "Unassigned" column for ticket without a `groupId`. No dedicated actions or components folder.
+**Saved views:** `/tickets` carries a searchable list of saved filter sets (`SavedView`) — apply/save/delete named filters, personal or (MANAGER+) shared with a team. Actions in `lib/actions/saved-views.ts`.
 
 ### Problems
 
@@ -187,14 +186,18 @@ User directory. Read-heavy; users are typically provisioned via syncs, so there 
 | Actions | `lib/actions/people.ts` — `updateUserField` |
 | Components | `components/people/user-properties` |
 
-### Tags
-Free-form labels; created/removed inline.
+### Dashboards
+
+Customizable widget dashboards on the home page (`/`). Every user gets a personal **"My Dashboard"**; managers/admins can create dashboards shared with a team or everyone. A searchable dropdown switches dashboards; **Edit** mode is a drag/resize grid ([react-grid-layout](https://github.com/react-grid-layout/react-grid-layout)) with per-widget config and a live preview.
 
 | | |
 | --- | --- |
-| Route | `app/(console)/tags/page.tsx` |
-| Actions | `lib/actions/tags.ts` — `createTag`, `deleteTag` |
-| Components | `components/tags/tag-creator` |
+| Routes | `app/(console)/page.tsx` (view + `?edit=1` editor); `app/api/dashboard/widget` (live-preview compute) |
+| Actions | `lib/actions/dashboards.ts` — `ensurePersonalDashboard`, `createDashboard`, `setDashboardLayout`, `updateDashboardSettings`, `renameDashboard`, `deleteDashboard` |
+| Engine / types | `lib/dashboard/compute.ts` (server metric engine), `lib/dashboard/types.ts` (`Widget`, `DEFAULT_LAYOUT`) |
+| Components | `dashboard-picker`, `dashboard-grid-view`, `dashboard-canvas` (editor), `widget-card`, `widget-config-dialog`; charts in `components/charts` |
+
+Widget types: **stat**, **breakdown** (bar or donut; group by priority/status/type/assignee/team/category/service/source/impact/urgency), **volume** trend, **SLA & MTTR** gauge, **aging**, and **ticket list**. Each widget carries its own filters and an optional accent colour; stat widgets support value **thresholds** (e.g. `< 15 → red`) that tint the whole card. Stat/SLA cards and every breakdown segment drill into the matching `/tickets` filter URL.
 
 ---
 

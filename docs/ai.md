@@ -106,8 +106,8 @@ to the model as a `propose_*` tool. Coverage by module:
 
 | Module | File | Operations (write) |
 | --- | --- | --- |
-| Tickets | `modules/tickets.ts` | create, update field/status/priority, comment, resolve, escalate, link, tasks, work-log, tags, watch, major-incident |
-| Categories & Tags | `modules/taxonomy.ts` | category create/update, tag create/delete |
+| Tickets | `modules/tickets.ts` | create, update field/status/priority/type, comment, resolve, escalate, link, tasks, work-log, watch, major-incident |
+| Categories | `modules/taxonomy.ts` | category create/update |
 | Groups & Users | `modules/org.ts` | group create / auto-assign, user field (role/active — ADMIN) |
 | Services & Catalog | `modules/catalog-services.ts` | service create/update, catalog item create/publish/delete |
 | Assets & Locations (CMDB) | `modules/cmdb.ts` | asset create/update, location create/update/delete |

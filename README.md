@@ -15,14 +15,21 @@ and an **AI assistant that can actually do the work** (with your approval).
   click**. Runs fully **local** (Ollama, on-box) or via your own key (Anthropic/OpenAI) — see
   [Vio](#-vio--the-built-in-ai-agent) below. This is the headline feature.
 - **Service desk** — incidents & requests with priorities, impact/urgency, SLAs,
-  inline-editable properties, and a threaded activity log with internal notes.
+  inline-editable properties (including a switchable type whose reference number stays stable),
+  cross-entity linking to problems/changes/assets, and a threaded activity log with internal notes.
+- **Customizable dashboards** — build your own with a **drag-and-drop, resizable widget grid**:
+  stats, breakdowns (bar/donut), SLA gauges, volume trends and aging. Every widget has its own
+  filters, an accent colour and value **thresholds** (e.g. `< 15 → red`), and drills into the
+  matching ticket list. A personal **"My Dashboard"** for everyone, plus team/org-shared boards.
+- **Saved views** — save any set of ticket filters as a named, searchable view (personal or
+  team-shared).
 - **Problem management** — root-cause & known-error tracking, linked incidents.
 - **Change management** — normal/standard/emergency changes with an approval workflow,
   implementation & rollback plans, and affected CIs.
 - **CMDB / Assets** — typed configuration items with a **dependency graph**
   (depends-on / runs-on / connects-to …) and linked tickets.
 - **Service catalog** with live status (operational / degraded / outage) and SLAs.
-- **Organisation** — groups & teams, people/roles, categories (tree), tags.
+- **Organisation** — groups & teams, people/roles, categories (tree).
 - **Infrastructure Syncs** — pluggable connectors (Active Directory, Azure AD / Entra,
   Intune, CSV, ServiceNow, GLPI import, REST) with run history and manual runs.
 - **Self-Service Portal** — a redesigned end-user help center: one **live search** across the

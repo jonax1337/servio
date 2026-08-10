@@ -214,7 +214,6 @@ the JSON payload are `snake_case` even though the DB columns are `camelCase` (se
   "source": "API",
   "requester": { "id": "…", "name": "Ada Lovelace", "email": "ada@servio.dev" },
   "assignee": null,
-  "queue_id": null,
   "category_id": null,
   "service_id": null,
   "due_at": null,
@@ -237,14 +236,14 @@ the JSON payload are `snake_case` even though the DB columns are `camelCase` (se
 | `urgency` | `LOW`\|`MEDIUM`\|`HIGH` | `MEDIUM` | |
 | `status` | ticket status enum | `NEW` | **agents only** |
 | `requesterId` | string | caller | **agents only**; non-agents always file as themselves |
-| `assigneeId`, `queueId`, `categoryId`, `serviceId` | string | — | **agents only** |
+| `assigneeId`, `categoryId`, `serviceId` | string | — | **agents only** |
 
 For non-agent tokens, only `title`, `description`, `type`, `priority`, `impact`,
 `urgency` are honored; all other fields fall back to defaults. SLA response/resolve
 deadlines are resolved from the service + priority at creation time.
 
 **`PATCH /tickets/{id}` body** (agents only): `title`, `description`, `status`,
-`priority`, `assigneeId` (nullable), `queueId` (nullable). Changing `status`:
+`priority`, `assigneeId` (nullable). Changing `status`:
 
 - The transition is validated against the state machine
   ([`lib/transitions.ts`](../lib/transitions.ts)); an illegal move returns `409`.
