@@ -4,8 +4,14 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { getSessionUser } from "@/lib/session";
+import { getSessionUser, hasRole, type Role } from "@/lib/session";
 import { writeAudit } from "@/lib/audit";
+
+/** Category management is a MANAGER+ operation (mirrors catalog-admin). */
+async function requireManager() {
+  const me = await getSessionUser();
+  return me && hasRole(me.role as Role, "MANAGER") ? me : null;
+}
 
 const optionalId = z
   .string()
@@ -36,8 +42,8 @@ export async function createCategory(
   _prev: ActionState,
   formData: FormData,
 ): Promise<ActionState> {
-  const me = await getSessionUser();
-  if (!me) return { error: "Not authenticated" };
+  const me = await requireManager();
+  if (!me) return { error: "Not authorised" };
 
   const parsed = createSchema.safeParse(Object.fromEntries(formData));
   if (!parsed.success) {
@@ -86,8 +92,8 @@ export async function updateCategory(
   _prev: ActionState,
   formData: FormData,
 ): Promise<ActionState> {
-  const me = await getSessionUser();
-  if (!me) return { error: "Not authenticated" };
+  const me = await requireManager();
+  if (!me) return { error: "Not authorised" };
 
   const parsed = updateSchema.safeParse(Object.fromEntries(formData));
   if (!parsed.success) {
@@ -126,7 +132,7 @@ export async function updateCategory(
 
 /** Toggle a category's archived flag (soft-hide from pickers/portal, keep history). */
 export async function setCategoryArchived(formData: FormData): Promise<void> {
-  const me = await getSessionUser();
+  const me = await requireManager();
   if (!me) return;
   const id = String(formData.get("id") ?? "");
   const archived = String(formData.get("archived") ?? "") === "true";
@@ -148,7 +154,7 @@ export async function setCategoryArchived(formData: FormData): Promise<void> {
  * referenced anywhere (tickets, services, catalog items, …) — archive instead.
  */
 export async function deleteCategory(formData: FormData): Promise<{ error?: string } | void> {
-  const me = await getSessionUser();
+  const me = await requireManager();
   if (!me) return { error: "Not authorised" };
   const id = String(formData.get("id") ?? "");
   if (!id) return;
