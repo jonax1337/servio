@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/session";
 import { ProposalSchema } from "@/lib/portal-assistant";
-import { createPortalTicketFor, createCatalogRequestFor } from "@/lib/portal-tickets";
+import { createPortalTicketFor, createCatalogRequestFor, linkStagedAttachments } from "@/lib/portal-tickets";
 import { ticketRef } from "@/lib/constants";
 
 export const runtime = "nodejs";
@@ -29,12 +29,16 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Please give the request a title and a short description first." }, { status: 400 });
   }
 
+  const rawIds = (body as { attachmentIds?: unknown })?.attachmentIds;
+  const attachmentIds = Array.isArray(rawIds) ? rawIds.map(String) : [];
+
   try {
     if (parsed.data.kind === "service") {
       const answers: Record<string, string> = {};
       for (const a of parsed.data.answers) answers[a.key] = a.value;
       const result = await createCatalogRequestFor(me, parsed.data.itemId, answers, "VIO");
       if (!result.ok) return NextResponse.json({ error: result.error }, { status: 400 });
+      await linkStagedAttachments(me.id, result.ticket.id, attachmentIds);
       return NextResponse.json({
         ok: true,
         id: result.ticket.id,
@@ -53,6 +57,7 @@ export async function POST(req: Request) {
       categoryId: parsed.data.categoryId ?? null,
       source: "VIO",
     });
+    await linkStagedAttachments(me.id, ticket.id, attachmentIds);
     return NextResponse.json({
       ok: true,
       id: ticket.id,

@@ -139,6 +139,8 @@ What you can do, in order of preference:
 3. FILL A FORM FOR THEM: if that service has a request form (hasForm=true), call get_service_form, ask the user for any required fields you don't already know, then call propose_service_request with the answers so they can confirm and submit in one click.
 4. OPEN A REQUEST: if the issue needs a person and isn't a catalog service, gather a clear title and short description, optionally call list_categories to pick a fitting categoryId, then call propose_request. Use INCIDENT for problems, REQUEST to obtain something. Judge impact (how many people are affected: just them, a team, or many) and urgency (how time-sensitive it is) from what the user tells you, and set priority accordingly (MEDIUM by default; CRITICAL only for outages or many blocked users).
 
+Reading attachments: the user can attach screenshots or files. Read any attached image (e.g. an error dialog), quote the exact error text you see, and use it to search_knowledge / web_search for a fix. If it needs a person, propose_request and mention that their attachment will be added to the ticket.
+
 Hard rules:
 - Only mention articles or services the tools actually returned. Never invent titles, links, ids, or facts.
 - You can only see public help articles and the catalog. You cannot see ticket queues, other people's tickets, accounts, or internal system details.
@@ -212,26 +214,83 @@ async function buildServiceProposal(input: unknown): Promise<RequestProposal | n
   return { kind: "service", itemId: raw.data.itemId, itemName: item.name, requiresApproval: item.requiresApproval, answers };
 }
 
+/** A file the user attached to the current chat turn (data URL from the browser). */
+export type ChatAttachment = { name: string; type: string; size: number; dataUrl: string };
+
+type UserPart =
+  | { type: "text"; text: string }
+  | { type: "image"; image: string }
+  | { type: "file"; data: string; mediaType: string };
+
+const TEXT_LIKE = /\.(txt|log|csv|eml)$/i;
+
+/** Build a multimodal user message from text + attachments (images/PDF/text). */
+function buildUserParts(text: string, atts: ChatAttachment[]): UserPart[] {
+  const parts: UserPart[] = [];
+  const blocks: string[] = [text?.trim() ? text.trim() : ""];
+  const notes: string[] = [];
+  let images = 0;
+
+  for (const a of atts) {
+    if (a.type.startsWith("image/") && images < 4) {
+      parts.push({ type: "image", image: a.dataUrl });
+      notes.push(`- image: ${a.name}`);
+      images++;
+    } else if (a.type === "application/pdf") {
+      parts.push({ type: "file", data: a.dataUrl, mediaType: "application/pdf" });
+      notes.push(`- document: ${a.name} (PDF)`);
+    } else if (a.type.startsWith("text/") || TEXT_LIKE.test(a.name)) {
+      const comma = a.dataUrl.indexOf(",");
+      let body = "";
+      try { body = Buffer.from(a.dataUrl.slice(comma + 1), "base64").toString("utf8").slice(0, 8000); } catch { body = "(unreadable)"; }
+      blocks.push(`\n\n[Attached file: ${a.name}]\n"""\n${body}\n"""`);
+    } else {
+      notes.push(`- file: ${a.name} (${a.type || "unknown"})`);
+    }
+  }
+  if (notes.length) blocks.push(`\n\nThe user attached:\n${notes.join("\n")}`);
+  parts.unshift({ type: "text", text: blocks.join("").trim() || "(see attachment)" });
+  return parts;
+}
+
 /** Run one portal-assistant turn. Returns the answer text and an optional draft
  *  (a ticket or a filled catalog order) the user can confirm to create. */
 export async function runPortalAssistant(
   history: { role: "user" | "assistant"; content: string }[],
+  attachments: ChatAttachment[] = [],
 ): Promise<{ text: string; proposal: RequestProposal | null }> {
-  const messages: ModelMessage[] = history
+  const base: ModelMessage[] = history
     .slice(-MAX_TURNS)
     .filter((m) => m.content.trim())
     .map((m) => ({ role: m.role, content: m.content.slice(0, 4000) }));
 
-  const { text, toolCalls } = await generateAiChat({
-    system: SYSTEM_PROMPT,
-    messages,
-    tools: PORTAL_ASSISTANT_TOOLS,
-    maxSteps: 6,
-  });
+  // Attach the current turn's files to the last user message (multimodal).
+  const multimodal: ModelMessage[] = [...base];
+  const lastIdx = multimodal.length - 1;
+  if (attachments.length && lastIdx >= 0 && multimodal[lastIdx].role === "user") {
+    const text = typeof multimodal[lastIdx].content === "string" ? (multimodal[lastIdx].content as string) : "";
+    multimodal[lastIdx] = { role: "user", content: buildUserParts(text, attachments) } as ModelMessage;
+  }
+
+  const run = (messages: ModelMessage[]) =>
+    generateAiChat({ system: SYSTEM_PROMPT, messages, tools: PORTAL_ASSISTANT_TOOLS, maxSteps: 6 });
+
+  let result;
+  try {
+    result = await run(multimodal);
+  } catch (err) {
+    // Model may not accept image/file parts — retry text-only so chat still works.
+    if (attachments.length) {
+      console.warn("[portal-assistant] multimodal failed, retrying text-only:", err instanceof Error ? err.message : err);
+      result = await run(base);
+    } else {
+      throw err;
+    }
+  }
 
   // Surface the most recent draft (whichever propose_* ran last) for the widget.
   let proposal: RequestProposal | null = null;
-  const last = [...toolCalls].reverse().find((t) => t.name === "propose_request" || t.name === "propose_service_request");
+  const last = [...result.toolCalls].reverse().find((t) => t.name === "propose_request" || t.name === "propose_service_request");
   if (last) {
     proposal =
       last.name === "propose_service_request"
@@ -239,5 +298,5 @@ export async function runPortalAssistant(
         : await buildTicketProposal(last.input);
   }
 
-  return { text, proposal };
+  return { text: result.text, proposal };
 }

@@ -1,13 +1,15 @@
 import { NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/session";
 import { aiConfigured } from "@/lib/ai";
-import { runPortalAssistant } from "@/lib/portal-assistant";
+import { runPortalAssistant, type ChatAttachment } from "@/lib/portal-assistant";
 import { renderMarkdown } from "@/lib/markdown";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 type Turn = { role: "user" | "assistant"; content: string };
+
+const MAX_DATAURL_LEN = 8 * 1024 * 1024; // ~6MB of binary after base64
 
 export async function POST(req: Request) {
   const me = await getSessionUser();
@@ -42,8 +44,23 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "expected a user message" }, { status: 400 });
   }
 
+  // Current-turn attachments (images/files), fed to a vision-capable model.
+  const rawAtt = (body as { attachments?: unknown })?.attachments;
+  const attachments: ChatAttachment[] = Array.isArray(rawAtt)
+    ? rawAtt
+        .filter(
+          (a): a is ChatAttachment =>
+            !!a &&
+            typeof (a as ChatAttachment).dataUrl === "string" &&
+            (a as ChatAttachment).dataUrl.startsWith("data:") &&
+            (a as ChatAttachment).dataUrl.length <= MAX_DATAURL_LEN,
+        )
+        .slice(0, 4)
+        .map((a) => ({ name: String(a.name ?? "file"), type: String(a.type ?? ""), size: Number(a.size ?? 0), dataUrl: a.dataUrl }))
+    : [];
+
   try {
-    const { text, proposal } = await runPortalAssistant(messages);
+    const { text, proposal } = await runPortalAssistant(messages, attachments);
     const answer = text || "I'm not sure about that one. Would you like to open a request so a person can help?";
     return NextResponse.json({
       configured: true,

@@ -2,7 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Sparkles, X, ArrowUp, Loader2, AlertCircle, Send, Check } from "lucide-react";
+import { Sparkles, X, ArrowUp, Loader2, AlertCircle, Send, Check, ImagePlus } from "lucide-react";
+import { iconForMime, formatBytes, MAX_UPLOAD_BYTES } from "@/lib/attachments-ui";
 import { cn } from "@/lib/utils";
 
 type TicketProposal = {
@@ -23,13 +24,64 @@ type ServiceProposal = {
   answers: { key: string; label: string; value: string }[];
 };
 type Proposal = TicketProposal | ServiceProposal;
-type Msg = { role: "user" | "assistant"; text: string; html?: string };
+
+/** A file the user attached in chat: sent to the model as a data URL, and
+ *  staged (uploaded) so it can be linked to a ticket Vio opens. */
+type ChatAttachment = {
+  id?: string; // staged attachment id (once uploaded)
+  name: string;
+  type: string;
+  size: number;
+  dataUrl: string;
+  previewUrl?: string; // object URL for image thumbnails
+  uploading: boolean;
+};
+type Msg = {
+  role: "user" | "assistant";
+  text: string;
+  html?: string;
+  images?: string[]; // preview URLs for the user's attached images
+};
 
 const SUGGESTIONS = [
   "I forgot my password",
   "Request a new laptop",
   "My VPN won't connect",
 ];
+
+const CHAT_ACCEPT =
+  "image/png,image/jpeg,image/gif,image/webp,application/pdf,.docx,.xlsx,.pptx,.txt,.log,.csv,.eml";
+const MAX_CHAT_ATTACHMENTS = 4;
+
+function readAsDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(String(r.result));
+    r.onerror = () => reject(r.error);
+    r.readAsDataURL(file);
+  });
+}
+
+/** Downscale (max 1280px longest edge) + re-encode an image to keep payloads small. */
+async function readImageDownscaled(file: File): Promise<string> {
+  const dataUrl = await readAsDataUrl(file);
+  try {
+    const img = document.createElement("img");
+    await new Promise<void>((res, rej) => { img.onload = () => res(); img.onerror = rej; img.src = dataUrl; });
+    const max = 1280;
+    const scale = Math.min(1, max / Math.max(img.width, img.height));
+    if (scale === 1 && file.size < 1_200_000) return dataUrl;
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, Math.round(img.width * scale));
+    canvas.height = Math.max(1, Math.round(img.height * scale));
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return dataUrl;
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+    return file.type === "image/png" ? canvas.toDataURL("image/png") : canvas.toDataURL("image/jpeg", 0.85);
+  } catch {
+    return dataUrl;
+  }
+}
 
 export function VioWidget({
   firstName,
@@ -44,14 +96,56 @@ export function VioWidget({
   const [loading, setLoading] = useState(false);
   const [proposal, setProposal] = useState<Proposal | null>(null);
   const [creating, setCreating] = useState(false);
+  const [attachments, setAttachments] = useState<ChatAttachment[]>([]);
+  const [attachError, setAttachError] = useState<string | null>(null);
   const [messages, setMessages] = useState<Msg[]>([
     {
       role: "assistant",
-      text: `Hi ${firstName}! I'm Vio. Ask me anything and I'll find an answer, point you to the right service, or open a request for you.`,
+      text: `Hi ${firstName}! I'm Vio. Ask me anything, attach a screenshot of an error, and I'll find an answer, point you to the right service, or open a request for you.`,
     },
   ]);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
+  // Staged attachment ids accumulated this chat, linked onto a ticket Vio opens.
+  const pendingIds = useRef<string[]>([]);
+
+  async function onPickFiles(list: FileList | null) {
+    if (!list || list.length === 0) return;
+    setAttachError(null);
+    const room = MAX_CHAT_ATTACHMENTS - attachments.length;
+    for (const file of Array.from(list).slice(0, Math.max(0, room))) {
+      if (file.size > MAX_UPLOAD_BYTES) {
+        setAttachError(`${file.name} is larger than ${formatBytes(MAX_UPLOAD_BYTES)}.`);
+        continue;
+      }
+      const isImg = file.type.startsWith("image/");
+      const dataUrl = isImg ? await readImageDownscaled(file) : await readAsDataUrl(file);
+      const previewUrl = isImg ? URL.createObjectURL(file) : undefined;
+      const att: ChatAttachment = { name: file.name, type: file.type, size: file.size, dataUrl, previewUrl, uploading: true };
+      setAttachments((a) => [...a, att]);
+      // Stage-upload so it can be linked to a ticket later (best-effort).
+      const fd = new FormData();
+      fd.set("file", file);
+      try {
+        const res = await fetch("/api/files/upload", { method: "POST", body: fd });
+        if (res.ok) {
+          const r = await res.json();
+          setAttachments((a) => a.map((x) => (x === att ? { ...x, id: r.id, uploading: false } : x)));
+        } else {
+          setAttachments((a) => a.map((x) => (x === att ? { ...x, uploading: false } : x)));
+        }
+      } catch {
+        setAttachments((a) => a.map((x) => (x === att ? { ...x, uploading: false } : x)));
+      }
+    }
+    if (fileRef.current) fileRef.current.value = "";
+  }
+
+  function removeAttachment(target: ChatAttachment) {
+    if (target.previewUrl) URL.revokeObjectURL(target.previewUrl);
+    setAttachments((a) => a.filter((x) => x !== target));
+  }
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
@@ -63,17 +157,28 @@ export function VioWidget({
 
   async function send(text: string) {
     const trimmed = text.trim();
-    if (!trimmed || loading) return;
-    const next: Msg[] = [...messages, { role: "user", text: trimmed }];
+    const atts = attachments;
+    if ((!trimmed && atts.length === 0) || loading) return;
+    // Wait for any in-flight staging so ids are available for linking.
+    if (atts.some((a) => a.uploading)) return;
+    pendingIds.current.push(...atts.map((a) => a.id).filter((x): x is string => !!x));
+    const next: Msg[] = [
+      ...messages,
+      { role: "user", text: trimmed || "(see attachment)", images: atts.filter((a) => a.previewUrl).map((a) => a.previewUrl!) },
+    ];
     setMessages(next);
     setInput("");
+    setAttachments([]);
     setProposal(null);
     setLoading(true);
     try {
       const res = await fetch("/api/portal/assistant", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: next.map((m) => ({ role: m.role, content: m.text })) }),
+        body: JSON.stringify({
+          messages: next.map((m) => ({ role: m.role, content: m.text })),
+          attachments: atts.map((a) => ({ name: a.name, type: a.type, size: a.size, dataUrl: a.dataUrl })),
+        }),
       });
       const data = await res.json();
       if (data.configured === false) {
@@ -110,16 +215,18 @@ export function VioWidget({
       const res = await fetch("/api/portal/assistant/create", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(proposal),
+        body: JSON.stringify({ ...proposal, attachmentIds: pendingIds.current }),
       });
       const data = await res.json();
       if (data.ok) {
+        const withFiles = pendingIds.current.length > 0 ? " with your attachments" : "";
+        pendingIds.current = [];
         setMessages((m) => [
           ...m,
           {
             role: "assistant",
             text: `Done! I've opened ${data.ref} and routed it to the right team.`,
-            html: `Done! I've opened <a href="${data.url}">${data.ref}</a> and routed it to the right team. You'll get updates on your ticket.`,
+            html: `Done! I've opened <a href="${data.url}">${data.ref}</a>${withFiles} and routed it to the right team. You'll get updates on your ticket.`,
           },
         ]);
         setProposal(null);
@@ -196,7 +303,15 @@ export function VioWidget({
         <div ref={scrollRef} className="flex-1 space-y-3 overflow-y-auto px-4 py-4">
           {messages.map((m, i) =>
             m.role === "user" ? (
-              <div key={i} className="flex justify-end">
+              <div key={i} className="flex flex-col items-end gap-1.5">
+                {m.images && m.images.length > 0 ? (
+                  <div className="flex flex-wrap justify-end gap-1.5">
+                    {m.images.map((src, k) => (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img key={k} src={src} alt="" className="size-20 rounded-xl border object-cover" />
+                    ))}
+                  </div>
+                ) : null}
                 <div className="max-w-[85%] rounded-2xl rounded-br-md bg-primary px-3.5 py-2 text-sm text-primary-foreground">
                   {m.text}
                 </div>
@@ -317,7 +432,41 @@ export function VioWidget({
           }}
           className="border-t p-3"
         >
-          <div className="flex items-end gap-2 rounded-2xl border bg-card px-3 py-2 focus-within:border-primary/50 focus-within:ring-4 focus-within:ring-primary/10">
+          {attachments.length > 0 ? (
+            <div className="mb-2 flex flex-wrap gap-2">
+              {attachments.map((a, i) => {
+                const Icon = iconForMime(a.type);
+                return (
+                  <span key={i} className="group relative inline-flex items-center gap-2 rounded-lg border bg-card py-1 pl-1 pr-2 text-xs">
+                    {a.previewUrl ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={a.previewUrl} alt="" className="size-8 rounded-md object-cover" />
+                    ) : (
+                      <span className="grid size-8 place-items-center rounded-md bg-muted text-muted-foreground"><Icon className="size-4" /></span>
+                    )}
+                    <span className="max-w-28 truncate font-medium">{a.name}</span>
+                    {a.uploading ? <Loader2 className="size-3.5 animate-spin text-muted-foreground" /> : null}
+                    <button type="button" onClick={() => removeAttachment(a)} aria-label={`Remove ${a.name}`} className="grid size-4 place-items-center rounded text-muted-foreground hover:text-foreground">
+                      <X className="size-3" />
+                    </button>
+                  </span>
+                );
+              })}
+            </div>
+          ) : null}
+          {attachError ? <p className="mb-1.5 px-1 text-xs text-destructive">{attachError}</p> : null}
+
+          <div className="flex items-end gap-1.5 rounded-2xl border bg-card px-2 py-2 focus-within:border-primary/50 focus-within:ring-4 focus-within:ring-primary/10">
+            <button
+              type="button"
+              onClick={() => fileRef.current?.click()}
+              disabled={attachments.length >= MAX_CHAT_ATTACHMENTS}
+              aria-label="Attach a screenshot or file"
+              className="grid size-8 shrink-0 place-items-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-40"
+            >
+              <ImagePlus className="size-4.5" />
+            </button>
+            <input ref={fileRef} type="file" multiple accept={CHAT_ACCEPT} className="hidden" onChange={(e) => onPickFiles(e.target.files)} />
             <textarea
               ref={inputRef}
               rows={1}
@@ -329,12 +478,12 @@ export function VioWidget({
                   send(input);
                 }
               }}
-              placeholder="Ask Vio a question…"
+              placeholder="Ask Vio, or attach a screenshot…"
               className="max-h-28 flex-1 resize-none bg-transparent py-1 text-sm outline-none placeholder:text-muted-foreground"
             />
             <button
               type="submit"
-              disabled={!input.trim() || loading}
+              disabled={(!input.trim() && attachments.length === 0) || loading || attachments.some((a) => a.uploading)}
               aria-label="Send"
               className="grid size-8 shrink-0 place-items-center rounded-lg bg-primary text-primary-foreground transition-opacity disabled:opacity-40"
             >
