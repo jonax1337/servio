@@ -6,21 +6,14 @@ import { StatusBadge } from "@/components/status-badge";
 import { TICKET_STATUS_META, PRIORITY_META, ticketRef } from "@/lib/constants";
 import type { Widget, Computed, Tone } from "@/lib/dashboard/types";
 
-const TONE_TEXT: Record<Tone, string> = {
-  primary: "text-primary",
-  success: "text-emerald-500",
-  warning: "text-amber-500",
-  danger: "text-red-500",
-  info: "text-sky-500",
-  neutral: "text-muted-foreground",
-};
-const ACCENT_BORDER: Record<Tone, string> = {
-  primary: "border-l-primary",
-  success: "border-l-emerald-500",
-  warning: "border-l-amber-500",
-  danger: "border-l-red-500",
-  info: "border-l-sky-500",
-  neutral: "border-l-border",
+/** Subtle full-card tint (background + border) per tone. */
+const TONE_TINT: Record<Tone, string> = {
+  primary: "border-primary/30 bg-primary/5",
+  success: "border-emerald-500/40 bg-emerald-500/10",
+  warning: "border-amber-500/40 bg-amber-500/10",
+  danger: "border-red-500/40 bg-red-500/10",
+  info: "border-sky-500/40 bg-sky-500/10",
+  neutral: "border-border bg-muted/40",
 };
 
 const PALETTE = [
@@ -34,17 +27,17 @@ const PALETTE = [
 
 /** Renders one dashboard widget from its server-computed data. */
 export function WidgetCard({ widget, data }: { widget: Widget; data: Computed }) {
-  const accent = widget.options?.accent;
+  // Tint the whole card: a stat's threshold-resolved tone wins, else the widget accent.
+  const cardTone = (data.kind === "stat" ? data.tone : undefined) ?? widget.options?.accent;
   // Single-metric cards drill into their filtered ticket list from anywhere on the card.
   const cardHref = data.kind === "stat" || data.kind === "sla" ? data.href : undefined;
 
   const card = (
     <Card
       className={cn(
-        "flex h-full flex-col",
-        accent && "border-l-4",
-        accent && ACCENT_BORDER[accent],
-        cardHref && "transition-colors hover:border-primary/40",
+        "flex h-full flex-col transition-colors",
+        cardTone && TONE_TINT[cardTone],
+        cardHref && "hover:border-primary/50",
       )}
     >
       <CardHeader className="pb-2">
@@ -71,9 +64,7 @@ function renderBody(data: Computed) {
     case "stat":
       return (
         <div className="flex h-full items-center">
-          <span className={cn("font-display text-4xl font-semibold tabular-nums tracking-tight", data.tone && TONE_TEXT[data.tone])}>
-            {data.value}
-          </span>
+          <span className="font-display text-4xl font-semibold tabular-nums tracking-tight">{data.value}</span>
         </div>
       );
 
