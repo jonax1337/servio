@@ -25,8 +25,11 @@ and an **AI assistant that can actually do the work** (with your approval).
 - **Organisation** — groups & teams, people/roles, categories (tree), tags.
 - **Infrastructure Syncs** — pluggable connectors (Active Directory, Azure AD / Entra,
   Intune, CSV, ServiceNow, GLPI import, REST) with run history and manual runs.
-- **Self-Service Portal** — a clean end-user help center: submit requests, track tickets,
-  browse the service catalog and knowledge base.
+- **Self-Service Portal** — a redesigned end-user help center: one **live search** across the
+  knowledge base, catalog and your own tickets; report an issue or request a service with
+  **screenshot/file attachments** (images, PDF, Office docs, `.eml`); track and reply to tickets;
+  and an **Ask Vio** assistant (below) that answers, opens correctly-routed requests, and fills
+  catalog forms for you.
 - **SSO** — OIDC/SSO (Keycloak, Authentik, Azure AD, Okta, Google…) plus email/password.
 - **RBAC** — Admin / Manager / Agent / User, enforced in `proxy.ts` and server actions.
 - **Public REST API** — versioned `/api/v1`, Bearer-token auth with scopes, pagination,
@@ -59,6 +62,14 @@ What makes Vio different from a bolt-on chatbot:
   settings, and manage system-wide config — all through the same approve-first flow.
 - **Conversations persist.** Chats are saved per user (auto-titled, reopenable, archivable) in
   the `AiConversation`/`AiMessage` tables. You can attach images, text, and PDFs to a message.
+
+**Vio also helps end users.** The self-service portal has its own **Ask Vio** — a separate,
+deliberately smaller assistant scoped to a single requester. It answers from the **public**
+knowledge base and catalog, reads that user's **own** tickets (never internal notes), understands
+attached **screenshots** of an error, and — with the same confirm-first cards — opens a
+correctly-routed ticket, fills a catalog request form, or posts a reply on one of their own
+tickets. It shares **none** of the agent tools. See
+[docs/ai.md](docs/ai.md#vio-in-the-self-service-portal-end-users).
 
 **Self-hostable and privacy-first.** Vio runs against the provider *you* choose:
 
@@ -150,6 +161,10 @@ AI_PROVIDER="anthropic"       # or "openai"
 AI_ALLOW_EXTERNAL="true"      # required for any external provider
 ANTHROPIC_API_KEY="sk-ant-…"  # or OPENAI_API_KEY (+ optional OPENAI_BASE_URL)
 ```
+
+To let Vio **read screenshots** (e.g. an error a user attaches in the portal), point it at a
+vision-capable model — Ollama `llama3.2-vision`, or Anthropic/OpenAI. Text-only models still work;
+Vio just falls back to asking for the error text.
 
 Everything here can also be managed from **Settings › Vio (AI assistant)** (ADMIN), which
 overrides `.env` and encrypts keys at rest. Full reference: [docs/ai.md](docs/ai.md).
