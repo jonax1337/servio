@@ -70,6 +70,10 @@ export function ServiceForm({ options }: { options: FormOptions }) {
     value: c.id,
     label: c.name,
   }));
+  const teamOpts: ComboOption[] = options.groups.map((g) => ({
+    value: g.id,
+    label: g.name,
+  }));
   const slaOpts: ComboOption[] = options.slas.map((s) => ({
     value: s.id,
     label: s.name,
@@ -116,6 +120,14 @@ export function ServiceForm({ options }: { options: FormOptions }) {
             options={catOpts}
             includeNone
             noneLabel="No category"
+          />
+        </Field>
+        <Field label="Team" hint="Handles catalog requests for this service.">
+          <ComboField
+            name="groupId"
+            options={teamOpts}
+            includeNone
+            noneLabel="No team"
           />
         </Field>
         <Field label="SLA">

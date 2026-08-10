@@ -1,7 +1,7 @@
 "use client";
 
-import { useActionState } from "react";
-import { Loader2, Send } from "lucide-react";
+import { useActionState, useState } from "react";
+import { Send, Loader2 } from "lucide-react";
 import { createPortalTicket, type PortalState } from "@/lib/actions/portal";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -9,9 +9,57 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { ComboField } from "@/components/combo-field";
 import type { ComboOption } from "@/components/combobox";
-import { TICKET_TYPES, PRIORITIES, TICKET_TYPE_META, PRIORITY_META } from "@/lib/constants";
+import { PortalAttachments } from "@/components/portal/portal-attachments";
+import { ReportIssueArt, RequestServiceArt } from "@/components/portal/illustrations";
+import { cn } from "@/lib/utils";
+import { TICKET_TYPES, PRIORITIES, PRIORITY_META } from "@/lib/constants";
 
 type Opt = { value: string; label: string };
+
+const TYPE_CARDS = [
+  {
+    value: "INCIDENT",
+    label: "Report an issue",
+    hint: "Something is broken or not working.",
+    Art: ReportIssueArt,
+  },
+  {
+    value: "REQUEST",
+    label: "Request something",
+    hint: "Access, hardware, software, or a service.",
+    Art: RequestServiceArt,
+  },
+];
+
+function TypeSelector({ name, defaultValue }: { name: string; defaultValue: string }) {
+  const [value, setValue] = useState(defaultValue);
+  return (
+    <div className="grid gap-3 sm:grid-cols-2">
+      <input type="hidden" name={name} value={value} />
+      {TYPE_CARDS.map((c) => {
+        const on = value === c.value;
+        return (
+          <button
+            key={c.value}
+            type="button"
+            aria-pressed={on}
+            onClick={() => setValue(c.value)}
+            className={cn(
+              "flex flex-col items-center gap-1 rounded-2xl border p-4 text-center transition-colors",
+              on
+                ? "border-primary bg-primary/5 ring-1 ring-primary/30"
+                : "hover:border-primary/40 hover:bg-muted/30",
+            )}
+          >
+            <c.Art className="h-16 w-24" />
+            <span className="mt-1 text-sm font-semibold">{c.label}</span>
+            <span className="text-xs text-muted-foreground">{c.hint}</span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
 
 export function RequestForm({
   categories, services, defaultType, defaultService,
@@ -24,12 +72,6 @@ export function RequestForm({
   const [state, action, pending] = useActionState<PortalState, FormData>(createPortalTicket, undefined);
   const fe = state?.fieldErrors ?? {};
 
-  const typeOpts: ComboOption[] = TICKET_TYPES.map((t) => ({
-    value: t,
-    label: TICKET_TYPE_META[t].label,
-    tone: TICKET_TYPE_META[t].tone,
-    icon: TICKET_TYPE_META[t].icon,
-  }));
   const priorityOpts: ComboOption[] = PRIORITIES.map((p) => ({
     value: p,
     label: PRIORITY_META[p].label,
@@ -48,9 +90,9 @@ export function RequestForm({
         </p>
       ) : null}
 
-      <div className="grid gap-1.5">
-        <Label>What do you need?</Label>
-        <ComboField name="type" options={typeOpts} defaultValue={defaultTypeValue} />
+      <div className="grid gap-2">
+        <Label>What can we help with?</Label>
+        <TypeSelector name="type" defaultValue={defaultTypeValue} />
       </div>
 
       <div className="grid gap-1.5">
@@ -62,6 +104,11 @@ export function RequestForm({
       <div className="grid gap-1.5">
         <Label>Details</Label>
         <Textarea name="description" placeholder="Tell us what happened, any error messages, and when it started…" className="min-h-32" />
+      </div>
+
+      <div className="grid gap-1.5">
+        <Label>Attachments (optional)</Label>
+        <PortalAttachments />
       </div>
 
       <div className="grid gap-5 sm:grid-cols-2">

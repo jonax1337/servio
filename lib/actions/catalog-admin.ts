@@ -37,6 +37,7 @@ async function payload(formData: FormData, approverId: string | null) {
     shortDescription: opt(formData.get("shortDescription")),
     icon: opt(formData.get("icon")),
     categoryId: rel(formData.get("categoryId")),
+    serviceId: rel(formData.get("serviceId")),
     estimatedDays: Number.isFinite(days) ? days : null,
     isPublished: formData.get("isPublished") !== "false",
     requiresApproval: formData.get("requiresApproval") === "true",

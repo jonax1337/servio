@@ -26,20 +26,21 @@ The portability is achieved through a few deliberate conventions:
 ### Human reference numbers
 
 `Ticket`, `Problem`, and `Change` use an autoincrementing integer `id`. The display code (e.g. `INC-0042`)
-is **derived from that `id`** by helpers in [`lib/constants.ts`](../lib/constants.ts) — there is no separate
-`number` column (the blueprint's `number` field was dropped):
+combines that `id` with a prefix, via helpers in [`lib/constants.ts`](../lib/constants.ts) — there is no
+separate `number` column:
 
 ```ts
 // lib/constants.ts
-export const PREFIX = { ticket: "INC", request: "REQ", problem: "PRB", change: "CHG" } as const;
-
-ticketRef(id, type)  // → "INC-0042" (or "REQ-0042" when type === "REQUEST")
-problemRef(id)       // → "PRB-0007"
-changeRef(id)        // → "CHG-0033"
+prefixForType(type)      // "INCIDENT" → "INC", "REQUEST" → "REQ"
+ticketRef(id, prefix)    // → "INC-0042" — pass the STORED Ticket.prefix (backwards-compatible: also
+                         //   accepts a raw type and maps it)
+problemRef(id)           // → "PRB-0007"
+changeRef(id)            // → "CHG-0033"
 ```
 
-Each number is zero-padded to 4 digits. A ticket's code switches between the `INC` and `REQ` prefix based on
-its `type`, so incidents and requests share one number sequence.
+Each number is zero-padded to 4 digits and incidents/requests share one sequence. **A ticket's prefix is
+stored** (`Ticket.prefix`) and fixed at creation from its initial type, so switching a ticket's `type` later
+(now editable in the Properties panel) leaves its reference number unchanged.
 
 ## Model catalog
 
@@ -67,14 +68,11 @@ Roles are a `String` on `User` (`role`), not a separate table. Allowed values: `
 
 | Model | Purpose | Key fields / relations |
 | --- | --- | --- |
-| `Group` | Team, department, or vendor that owns work | `name` (unique), `type` (`TEAM`/`DEPARTMENT`/`VENDOR`), `managerId`, `autoAssign` strategy (`OFF`/`ROUND_ROBIN`/`LEAST_BUSY`), `lastAssignedUserId` (round-robin cursor); has members, queues, tickets, problems, changes, assets |
+| `Group` | Team, department, or vendor that owns work | `name` (unique), `type` (`TEAM`/`DEPARTMENT`/`VENDOR`), `managerId`, `autoAssign` strategy (`OFF`/`ROUND_ROBIN`/`LEAST_BUSY`), `lastAssignedUserId` (round-robin cursor); has members, tickets, problems, changes, assets |
 | `GroupMember` | User membership in a group | `(groupId, userId)` unique; `role` (`MEMBER`/`LEAD`) |
-| `Queue` | Named work queue, optionally tied to a group | `name` (unique), `groupId`, `order`, `isActive` |
 
-> **Drift note:** the blueprint treated "Queues" as a first-class module. In the current app queues were
-> largely dissolved into Teams/Groups — the board groups by team, and `app/(console)/queues` is a thin page.
-> The `Queue` model still exists and `Ticket.queueId` is still populated by the seed, but routing logic
-> centres on `Group`.
+> **Note:** Groups are the unit of assignment/auto-routing. The old `Queue` model and the "Board"/`/queues`
+> page were removed — routing centres entirely on `Group`.
 
 ### Tickets (incidents & requests)
 
@@ -82,14 +80,13 @@ Roles are a `String` on `User` (`role`), not a separate table. Allowed values: `
 
 | Model | Purpose | Key fields / relations |
 | --- | --- | --- |
-| `Ticket` | An incident or service request | `id` (Int, autoincrement → `INC-`/`REQ-`), `type`, `status`, `priority`, `impact`, `urgency`, `source`, `isMajorIncident`, `pendingReason`/`pendingNote`, `resolutionCode`/`resolutionNote`, `mergedIntoId`; `description` (plaintext twin) + `descriptionHtml` (sanitized rich text); routing FKs `requesterId`, `assigneeId`, `groupId`, `queueId`, `categoryId`, `serviceId`, `catalogItemId`, `slaId`, `problemId`, `changeId`; catalog `formData`/`formSchema` snapshot; **SLA clock** fields (see below); relations to comments, watchers, attachments, assets, tags, tasks, worklogs, approvals, links, merges |
+| `Ticket` | An incident or service request | `id` (Int, autoincrement); `prefix` (stored `INC`/`REQ`, fixed at creation so the ref stays stable when `type` is switched); `type`, `status`, `priority`, `impact`, `urgency`, `source`, `isMajorIncident`, `pendingReason`/`pendingNote`, `resolutionCode`/`resolutionNote`, `mergedIntoId`; `description` (plaintext twin) + `descriptionHtml` (sanitized rich text); routing FKs `requesterId`, `assigneeId`, `groupId`, `categoryId`, `serviceId`, `catalogItemId`, `slaId`, `problemId`, `changeId`; catalog `formData`/`formSchema` snapshot; **SLA clock** fields (see below); relations to comments, watchers, attachments, assets, tasks, worklogs, approvals, links, merges |
 | `TicketComment` | Reply or internal note on a ticket | `body` (plaintext) + `bodyHtml`, `isInternal`, `authorId`; has attachments |
 | `Task` | Checklist item / subtask on a ticket | `title`, `done`, `order`, `assigneeId` |
 | `WorkLog` | Time logged against a ticket (effort reporting) | `minutes`, `note`, `billable`, `loggedAt`, `userId` |
 | `TicketLink` | Typed relationship between two tickets | `(ticketId, linkedTicketId)` unique; `type` (`RELATED`/`DUPLICATE`/`BLOCKS`/`CAUSED_BY`) |
 | `TicketApproval` | Approval request on a ticket (catalog approvals) | `approverId`, `status` (`PENDING`/`APPROVED`/`REJECTED`), `decidedAt` |
 | `TicketWatcher` | Users following a ticket | composite PK `(ticketId, userId)` |
-| `Tag` / `TicketTag` | Freeform labels and the ticket↔tag join | `Tag.name` unique; `TicketTag` composite PK |
 
 **SLA clock fields on `Ticket`:** `dueDate` (manual agent due date), `dueAt`/`responseDueAt`/`resolveDueAt`
 (computed from the SLA at create), `responseBreached`/`resolveBreached`, `pendingSince` + `pausedMs` (clock
@@ -180,6 +177,17 @@ pauses while `PENDING`/`ON_HOLD`), `firstResponseAt`, `resolvedAt`, `closedAt`. 
 Vio's *actions* are not stored as models — its write operations are RBAC-gated proposals defined
 in code (`lib/ai-operations/*`) and applied through the normal server actions, which write their
 own `AuditLog` rows. See [ai.md](./ai.md).
+
+### Personalisation (saved views & dashboards)
+
+| Model | Purpose | Key fields / relations |
+| --- | --- | --- |
+| `SavedView` | A named set of list filters (per-user, optionally team-shared) | `name`, `entity` (default `ticket`), `filters` (JSON of URL params), `ownerId`, `isShared`, `groupId` (scope a shared view to one team), `order` |
+| `Dashboard` | A customizable widget dashboard | `name`, `ownerId`, `isShared`, `groupId`, `layout` (JSON `Widget[]` on a 12-column grid), `order`. Each user gets a personal **"My Dashboard"** on first visit; managers/admins can share dashboards with a team or everyone |
+
+Widget definitions live in code, not the DB — `lib/dashboard/types.ts` (`Widget`, widget types, the
+`DEFAULT_LAYOUT`) and `lib/dashboard/compute.ts` (server-side metric engine). Each widget carries its own
+`filters` and an optional accent colour / value thresholds. See [modules.md](./modules.md#dashboards).
 
 ## Enums
 

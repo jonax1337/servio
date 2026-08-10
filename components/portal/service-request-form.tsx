@@ -10,6 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Combobox, type ComboOption } from "@/components/combobox";
+import { PortalAttachments } from "@/components/portal/portal-attachments";
 
 /** Select field for a dynamic catalog form: submits an empty value until chosen,
  * matching the previous <Select name=…> (no auto-selected first option). */
@@ -89,6 +90,11 @@ export function ServiceRequestForm({
           </div>
         ))
       )}
+
+      <div className="grid gap-1.5">
+        <Label>Attachments (optional)</Label>
+        <PortalAttachments />
+      </div>
 
       {requiresApproval ? (
         <p className="flex items-center gap-2 rounded-lg border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-sm text-amber-600 dark:text-amber-400">

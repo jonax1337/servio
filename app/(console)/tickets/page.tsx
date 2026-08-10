@@ -4,6 +4,11 @@ import type { Metadata } from "next";
 import type { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { getFormOptions } from "@/lib/data/options";
+import { getSessionUser, hasRole, type Role } from "@/lib/session";
+import { getVisibleSavedViews } from "@/lib/actions/saved-views";
+import { SavedViewsBar } from "@/components/saved-views-bar";
+import { buildTicketWhere } from "@/lib/dashboard/compute";
+import type { TicketFilters } from "@/lib/dashboard/types";
 import { getParam, getPage, PAGE_SIZE, type SearchParams } from "@/lib/query";
 import { PageHeader, PageBody } from "@/components/page-header";
 import { LinkButton } from "@/components/link-button";
@@ -27,7 +32,6 @@ import {
   TICKET_STATUSES,
   PRIORITIES,
   TICKET_TYPES,
-  OPEN_TICKET_STATUSES,
   ticketRef,
 } from "@/lib/constants";
 import { formatDistanceToNow } from "date-fns";
@@ -48,17 +52,27 @@ export default async function TicketsPage({
   const type = getParam(sp, "type");
   const group = getParam(sp, "group");
   const assignee = getParam(sp, "assignee");
-  const opts = await getFormOptions();
+  const me = await getSessionUser();
+  const [opts, savedViews] = await Promise.all([
+    getFormOptions(),
+    me ? getVisibleSavedViews("ticket", me.id) : Promise.resolve([]),
+  ]);
 
-  const where: Prisma.TicketWhereInput = {};
+  // Build the filter from ALL supported params via the shared builder, so dashboard
+  // widget links (which carry the same params) drill down into an exact match.
+  const filterParams: TicketFilters = {
+    status, priority, type, group, assignee,
+    category: getParam(sp, "category"),
+    service: getParam(sp, "service"),
+    impact: getParam(sp, "impact"),
+    urgency: getParam(sp, "urgency"),
+    source: getParam(sp, "source"),
+    major: getParam(sp, "major"),
+    vip: getParam(sp, "vip"),
+    breached: getParam(sp, "breached"),
+  };
+  const where: Prisma.TicketWhereInput = buildTicketWhere(filterParams);
   if (q) where.title = { contains: q };
-  if (status === "open") where.status = { in: [...OPEN_TICKET_STATUSES] };
-  else if (status && status !== "all") where.status = status;
-  if (priority && priority !== "all") where.priority = priority;
-  if (type && type !== "all") where.type = type;
-  if (group && group !== "all") where.groupId = group;
-  if (assignee === "unassigned") where.assigneeId = null;
-  else if (assignee && assignee !== "all") where.assigneeId = assignee;
 
   const [total, tickets] = await Promise.all([
     db.ticket.count({ where }),
@@ -91,6 +105,8 @@ export default async function TicketsPage({
         ...opts.agents.map((a) => ({ value: a.id, label: a.name ?? a.email })),
       ],
     },
+    { key: "category", label: "Category", options: opts.categories.map((c) => ({ value: c.id, label: c.name })) },
+    { key: "service", label: "Service", options: opts.services.map((s) => ({ value: s.id, label: s.name })) },
   ];
 
   return (
@@ -106,6 +122,15 @@ export default async function TicketsPage({
       </PageHeader>
 
       <PageBody className="grid gap-4">
+        <SavedViewsBar
+          entity="ticket"
+          basePath="/tickets"
+          filterKeys={["q", "status", "priority", "type", "group", "assignee", "category", "service"]}
+          views={savedViews}
+          currentUserId={me?.id ?? ""}
+          canManageShared={!!me && hasRole(me.role as Role, "MANAGER")}
+          teams={opts.groups.map((g) => ({ value: g.id, label: g.name }))}
+        />
         <ListToolbar filters={filters} searchPlaceholder="Search tickets…" />
 
         {tickets.length === 0 ? (

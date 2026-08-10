@@ -1,13 +1,14 @@
 import Link from "next/link";
 import {
-  AlertCircle, Sparkles, LifeBuoy, BookOpen, ArrowRight, Ticket as TicketIcon,
+  ArrowRight, ArrowUpRight, BookOpen, LifeBuoy, Ticket as TicketIcon, Clock, Eye,
 } from "lucide-react";
 import { CatalogIcon } from "@/components/catalog/catalog-icon";
 import { db } from "@/lib/db";
 import { getSessionUser } from "@/lib/session";
 import { LinkButton } from "@/components/link-button";
 import { StatusBadge } from "@/components/status-badge";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { PortalHero } from "@/components/portal/portal-hero";
+import { AllCaughtUpArt } from "@/components/portal/illustrations";
 import { TICKET_STATUS_META, PRIORITY_META, ticketRef } from "@/lib/constants";
 import { formatDistanceToNow } from "date-fns";
 
@@ -19,7 +20,7 @@ export default async function PortalHome() {
     db.ticket.findMany({
       where: { requesterId: me?.id, status: { notIn: ["CLOSED", "CANCELLED"] } },
       orderBy: { updatedAt: "desc" },
-      take: 5,
+      take: 4,
     }),
     db.catalogItem.findMany({ where: { isPublished: true }, orderBy: [{ order: "asc" }, { name: "asc" }], take: 6 }),
     // Only published, public-facing articles ever surface in the portal.
@@ -27,129 +28,146 @@ export default async function PortalHome() {
   ]);
 
   return (
-    <div className="grid gap-8">
-      {/* Hero */}
-      <section className="relative overflow-hidden rounded-2xl border bg-card p-8 sm:p-12">
-        <div className="absolute inset-0 bg-grid opacity-50" />
-        <div className="absolute -right-20 -top-20 size-72 rounded-full bg-primary/15 blur-3xl" />
-        <div className="relative">
-          <h1 className="font-display text-3xl font-semibold tracking-tight sm:text-4xl">
-            Hi {me?.name?.split(" ")[0] ?? "there"}, how can we help?
-          </h1>
-          <p className="mt-2 max-w-lg text-muted-foreground">
-            Report an issue, request a service, or search our knowledge base for quick answers.
-          </p>
-          <div className="mt-6 flex flex-wrap gap-3">
-            <LinkButton href="/portal/new?type=INCIDENT" size="lg">
-              <AlertCircle className="size-4" /> Report an issue
-            </LinkButton>
-            <LinkButton href="/portal/catalog" size="lg" variant="outline">
-              <Sparkles className="size-4" /> Browse the catalog
-            </LinkButton>
-          </div>
-        </div>
-      </section>
+    <div className="grid gap-10">
+      <PortalHero firstName={me?.name?.split(" ")[0] ?? "there"} />
 
-      <div className="grid gap-8 lg:grid-cols-3">
-        {/* My tickets */}
-        <div className="lg:col-span-2">
-          <div className="mb-3 flex items-center justify-between">
-            <h2 className="font-display text-lg font-semibold">My open requests</h2>
-            <Link href="/portal/tickets" className="text-sm text-primary hover:underline">
-              View all
-            </Link>
-          </div>
+      <div className="grid gap-10 lg:grid-cols-3">
+        {/* My open requests */}
+        <section className="lg:col-span-2">
+          <SectionHeader
+            icon={TicketIcon}
+            title="Your open requests"
+            action={{ href: "/portal/tickets", label: "View all" }}
+          />
           {myTickets.length === 0 ? (
-            <Card>
-              <CardContent className="flex flex-col items-center gap-3 py-12 text-center">
-                <div className="grid size-12 place-items-center rounded-xl bg-muted text-muted-foreground">
-                  <TicketIcon className="size-6" />
-                </div>
-                <p className="text-sm text-muted-foreground">
-                  You have no open requests. Everything looks good!
-                </p>
-                <LinkButton href="/portal/new" size="sm">New request</LinkButton>
-              </CardContent>
-            </Card>
+            <div className="flex flex-col items-center gap-2 rounded-2xl border bg-card px-6 py-10 text-center">
+              <AllCaughtUpArt className="h-24 w-24" />
+              <p className="text-sm font-medium">You&apos;re all caught up</p>
+              <p className="max-w-xs text-sm text-muted-foreground">
+                Nothing is open right now. Need something? We&apos;re here to help.
+              </p>
+              <LinkButton href="/portal/new" size="sm" variant="outline" className="mt-1">
+                New request
+              </LinkButton>
+            </div>
           ) : (
-            <Card>
-              <CardContent className="divide-y p-0">
-                {myTickets.map((t) => (
-                  <Link
-                    key={t.id}
-                    href={`/portal/tickets/${t.id}`}
-                    className="flex items-center gap-3 p-4 transition-colors hover:bg-muted/50"
-                  >
-                    <span className="w-16 shrink-0 font-mono text-xs text-muted-foreground">
-                      {ticketRef(t.id, t.prefix)}
-                    </span>
-                    <span className="min-w-0 flex-1 truncate text-sm font-medium">{t.title}</span>
-                    <StatusBadge map={PRIORITY_META} value={t.priority} dot />
-                    <StatusBadge map={TICKET_STATUS_META} value={t.status} />
-                    <span className="hidden shrink-0 text-xs text-muted-foreground sm:block">
-                      {formatDistanceToNow(t.updatedAt, { addSuffix: true })}
-                    </span>
-                  </Link>
-                ))}
-              </CardContent>
-            </Card>
+            <div className="overflow-hidden rounded-2xl border bg-card divide-y">
+              {myTickets.map((t) => (
+                <Link
+                  key={t.id}
+                  href={`/portal/tickets/${t.id}`}
+                  className="group flex items-center gap-3 px-4 py-3.5 transition-colors hover:bg-muted/40"
+                >
+                  <span className="w-14 shrink-0 font-mono text-xs text-muted-foreground">
+                    {ticketRef(t.id, t.prefix)}
+                  </span>
+                  <span className="min-w-0 flex-1 truncate text-sm font-medium">{t.title}</span>
+                  <StatusBadge map={PRIORITY_META} value={t.priority} dot />
+                  <StatusBadge map={TICKET_STATUS_META} value={t.status} />
+                  <span className="hidden w-24 shrink-0 text-right text-xs text-muted-foreground sm:block">
+                    {formatDistanceToNow(t.updatedAt, { addSuffix: true })}
+                  </span>
+                </Link>
+              ))}
+            </div>
           )}
-        </div>
+        </section>
 
-        {/* Knowledge */}
-        <div>
-          <div className="mb-3 flex items-center gap-2">
-            <BookOpen className="size-4 text-muted-foreground" />
-            <h2 className="font-display text-lg font-semibold">Popular articles</h2>
-          </div>
-          <Card>
-            <CardContent className="grid gap-1 p-2">
+        {/* Popular answers */}
+        <section>
+          <SectionHeader
+            icon={BookOpen}
+            title="Popular answers"
+            action={{ href: "/portal/knowledge", label: "All articles" }}
+          />
+          {articles.length === 0 ? (
+            <div className="rounded-2xl border border-dashed bg-card/40 px-4 py-10 text-center text-sm text-muted-foreground">
+              No articles published yet.
+            </div>
+          ) : (
+            <div className="overflow-hidden rounded-2xl border bg-card divide-y">
               {articles.map((a) => (
                 <Link
                   key={a.id}
                   href={`/portal/knowledge/${a.slug}`}
-                  className="flex items-center justify-between gap-2 rounded-lg px-3 py-2 text-sm transition-colors hover:bg-muted"
+                  className="group flex items-center gap-3 px-4 py-3 transition-colors hover:bg-muted/40"
                 >
-                  <span className="min-w-0 truncate">{a.title}</span>
-                  <ArrowRight className="size-3.5 shrink-0 text-muted-foreground" />
+                  <span className="min-w-0 flex-1 truncate text-sm">{a.title}</span>
+                  <span className="flex shrink-0 items-center gap-1 text-xs text-muted-foreground">
+                    <Eye className="size-3.5" /> {a.views}
+                  </span>
+                  <ArrowUpRight className="size-4 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />
                 </Link>
               ))}
-            </CardContent>
-          </Card>
-        </div>
+            </div>
+          )}
+        </section>
       </div>
 
-      {/* Service catalog */}
-      <section>
-        <div className="mb-3 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <LifeBuoy className="size-4 text-muted-foreground" />
-            <h2 className="font-display text-lg font-semibold">Service catalog</h2>
-          </div>
-          <Link href="/portal/catalog" className="text-sm text-primary hover:underline">
-            Browse all
-          </Link>
-        </div>
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {catalog.map((it) => (
-            <Link key={it.id} href={`/portal/request/${it.id}`}>
-              <Card className="h-full transition-colors hover:border-primary/40">
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2 text-base">
-                    <span className="grid size-8 place-items-center rounded-lg bg-primary/10 text-primary">
-                      <CatalogIcon name={it.icon} className="size-4" />
-                    </span>
+      {/* Service catalog preview */}
+      {catalog.length > 0 ? (
+        <section>
+          <SectionHeader
+            icon={LifeBuoy}
+            title="Popular services"
+            action={{ href: "/portal/catalog", label: "Browse catalog" }}
+          />
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {catalog.map((it) => (
+              <Link
+                key={it.id}
+                href={`/portal/request/${it.id}`}
+                className="group flex items-start gap-3 rounded-2xl border bg-card p-4 transition-colors hover:border-primary/40 hover:bg-muted/20"
+              >
+                <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-primary/10 text-primary">
+                  <CatalogIcon name={it.icon} className="size-5" />
+                </span>
+                <span className="min-w-0">
+                  <span className="flex items-center gap-1 text-sm font-medium">
                     {it.name}
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="text-sm text-muted-foreground">
-                  <p className="line-clamp-2">{it.shortDescription ?? it.description}</p>
-                </CardContent>
-              </Card>
-            </Link>
-          ))}
-        </div>
-      </section>
+                    <ArrowRight className="size-3.5 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
+                  </span>
+                  <span className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">
+                    {it.shortDescription ?? it.description}
+                  </span>
+                  {it.estimatedDays != null ? (
+                    <span className="mt-2 inline-flex items-center gap-1 text-[11px] text-muted-foreground">
+                      <Clock className="size-3" /> ~{it.estimatedDays} day{it.estimatedDays === 1 ? "" : "s"}
+                    </span>
+                  ) : null}
+                </span>
+              </Link>
+            ))}
+          </div>
+        </section>
+      ) : null}
+    </div>
+  );
+}
+
+function SectionHeader({
+  icon: Icon,
+  title,
+  action,
+}: {
+  icon: React.ComponentType<{ className?: string }>;
+  title: string;
+  action?: { href: string; label: string };
+}) {
+  return (
+    <div className="mb-4 flex items-center justify-between">
+      <h2 className="flex items-center gap-2 font-display text-lg font-semibold tracking-tight">
+        <Icon className="size-4.5 text-muted-foreground" />
+        {title}
+      </h2>
+      {action ? (
+        <Link
+          href={action.href}
+          className="flex items-center gap-1 text-sm font-medium text-primary transition-opacity hover:opacity-80"
+        >
+          {action.label} <ArrowRight className="size-3.5" />
+        </Link>
+      ) : null}
     </div>
   );
 }

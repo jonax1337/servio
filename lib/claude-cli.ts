@@ -78,8 +78,10 @@ function partText(content: unknown): string {
       .map((p) => {
         const part = p as { type?: string; text?: string };
         if (part.type === "text") return part.text ?? "";
-        if (part.type === "image") return "[image attachment — not visible in this mode]";
-        if (part.type === "file") return "[file attachment]";
+        // The real image/document is sent as a content block alongside the
+        // transcript (see buildStructuredPrompt); the text just references it.
+        if (part.type === "image") return "(image attached)";
+        if (part.type === "file") return "(file attached)";
         return "";
       })
       .filter(Boolean)
@@ -95,6 +97,34 @@ function buildTranscript(messages: ModelMessage[]): string {
   );
   lines.push("Assistant:");
   return lines.join("\n\n");
+}
+
+/** Parse a data URL into an Anthropic base64 source ({ media_type, data }). */
+function dataUrlToSource(dataUrl: string): { media_type: string; data: string } | null {
+  const m = /^data:([^;]+);base64,([\s\S]*)$/.exec(dataUrl);
+  return m ? { media_type: m[1], data: m[2] } : null;
+}
+
+type BinaryBlock =
+  | { type: "image"; source: { type: "base64"; media_type: string; data: string } }
+  | { type: "document"; source: { type: "base64"; media_type: string; data: string } };
+
+/** Extract Anthropic image/document blocks from ai-sdk image/file parts. */
+function binaryBlocks(messages: ModelMessage[]): BinaryBlock[] {
+  const blocks: BinaryBlock[] = [];
+  for (const m of messages) {
+    if (!Array.isArray(m.content)) continue;
+    for (const p of m.content as Array<{ type?: string; image?: unknown; data?: unknown; mediaType?: string }>) {
+      if (p.type === "image" && typeof p.image === "string") {
+        const src = dataUrlToSource(p.image);
+        if (src) blocks.push({ type: "image", source: { type: "base64", ...src } });
+      } else if (p.type === "file" && typeof p.data === "string" && p.mediaType === "application/pdf") {
+        const src = dataUrlToSource(p.data);
+        if (src) blocks.push({ type: "document", source: { type: "base64", media_type: "application/pdf", data: src.data } });
+      }
+    }
+  }
+  return blocks;
 }
 
 /**
@@ -138,8 +168,24 @@ export async function generateViaClaudeSdk(input: {
     options.maxThinkingTokens = input.maxThinkingTokens;
   }
 
+  // When the turn carries images/PDFs, send a structured user message with real
+  // Anthropic content blocks (Claude is vision-capable) instead of flattening to
+  // text; otherwise keep the simple string transcript.
+  const blocks = binaryBlocks(input.messages);
+  const transcript = buildTranscript(input.messages);
+  const prompt = blocks.length
+    ? (async function* () {
+        yield {
+          type: "user" as const,
+          message: { role: "user" as const, content: [{ type: "text", text: transcript }, ...blocks] },
+          parent_tool_use_id: null,
+        };
+      })()
+    : transcript;
+
   const iterator = query({
-    prompt: buildTranscript(input.messages),
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    prompt: prompt as any,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     options: options as any,
   });

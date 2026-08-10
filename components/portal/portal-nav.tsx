@@ -2,14 +2,15 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { Home, ShoppingBag, AlertCircle, Ticket, BookOpen } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const items = [
-  { href: "/portal", label: "Home" },
-  { href: "/portal/catalog", label: "Catalog" },
-  { href: "/portal/new", label: "Report an issue" },
-  { href: "/portal/tickets", label: "My tickets" },
-  { href: "/portal/knowledge", label: "Knowledge" },
+  { href: "/portal", label: "Home", icon: Home },
+  { href: "/portal/catalog", label: "Catalog", icon: ShoppingBag },
+  { href: "/portal/new", label: "Report an issue", icon: AlertCircle },
+  { href: "/portal/tickets", label: "My tickets", icon: Ticket },
+  { href: "/portal/knowledge", label: "Knowledge", icon: BookOpen },
 ];
 
 export function PortalNav() {
@@ -18,21 +19,26 @@ export function PortalNav() {
     href === "/portal" ? pathname === "/portal" : pathname.startsWith(href);
 
   return (
-    <nav className="flex items-center gap-1">
-      {items.map((i) => (
-        <Link
-          key={i.href}
-          href={i.href}
-          className={cn(
-            "rounded-lg px-3 py-1.5 text-sm font-medium transition-colors",
-            active(i.href)
-              ? "bg-primary/10 text-primary"
-              : "text-muted-foreground hover:bg-muted hover:text-foreground",
-          )}
-        >
-          {i.label}
-        </Link>
-      ))}
+    <nav className="flex items-center gap-1 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+      {items.map((i) => {
+        const on = active(i.href);
+        return (
+          <Link
+            key={i.href}
+            href={i.href}
+            aria-current={on ? "page" : undefined}
+            className={cn(
+              "flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors",
+              on
+                ? "bg-primary/10 text-primary"
+                : "text-muted-foreground hover:bg-muted hover:text-foreground",
+            )}
+          >
+            <i.icon className="size-4" />
+            {i.label}
+          </Link>
+        );
+      })}
     </nav>
   );
 }

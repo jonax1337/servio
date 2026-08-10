@@ -1,0 +1,206 @@
+import { revalidatePath } from "next/cache";
+import { db } from "@/lib/db";
+import { writeAudit, notify } from "@/lib/audit";
+import { sendMail, tplTicketReceived } from "@/lib/mail";
+import { runAutomations } from "@/lib/automations";
+import { autoAssignTicket } from "@/lib/assignment";
+import { slaCreateData } from "@/lib/sla";
+import { parseFormSchema, validateAnswers, answersToText } from "@/lib/service-forms";
+import { prefixForType, ticketRef } from "@/lib/constants";
+
+/** Resolve the default triage team new self-service tickets land in. */
+async function triageGroupId(): Promise<string | null> {
+  const g = await db.group.findFirst({ where: { name: "Service Desk" }, select: { id: true } });
+  return g?.id ?? null;
+}
+
+/**
+ * Re-parent staged attachments (uploaded with no target) onto a freshly created
+ * ticket. Only the uploader's own still-unparented files are moved, capped, so a
+ * client can't smuggle someone else's or already-linked files onto the ticket.
+ */
+export async function linkStagedAttachments(userId: string, ticketId: number, ids: string[]) {
+  const clean = ids.filter(Boolean).slice(0, 20);
+  if (clean.length === 0) return;
+  await db.attachment.updateMany({
+    where: { id: { in: clean }, uploadedById: userId, ticketId: null, commentId: null, articleId: null },
+    data: { ticketId },
+  });
+}
+
+/**
+ * Post a PUBLIC reply on the user's OWN open ticket (used by the Vio assistant
+ * after the user confirms). Scoped to requesterId, never internal, never on a
+ * closed/cancelled ticket.
+ */
+export async function addPortalReply(userId: string, ticketId: number, body: string): Promise<boolean> {
+  const clean = body.trim().slice(0, 5000);
+  if (!clean) return false;
+  const ticket = await db.ticket.findFirst({ where: { id: ticketId, requesterId: userId }, select: { id: true, status: true } });
+  if (!ticket || ticket.status === "CLOSED" || ticket.status === "CANCELLED") return false;
+
+  await db.ticketComment.create({ data: { ticketId, authorId: userId, body: clean, isInternal: false } });
+  await db.ticket.update({ where: { id: ticketId }, data: { updatedAt: new Date() } });
+  revalidatePath(`/portal/tickets/${ticketId}`);
+  revalidatePath(`/tickets/${ticketId}`);
+  return true;
+}
+
+type Level = "LOW" | "MEDIUM" | "HIGH";
+
+export type PortalTicketInput = {
+  title: string;
+  description?: string;
+  type: "INCIDENT" | "REQUEST";
+  priority: "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
+  categoryId?: string | null;
+  serviceId?: string | null;
+  impact?: Level;
+  urgency?: Level;
+  /** Where the ticket came from — "PORTAL" (form) or "VIO" (assistant). */
+  source?: string;
+};
+
+/**
+ * Shared core for creating a free-form self-service ticket, so the request form
+ * action (lib/actions/portal.ts) and the portal Vio assistant create the SAME
+ * fully-routed ticket:
+ *  - lands in the Service Desk triage team by default (so it's never teamless),
+ *  - runs automations (which may re-route, e.g. VPN -> Infrastructure), then
+ *  - auto-assigns an agent per the resolved group's strategy.
+ */
+export async function createPortalTicketFor(
+  me: { id: string; email?: string | null; name?: string | null },
+  input: PortalTicketInput,
+) {
+  const sla = await slaCreateData({ serviceId: input.serviceId ?? null, priority: input.priority });
+  const ticket = await db.ticket.create({
+    data: {
+      title: input.title,
+      description: input.description ?? "",
+      type: input.type,
+      priority: input.priority,
+      categoryId: input.categoryId ?? null,
+      serviceId: input.serviceId ?? null,
+      groupId: await triageGroupId(),
+      prefix: prefixForType(input.type),
+      ...sla,
+      status: "NEW",
+      source: input.source ?? "PORTAL",
+      impact: input.impact ?? "MEDIUM",
+      urgency: input.urgency ?? "MEDIUM",
+      requesterId: me.id,
+    },
+  });
+
+  await writeAudit({
+    userId: me.id,
+    action: "CREATE",
+    entity: "Ticket",
+    entityId: ticket.id,
+    summary: input.source === "VIO" ? "Created via the Vio assistant" : "Submitted via self-service portal",
+  });
+  if (me.email) {
+    await sendMail({ to: me.email, toName: me.name, entity: "Ticket", entityId: ticket.id, ...tplTicketReceived(ticket) });
+  }
+  await runAutomations("TICKET_CREATED", ticket.id);
+  await autoAssignTicket(ticket.id);
+
+  revalidatePath("/portal/tickets");
+  return ticket;
+}
+
+export type CatalogRequestResult =
+  | { ok: true; ticket: Awaited<ReturnType<typeof db.ticket.create>> }
+  | { ok: false; error: string; fieldErrors?: Record<string, string> };
+
+/**
+ * Shared core for ordering a catalog item (a service request with a dynamic
+ * form). Used by the catalog request form action and by the portal Vio assistant
+ * so a Vio-filled request routes exactly like a hand-filled one (triage team,
+ * category from the item, approval flow, automations, auto-assign).
+ *
+ * `rawAnswers` is keyed by field key WITHOUT the `f_` prefix.
+ */
+export async function createCatalogRequestFor(
+  me: { id: string; email?: string | null; name?: string | null },
+  itemId: string,
+  rawAnswers: Record<string, string>,
+  source: string = "PORTAL",
+): Promise<CatalogRequestResult> {
+  const item = await db.catalogItem.findUnique({
+    where: { id: itemId },
+    include: { service: { select: { groupId: true } }, category: { select: { groupId: true } } },
+  });
+  if (!item || !item.isPublished) return { ok: false, error: "This item can't be requested." };
+  if (item.requiresApproval && !item.approverId) {
+    return { ok: false, error: "This item requires approval but has no approver configured. Please contact IT." };
+  }
+
+  const fields = parseFormSchema(item.formSchema);
+  const data: Record<string, string> = {};
+  for (const [k, v] of Object.entries(rawAnswers)) data[`f_${k}`] = String(v ?? "");
+  const { values, errors } = validateAnswers(fields, data);
+  if (Object.keys(errors).length > 0) {
+    return { ok: false, error: "Please complete the required fields.", fieldErrors: errors };
+  }
+
+  const summary = answersToText(fields, values);
+  const triage = await db.group.findFirst({ where: { name: "Service Desk" } });
+  // Pre-route: the service's team, else the category's team, else Service Desk triage.
+  const routeGroupId = item.service?.groupId ?? item.category?.groupId ?? triage?.id ?? null;
+  const needsApproval = item.requiresApproval && !!item.approverId;
+  const sla = await slaCreateData({ priority: "MEDIUM" });
+
+  const ticket = await db.ticket.create({
+    data: {
+      title: `${item.name} request`,
+      description: `Catalog request: ${item.name}.`,
+      type: "REQUEST",
+      prefix: "REQ",
+      status: needsApproval ? "PENDING" : "NEW",
+      source,
+      priority: "MEDIUM",
+      requesterId: me.id,
+      catalogItemId: item.id,
+      categoryId: item.categoryId,
+      serviceId: item.serviceId,
+      groupId: routeGroupId,
+      formData: JSON.stringify(values),
+      formSchema: item.formSchema,
+      approvalState: needsApproval ? "PENDING" : null,
+      ...sla,
+      ...(needsApproval ? { pendingSince: new Date() } : {}),
+    },
+  });
+
+  await writeAudit({ userId: me.id, action: "CREATE", entity: "Ticket", entityId: ticket.id, summary: `Ordered "${item.name}" from the catalog` });
+
+  if (needsApproval && item.approverId) {
+    await db.ticketApproval.create({ data: { ticketId: ticket.id, approverId: item.approverId } });
+    await notify(item.approverId, {
+      type: "APPROVAL", title: "Approval needed",
+      body: `${me.name} requested ${item.name} (${ticketRef(ticket.id, "REQUEST")})`,
+      entity: "Ticket", entityId: String(ticket.id),
+    });
+    const approver = await db.user.findUnique({ where: { id: item.approverId } });
+    if (approver?.email) {
+      await sendMail({
+        to: approver.email, toName: approver.name, entity: "Ticket", entityId: ticket.id, template: "approval_request",
+        subject: `[${ticketRef(ticket.id, "REQUEST")}] Approval needed: ${item.name}`,
+        body: `Hi ${approver.name ?? "there"},\n\n${me.name} has requested "${item.name}".\n\n${summary}\n\nPlease review and approve or reject it in Servio under Approvals.\n\n- Servio`,
+      });
+    }
+  }
+
+  if (me.email) {
+    await sendMail({ to: me.email, toName: me.name, entity: "Ticket", entityId: ticket.id, ...tplTicketReceived(ticket) });
+  }
+  if (!needsApproval) {
+    await runAutomations("TICKET_CREATED", ticket.id);
+    await autoAssignTicket(ticket.id);
+  }
+
+  revalidatePath("/portal/tickets");
+  return { ok: true, ticket };
+}

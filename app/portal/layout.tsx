@@ -1,11 +1,13 @@
 import Link from "next/link";
 import { LayoutDashboard } from "lucide-react";
 import { requireUser, isAgent } from "@/lib/session";
+import { aiConfigured, aiTeaserEnabled } from "@/lib/ai";
 import { Wordmark } from "@/components/brand";
 import { PortalNav } from "@/components/portal/portal-nav";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { UserMenu } from "@/components/user-menu";
 import { LinkButton } from "@/components/link-button";
+import { VioWidget } from "@/components/portal/vio-widget";
 
 export default async function PortalLayout({
   children,
@@ -13,20 +15,26 @@ export default async function PortalLayout({
   children: React.ReactNode;
 }) {
   const user = await requireUser();
+  const [configured, teaser] = await Promise.all([aiConfigured(), aiTeaserEnabled()]);
+  const showVio = configured || teaser;
 
   return (
     <div className="flex min-h-svh flex-col bg-muted/30">
-      <header className="sticky top-0 z-30 border-b bg-background/80 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-        <div className="mx-auto flex h-14 w-full max-w-6xl items-center gap-4 px-4">
-          <Link href="/portal">
-            <Wordmark subtitle="Help Center" />
-          </Link>
-          <div className="mx-auto hidden md:block">
+      <header className="sticky top-0 z-30 border-b bg-background/80 backdrop-blur supports-[backdrop-filter]:bg-background/65">
+        {/* Three equal-flex columns so the centre nav stays truly centred
+            regardless of how wide the left/right clusters are. */}
+        <div className="mx-auto grid h-16 w-full max-w-6xl grid-cols-[1fr_auto_1fr] items-center gap-4 px-4">
+          <div className="flex items-center">
+            <Link href="/portal" className="shrink-0 transition-opacity hover:opacity-80">
+              <Wordmark subtitle="Help Center" />
+            </Link>
+          </div>
+          <div className="hidden md:flex md:justify-center">
             <PortalNav />
           </div>
-          <div className="ml-auto flex items-center gap-1.5">
+          <div className="flex items-center justify-end gap-1.5">
             {isAgent(user.role) ? (
-              <LinkButton href="/" variant="outline" size="sm">
+              <LinkButton href="/" variant="outline" size="sm" className="hidden sm:inline-flex">
                 <LayoutDashboard className="size-4" /> Agent console
               </LinkButton>
             ) : null}
@@ -34,14 +42,27 @@ export default async function PortalLayout({
             <UserMenu name={user.name} email={user.email} role={user.role} image={user.image} />
           </div>
         </div>
-        <div className="border-t px-4 py-2 md:hidden">
+        <div className="border-t px-2 py-2 md:hidden">
           <PortalNav />
         </div>
       </header>
-      <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-8">{children}</main>
-      <footer className="border-t py-6 text-center text-xs text-muted-foreground">
-        Servio · Open-source ITSM · Need urgent help? Call the Service Desk.
+
+      <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-8 sm:py-10">{children}</main>
+
+      <footer className="mt-4 border-t">
+        <div className="mx-auto flex w-full max-w-6xl items-center justify-center px-4 py-8 text-center text-sm text-muted-foreground">
+          <p>
+            Can&apos;t find what you&apos;re looking for?{" "}
+            <Link href="/portal/new" className="font-medium text-primary hover:underline">
+              Contact the Service Desk
+            </Link>
+          </p>
+        </div>
       </footer>
+
+      {showVio ? (
+        <VioWidget firstName={user.name?.split(" ")[0] ?? "there"} previewOnly={!configured} />
+      ) : null}
     </div>
   );
 }

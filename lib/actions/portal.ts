@@ -5,12 +5,9 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { getSessionUser } from "@/lib/session";
-import { writeAudit } from "@/lib/audit";
-import { sendMail, tplTicketReceived } from "@/lib/mail";
-import { runAutomations } from "@/lib/automations";
-import { slaCreateData } from "@/lib/sla";
 import { sanitizeCommentHtml, htmlToText } from "@/lib/markdown";
-import { TICKET_TYPES, PRIORITIES, prefixForType } from "@/lib/constants";
+import { TICKET_TYPES, PRIORITIES } from "@/lib/constants";
+import { createPortalTicketFor, linkStagedAttachments } from "@/lib/portal-tickets";
 
 export type PortalState = { error?: string; fieldErrors?: Record<string, string[]> } | undefined;
 
@@ -37,27 +34,8 @@ export async function createPortalTicket(_prev: PortalState, formData: FormData)
     return { error: "Please fix the highlighted fields.", fieldErrors: parsed.error.flatten().fieldErrors };
   }
 
-  const sla = await slaCreateData({ serviceId: parsed.data.serviceId, priority: parsed.data.priority });
-  const ticket = await db.ticket.create({
-    data: {
-      ...parsed.data,
-      prefix: prefixForType(parsed.data.type),
-      ...sla,
-      status: "NEW",
-      source: "PORTAL",
-      impact: "MEDIUM",
-      urgency: "MEDIUM",
-      requesterId: me.id,
-    },
-  });
-  await writeAudit({ userId: me.id, action: "CREATE", entity: "Ticket", entityId: ticket.id, summary: "Submitted via self-service portal" });
-  if (me.email) {
-    await sendMail({ to: me.email, toName: me.name, entity: "Ticket", entityId: ticket.id, ...tplTicketReceived(ticket) });
-  }
-
-  await runAutomations("TICKET_CREATED", ticket.id);
-
-  revalidatePath("/portal/tickets");
+  const ticket = await createPortalTicketFor(me, parsed.data);
+  await linkStagedAttachments(me.id, ticket.id, formData.getAll("attachmentIds").map(String));
   redirect(`/portal/tickets/${ticket.id}`);
 }
 

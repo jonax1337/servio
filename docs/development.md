@@ -124,9 +124,9 @@ app/
   (console)/          Agent console — a route group (URL has no "(console)" segment).
                       Dashboard (page.tsx), shared layout.tsx (sidebar + topbar), and
                       one folder per module: tickets/ problems/ changes/ assets/
-                      catalog/ services/ groups/ people/ categories/ tags/ locations/
+                      catalog/ services/ groups/ people/ categories/ locations/
                       knowledge/ approvals/ automations/ syncs/ notifications/
-                      settings/ queues/  (queues/ is a thin page — see note below)
+                      settings/
   portal/             Self-service portal for end users (USER role).
   login/              Auth pages (Credentials + optional "Continue with SSO").
   api/
@@ -170,10 +170,9 @@ auth.config.ts        Edge-safe Auth.js config shared with the middleware.
 proxy.ts              The middleware. (Next 16 names it proxy.ts, NOT middleware.ts.)
 ```
 
-> **`queues/` is intentionally thin.** Queues were dissolved into **Teams/Groups**:
-> the board groups work by team, and there is no first-class Queue module even though a
-> `Queue` model still exists in the schema for legacy filter fields. Treat Groups
-> (`lib/actions/groups.ts`, `app/(console)/groups/`) as the real organizational unit.
+> **Groups are the organizational unit.** The old Queues/Board module and the `Queue`
+> model were removed — assignment and auto-routing run entirely on Groups
+> (`lib/actions/groups.ts`, `app/(console)/groups/`). Freeform ticket Tags were removed too.
 
 ---
 

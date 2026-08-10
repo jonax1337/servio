@@ -19,7 +19,7 @@ Console modules follow one consistent shape. When adding a feature, mirror this 
 | --- | --- | --- |
 | List page | `app/(console)/<mod>/page.tsx` | Server Component; queries `lib/db`, renders table/cards. `export const dynamic = "force-dynamic"`. |
 | Detail page | `app/(console)/<mod>/[id]/page.tsx` | Loads one record + related data; renders a `*-properties` panel and action components. |
-| Create page | `app/(console)/<mod>/new/page.tsx` | Renders the `*-form` component. Some modules create via a dialog instead (e.g. Locations, Tags). |
+| Create page | `app/(console)/<mod>/new/page.tsx` | Renders the `*-form` component. Some modules create via a dialog instead (e.g. Locations, Categories). |
 | Server actions | `lib/actions/<mod>.ts` | All mutations. `"use server"`, Zod-validated, role-checked via `lib/session`, then `revalidatePath`. |
 | UI components | `components/<mod>/` | Client components: forms, dialogs, property panels, action buttons. |
 | Select options | `lib/data/options.ts` | Single cached `getFormOptions()` supplies dropdown data (users, groups, categories, services, etc.) to every form. |
@@ -33,9 +33,10 @@ Enums, status/priority metadata, and reference helpers (`ticketRef`, `problemRef
 | Group | Modules |
 | --- | --- |
 | Overview | Dashboard (`/`), Vio (`/assistant`) |
-| Service Operations | Tickets, Board (`/queues`), Problems, Changes, Approvals |
-| Catalog & CMDB | Services, Service Catalog (MANAGER+), Assets, Locations, Categories, Knowledge Base |
-| Organisation | Groups, People, Tags |
+| Service Desk | Tickets, Problems, Changes, Approvals, Knowledge Base |
+| Catalog | Services, Service Catalog (MANAGER+) |
+| CMDB | Assets, Locations |
+| Organisation | Groups, People, Categories |
 | Administration | Automations (MANAGER+), Syncs (MANAGER+), Settings (MANAGER+) |
 
 ---
@@ -75,10 +76,9 @@ The core incident/request module and the richest one in the codebase.
 | Actions | `lib/actions/tickets.ts` |
 | Components | `components/tickets/` |
 
-Actions include `createTicket`, `updateTicketField`, `updateTicketDetails`, `addTicketComment`, `escalateTicket`, `toggleMajorIncident`, `toggleWatch`, `addParticipant`, `linkTicket`/`unlinkTicket`, `mergeTicket`, `setTicketResolution`, `setTicketPending`, `setTicketDueDate`, `forwardTicketExternal`, `unlinkAsset`, `unlinkRelation`, task CRUD (`addTask`, `toggleTask`, `deleteTask`), and work-log entries (`addWorkLog`, `deleteWorkLog`). Key components: `ticket-form`, `ticket-properties`, `ticket-actions`, `ticket-tasks`, `comment-composer`, `work-log`, `log-time-popover`, `resolution-dialog`, `pending-reason-dialog`, `due-date-picker`, `sla-badge`, `form-answers` (renders catalog service-form answers).
+Actions include `createTicket`, `updateTicketField` (incl. switching `type` — the ref prefix stays fixed), `updateTicketDetails`, `addTicketComment`, `escalateTicket`, `toggleMajorIncident`, `toggleWatch`, `addParticipant`, `linkTicket`/`unlinkTicket`, `mergeTicket`, cross-entity linking (`setTicketProblem`, `setTicketChange`, `linkAsset`/`unlinkAsset`, `unlinkRelation`), `setTicketResolution`, `setTicketPending`, `setTicketDueDate`, `forwardTicketExternal`, and work-log entries (`addWorkLog`, `deleteWorkLog`). Key components: `ticket-form`, `ticket-properties` (staged edits incl. type + due date), `ticket-actions`, `comment-composer`, `work-log`, `resolution-dialog`, `pending-reason-dialog`, `due-date-picker`, `sla-badge`, `form-answers`, plus the reusable `link-picker` (attach problems/changes/assets) and `saved-views-bar`.
 
-### Board (Queues)
-`app/(console)/queues/page.tsx` — a thin, single-file page. Queues were dissolved into Teams/Groups; the board simply groups open tickets by `Group` (excluding `VENDOR` groups) into columns, with an "Unassigned" column for ticket without a `groupId`. No dedicated actions or components folder.
+**Saved views:** `/tickets` carries a searchable list of saved filter sets (`SavedView`) — apply/save/delete named filters, personal or (MANAGER+) shared with a team. Actions in `lib/actions/saved-views.ts`.
 
 ### Problems
 
@@ -187,14 +187,18 @@ User directory. Read-heavy; users are typically provisioned via syncs, so there 
 | Actions | `lib/actions/people.ts` — `updateUserField` |
 | Components | `components/people/user-properties` |
 
-### Tags
-Free-form labels; created/removed inline.
+### Dashboards
+
+Customizable widget dashboards on the home page (`/`). Every user gets a personal **"My Dashboard"**; managers/admins can create dashboards shared with a team or everyone. A searchable dropdown switches dashboards; **Edit** mode is a drag/resize grid ([react-grid-layout](https://github.com/react-grid-layout/react-grid-layout)) with per-widget config and a live preview.
 
 | | |
 | --- | --- |
-| Route | `app/(console)/tags/page.tsx` |
-| Actions | `lib/actions/tags.ts` — `createTag`, `deleteTag` |
-| Components | `components/tags/tag-creator` |
+| Routes | `app/(console)/page.tsx` (view + `?edit=1` editor); `app/api/dashboard/widget` (live-preview compute) |
+| Actions | `lib/actions/dashboards.ts` — `ensurePersonalDashboard`, `createDashboard`, `setDashboardLayout`, `updateDashboardSettings`, `renameDashboard`, `deleteDashboard` |
+| Engine / types | `lib/dashboard/compute.ts` (server metric engine), `lib/dashboard/types.ts` (`Widget`, `DEFAULT_LAYOUT`) |
+| Components | `dashboard-picker`, `dashboard-grid-view`, `dashboard-canvas` (editor), `widget-card`, `widget-config-dialog`; charts in `components/charts` |
+
+Widget types: **stat**, **breakdown** (bar or donut; group by priority/status/type/assignee/team/category/service/source/impact/urgency), **volume** trend, **SLA & MTTR** gauge, **aging**, and **ticket list**. Each widget carries its own filters and an optional accent colour; stat widgets support value **thresholds** (e.g. `< 15 → red`) that tint the whole card. Stat/SLA cards and every breakdown segment drill into the matching `/tickets` filter URL.
 
 ---
 
@@ -207,7 +211,10 @@ Rule engine (trigger → conditions → actions), MANAGER+.
 | --- | --- |
 | Route | `app/(console)/automations/page.tsx` |
 | Actions | `lib/actions/automations.ts` — `createRule`, `updateRule`, `toggleRule`, `deleteRule` |
+| Engine | `lib/automations.ts` — `runAutomations(trigger, ticketId)` (direct DB writes, never user actions, so it can't recurse) |
 | Components | `components/automations/` — `rule-builder`, `toggle-switch` |
+
+Internal-note actions are authored by a pseudo **"Automation"** system account (inactive, no login) via `getAutomationUserId()` in `lib/system-user.ts`, so automated comments are clearly attributed to the system rather than an admin.
 
 ### Syncs / Integrations
 External data sync connectors (e.g. directory/asset imports), MANAGER+.
@@ -272,14 +279,16 @@ The requester surface under `app/portal/*`, laid out by `app/portal/layout.tsx` 
 
 | Feature | Route | Purpose | Key files |
 | --- | --- | --- | --- |
-| Home | `app/portal/page.tsx` | Requester dashboard: recent tickets, featured catalog items, published KB articles | `getSessionUser`, `db.ticket`/`catalogItem`/`article` |
-| Catalog | `app/portal/catalog/page.tsx` | Browse published catalog items | `components/catalog/catalog-browser`, `catalog-icon` |
-| Request | `app/portal/request/[serviceId]/page.tsx` | Submit a catalog request (dynamic per-service form) | `components/portal/service-request-form`, `request-form`; `lib/actions/catalog.ts` → `createCatalogRequest`; form schema via `lib/service-forms.ts` |
-| New ticket | `app/portal/new/page.tsx` | Raise a plain support ticket | `lib/actions/portal.ts` → `createPortalTicket` |
-| My tickets | `app/portal/tickets/page.tsx`, `[id]/page.tsx` | Track own tickets + reply | `lib/actions/portal.ts` → `addPortalComment`; `components/portal/portal-comment` |
-| Knowledge | `app/portal/knowledge/page.tsx`, `[slug]/page.tsx` | Read published, public-facing KB articles | shares KB data; only published/public articles surface |
+| Home | `app/portal/page.tsx` | Requester dashboard: hero with live search, own open tickets, popular answers, catalog preview | `components/portal/portal-hero`, `portal-search`; `db.ticket`/`catalogItem`/`article` |
+| Search | `app/api/portal/search/route.ts` | Live help-center search over **public** KB, catalog, and the caller's own tickets | `components/portal/portal-search` |
+| Catalog | `app/portal/catalog/page.tsx` | Browse published catalog items (search + category pills) | `components/catalog/catalog-browser`, `catalog-icon` |
+| Request | `app/portal/request/[serviceId]/page.tsx` | Submit a catalog request (dynamic per-service form) | `components/portal/service-request-form`, `request-form`, `portal-attachments`; `lib/actions/catalog.ts` → `createCatalogRequest` → `lib/portal-tickets.ts` |
+| New ticket | `app/portal/new/page.tsx` | Raise a plain support ticket | `lib/actions/portal.ts` → `createPortalTicket` → `lib/portal-tickets.ts` |
+| My tickets | `app/portal/tickets/page.tsx`, `[id]/page.tsx` | Track own tickets, reply, attach files | `lib/actions/portal.ts` → `addPortalComment`; `components/portal/portal-comment`, `components/attachments/*` |
+| Knowledge | `app/portal/knowledge/page.tsx`, `[slug]/page.tsx` | Read published, public-facing KB articles (search + category pills) | `components/portal/knowledge-browser`; only published/public articles surface |
+| Ask Vio | widget in `app/portal/layout.tsx` | End-user AI assistant (see [ai.md](ai.md#vio-in-the-self-service-portal-end-users)) | `components/portal/vio-widget`; `lib/portal-assistant.ts`; `app/api/portal/assistant/{route,create}` |
 
-Portal write paths are deliberately narrow: requesters can only create tickets/catalog requests and comment on their own tickets (`lib/actions/portal.ts`, `lib/actions/catalog.ts`). All privileged mutations stay in the console action files.
+Portal write paths are deliberately narrow and share one routed core (`lib/portal-tickets.ts`): requesters (and Vio, acting as them, confirm-first) can only create tickets/catalog requests, reply on their **own** tickets, and stage attachments (images/PDF/`.eml`, re-parented onto the new ticket). Catalog requests pre-route to the item's service/category team; free-form tickets default to the Service Desk triage team. All privileged mutations stay in the console action files.
 
 ---
 

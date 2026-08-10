@@ -141,6 +141,7 @@ export const LEVEL_META: Record<string, Meta> = {
 
 export const TICKET_SOURCES = [
   "PORTAL",
+  "VIO",
   "EMAIL",
   "PHONE",
   "API",
@@ -148,6 +149,7 @@ export const TICKET_SOURCES = [
 ] as const;
 export const SOURCE_META: Record<string, Meta> = {
   PORTAL: { label: "Portal", tone: "info" },
+  VIO: { label: "Vio", tone: "purple", icon: Sparkle },
   EMAIL: { label: "Email", tone: "purple" },
   PHONE: { label: "Phone", tone: "indigo" },
   API: { label: "API", tone: "neutral" },

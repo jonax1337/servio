@@ -63,6 +63,8 @@ model User {
   appSettings     AppSetting[]
   notifications   Notification[]
   aiConversations AiConversation[] @relation("AiConversationUser")
+  savedViews      SavedView[] @relation("SavedViewOwner")
+  dashboards      Dashboard[] @relation("DashboardOwner")
   articles        Article[]
   articleRevisions ArticleRevision[]
   attachments     Attachment[] @relation("AttachmentUploader")
@@ -177,6 +179,49 @@ model Group {
   problems Problem[]
   changes  Change[]
   assets   Asset[]
+  savedViews SavedView[]
+  dashboards Dashboard[]
+  ownedCategories Category[] @relation("CategoryTeam")
+  ownedServices   Service[]  @relation("ServiceTeam")
+}
+
+/// A named, saved set of list filters (per-user, optionally shared with a team).
+/// `filters` is a JSON object of URL params (status, priority, type, group, …).
+model SavedView {
+  id        String   @id @default(cuid())
+  name      String
+  entity    String   @default("ticket") // ticket | problem | change | asset
+  filters   String   // JSON map of filter params
+  ownerId   String
+  isShared  Boolean  @default(false) // visible to the owner's team(s)
+  groupId   String?  // optional: scope a shared view to one team
+  order     Int      @default(0)
+  createdAt DateTime @default(now())
+
+  owner User   @relation("SavedViewOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  group Group? @relation(fields: [groupId], references: [id])
+
+  @@index([entity])
+  @@index([ownerId])
+}
+
+/// A customizable dashboard: a JSON `layout` of widgets on a 12-col grid.
+/// Personal by default; managers/admins can share one with a team or the org.
+model Dashboard {
+  id        String   @id @default(cuid())
+  name      String
+  ownerId   String
+  isShared  Boolean  @default(false)
+  groupId   String?
+  layout    String   @default("[]") // JSON: Widget[]
+  order     Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  owner User   @relation("DashboardOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  group Group? @relation(fields: [groupId], references: [id])
+
+  @@index([ownerId])
 }
 
 model GroupMember {
@@ -201,9 +246,12 @@ model Category {
   icon     String?
   color    String  @default("#64748b")
   parentId String?
+  groupId  String? // team that handles this category (informational; NOT auto-routing)
+  archived Boolean @default(false) // hidden from pickers/portal; existing tickets keep it
 
   parent   Category?  @relation("CategoryTree", fields: [parentId], references: [id])
   children Category[] @relation("CategoryTree")
+  group    Group?     @relation("CategoryTeam", fields: [groupId], references: [id])
   tickets  Ticket[]
   problems Problem[]
   changes  Change[]
@@ -238,13 +286,16 @@ model Service {
   categoryId  String?
   ownerId     String?
   slaId       String?
+  groupId     String? // team that runs this service (used to pre-route catalog requests)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
   category Category? @relation(fields: [categoryId], references: [id])
   owner    User?     @relation("ServiceOwner", fields: [ownerId], references: [id])
   sla      SLA?      @relation(fields: [slaId], references: [id])
+  group    Group?    @relation("ServiceTeam", fields: [groupId], references: [id])
   tickets  Ticket[]
+  catalogItems CatalogItem[]
 }
 
 model CatalogItem {
@@ -254,6 +305,7 @@ model CatalogItem {
   shortDescription String?
   icon             String?
   categoryId       String?
+  serviceId        String?  // the service this request maps to (pre-routes the ticket)
   formSchema       String   @default("[]") // JSON: array of form field definitions
   requiresApproval Boolean  @default(false)
   approverId       String?
@@ -264,6 +316,7 @@ model CatalogItem {
   updatedAt        DateTime @updatedAt
 
   category Category? @relation(fields: [categoryId], references: [id])
+  service  Service?  @relation(fields: [serviceId], references: [id])
   approver User?     @relation("CatalogApprover", fields: [approverId], references: [id])
   tickets  Ticket[]
 

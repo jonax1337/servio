@@ -22,7 +22,7 @@ type Opt = { value: string; label: string }[];
 const FIELD_TYPE_OPTIONS: ComboOption[] = FIELD_TYPES.map((t) => ({ value: t, label: t }));
 export type CatalogItemData = {
   id: string; name: string; description: string | null; shortDescription: string | null;
-  icon: string | null; categoryId: string | null; estimatedDays: number | null;
+  icon: string | null; categoryId: string | null; serviceId: string | null; estimatedDays: number | null;
   isPublished: boolean; requiresApproval: boolean; approverId: string | null;
   fields: ServiceField[];
 };
@@ -53,10 +53,11 @@ function slug(s: string) {
 }
 
 export function CatalogEditor({
-  item, categories, agents,
+  item, categories, services, agents,
 }: {
   item?: CatalogItemData;
   categories: Opt;
+  services: Opt;
   agents: Opt;
 }) {
   const editing = !!item;
@@ -68,12 +69,14 @@ export function CatalogEditor({
 
   const [icon, setIcon] = useState(item?.icon ?? "ShoppingBag");
   const [categoryId, setCategoryId] = useState(item?.categoryId ?? "none");
+  const [serviceId, setServiceId] = useState(item?.serviceId ?? "none");
   const [approverId, setApproverId] = useState(item?.approverId ?? "none");
   const [isPublished, setIsPublished] = useState(item?.isPublished ?? true);
   const [requiresApproval, setRequiresApproval] = useState(item?.requiresApproval ?? false);
   const [fields, setFields] = useState<ServiceField[]>(item?.fields ?? []);
 
   const catOpts: ComboOption[] = [{ value: "none", label: "No category" }, ...categories];
+  const serviceOpts: ComboOption[] = [{ value: "none", label: "No service" }, ...services];
   const approverOpts: ComboOption[] = [{ value: "none", label: "No approver" }, ...agents.map((a) => ({ ...a, avatar: a.label.slice(0, 2).toUpperCase() }))];
   const normalized = fields.filter((f) => f.label.trim()).map((f) => ({ ...f, key: f.key || slug(f.label) }));
 
@@ -94,6 +97,7 @@ export function CatalogEditor({
           {item ? <input type="hidden" name="id" value={item.id} /> : null}
           <input type="hidden" name="icon" value={icon} />
           <input type="hidden" name="categoryId" value={categoryId} />
+          <input type="hidden" name="serviceId" value={serviceId} />
           <input type="hidden" name="approverId" value={approverId} />
           <input type="hidden" name="isPublished" value={String(isPublished)} />
           <input type="hidden" name="requiresApproval" value={String(requiresApproval)} />
@@ -123,6 +127,10 @@ export function CatalogEditor({
               <Combobox options={catOpts} value={categoryId} onChange={setCategoryId} searchPlaceholder="Search categories…" />
             </div>
             <div className="grid gap-1.5">
+              <Label>Service <span className="text-muted-foreground">(pre-routes requests)</span></Label>
+              <Combobox options={serviceOpts} value={serviceId} onChange={setServiceId} searchPlaceholder="Search services…" />
+            </div>
+            <div className="grid gap-1.5 sm:col-span-2">
               <Label>Estimated delivery (days)</Label>
               <Input name="estimatedDays" type="number" defaultValue={item?.estimatedDays ?? ""} placeholder="e.g. 3" />
             </div>
