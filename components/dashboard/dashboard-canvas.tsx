@@ -42,8 +42,8 @@ export function DashboardCanvas({
   const router = useRouter();
   const { width, containerRef, mounted } = useContainerWidth();
   const [widgets, setWidgets] = useState<Widget[]>(initialWidgets);
-  // Which widgets still have valid server-computed data (untouched filters/type).
-  const [freshIds, setFreshIds] = useState<Set<string>>(new Set(initialWidgets.map((w) => w.id)));
+  // Live-computed data per widget (seeded from the server; refreshed on edit/add).
+  const [dataMap, setDataMap] = useState<Record<string, Computed>>(dataById);
   const [configOpen, setConfigOpen] = useState(false);
   const [editing, setEditing] = useState<Widget | null>(null);
   const [saving, startSave] = useTransition();
@@ -104,6 +104,21 @@ export function DashboardCanvas({
   function removeWidget(id: string) {
     setWidgets((ws) => ws.filter((w) => w.id !== id));
   }
+  /** Recompute a single widget's data on the server for live preview (no save). */
+  async function refresh(w: Widget) {
+    try {
+      const res = await fetch("/api/dashboard/widget", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(w),
+      });
+      const json = await res.json();
+      if (json?.data) setDataMap((m) => ({ ...m, [w.id]: json.data as Computed }));
+    } catch {
+      /* keep whatever data we had */
+    }
+  }
+
   function saveWidget(w: Widget) {
     setWidgets((ws) => {
       const exists = ws.some((x) => x.id === w.id);
@@ -112,12 +127,8 @@ export function DashboardCanvas({
       const bottom = ws.reduce((m, x) => Math.max(m, x.y + x.h), 0);
       return [...ws, { ...w, x: 0, y: bottom }];
     });
-    // Its data is now stale/absent until the dashboard is saved & recomputed.
-    setFreshIds((s) => {
-      const n = new Set(s);
-      n.delete(w.id);
-      return n;
-    });
+    // Live preview: fetch its real data immediately.
+    void refresh(w);
   }
 
   function save() {
@@ -179,12 +190,12 @@ export function DashboardCanvas({
                   </Button>
                 </div>
                 <div className="h-[calc(100%-2.5rem)] overflow-auto p-3">
-                  {freshIds.has(w.id) && dataById[w.id] ? (
-                    <WidgetBody data={dataById[w.id]} />
+                  {dataMap[w.id] ? (
+                    <WidgetBody data={dataMap[w.id]} />
                   ) : (
-                    <p className="grid h-full place-items-center text-center text-xs text-muted-foreground">
-                      Save the dashboard to see this widget&apos;s data.
-                    </p>
+                    <div className="grid h-full place-items-center text-muted-foreground">
+                      <Loader2 className="size-4 animate-spin" />
+                    </div>
                   )}
                 </div>
               </div>
