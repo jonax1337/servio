@@ -36,10 +36,46 @@ are refused server-side. Scope is a property of each conversation (`AiConversati
 
 ---
 
+## Vio in the self-service portal (end users)
+
+A separate, **USER-scoped** assistant lives in the help center — a floating **Ask Vio** widget
+(`components/portal/vio-widget.tsx`) mounted in `app/portal/layout.tsx`, gated by the same
+`aiConfigured()` / `aiTeaserEnabled()` switches. It is deliberately smaller and safer than the
+console Vio and shares **none** of the agent tools.
+
+- **Backend:** `lib/portal-assistant.ts` builds a per-request tool set bound to the caller's id
+  (`buildPortalTools(userId)`). Chat runs through `app/api/portal/assistant/route.ts`; drafts are
+  confirmed via `app/api/portal/assistant/create/route.ts`.
+- **Read tools (public / own only):** `search_knowledge` (published **public** articles),
+  `search_catalog`, `list_categories`, `get_service_form`, keyless `web_search` / `fetch_url`, and
+  the caller's **own** tickets — `list_my_tickets` / `get_my_ticket` (public content only; internal
+  notes are excluded by the same `isInternal: false` filter the portal UI uses).
+- **Confirm-first writes:** every `propose_*` only drafts; the widget renders a confirm card and the
+  create route re-validates server-side before acting as the signed-in user:
+  - `propose_request` → `createPortalTicketFor` (routed ticket with type / priority / impact /
+    urgency and an optional category),
+  - `propose_service_request` → `createCatalogRequestFor` (fills a catalog item's dynamic form),
+  - `propose_reply` → `addPortalReply` (a **public** reply on one of the user's own open tickets).
+
+  Portal/Vio tickets carry `source: "VIO"` (a purple "via Vio" badge, `SOURCE_META.VIO`).
+- **Attachments & vision:** the widget stages files (images / PDF / …, incl. `.eml`) and sends the
+  current turn to a vision-capable model; anything attached is linked onto the ticket Vio opens. On
+  the `claude-code` backend images are passed as real Anthropic content blocks
+  (`lib/claude-cli.ts`) instead of being flattened to text.
+
+The shared creation core (`lib/portal-tickets.ts`) routes catalog requests to the item's
+**service team → category team → Service Desk triage**, runs automations, then auto-assigns; free-form
+tickets default to Service Desk triage. Team ownership on `Service` / `Category` (`groupId`) is
+informational (surfaced to Vio) and only *pre-routes* catalog requests — it never auto-routes
+free-form tickets.
+
+---
+
 ## What Vio can do
 
 Vio's capabilities split cleanly into **read tools** (run immediately) and **write operations**
-(propose-only — see [the approve-first flow](#the-approve-first-flow)).
+(propose-only — see [the approve-first flow](#the-approve-first-flow)). The section above covers the
+portal assistant; the rest of this page describes the **agent console** Vio.
 
 ### Read & research tools
 

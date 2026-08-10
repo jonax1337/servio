@@ -272,14 +272,16 @@ The requester surface under `app/portal/*`, laid out by `app/portal/layout.tsx` 
 
 | Feature | Route | Purpose | Key files |
 | --- | --- | --- | --- |
-| Home | `app/portal/page.tsx` | Requester dashboard: recent tickets, featured catalog items, published KB articles | `getSessionUser`, `db.ticket`/`catalogItem`/`article` |
-| Catalog | `app/portal/catalog/page.tsx` | Browse published catalog items | `components/catalog/catalog-browser`, `catalog-icon` |
-| Request | `app/portal/request/[serviceId]/page.tsx` | Submit a catalog request (dynamic per-service form) | `components/portal/service-request-form`, `request-form`; `lib/actions/catalog.ts` → `createCatalogRequest`; form schema via `lib/service-forms.ts` |
-| New ticket | `app/portal/new/page.tsx` | Raise a plain support ticket | `lib/actions/portal.ts` → `createPortalTicket` |
-| My tickets | `app/portal/tickets/page.tsx`, `[id]/page.tsx` | Track own tickets + reply | `lib/actions/portal.ts` → `addPortalComment`; `components/portal/portal-comment` |
-| Knowledge | `app/portal/knowledge/page.tsx`, `[slug]/page.tsx` | Read published, public-facing KB articles | shares KB data; only published/public articles surface |
+| Home | `app/portal/page.tsx` | Requester dashboard: hero with live search, own open tickets, popular answers, catalog preview | `components/portal/portal-hero`, `portal-search`; `db.ticket`/`catalogItem`/`article` |
+| Search | `app/api/portal/search/route.ts` | Live help-center search over **public** KB, catalog, and the caller's own tickets | `components/portal/portal-search` |
+| Catalog | `app/portal/catalog/page.tsx` | Browse published catalog items (search + category pills) | `components/catalog/catalog-browser`, `catalog-icon` |
+| Request | `app/portal/request/[serviceId]/page.tsx` | Submit a catalog request (dynamic per-service form) | `components/portal/service-request-form`, `request-form`, `portal-attachments`; `lib/actions/catalog.ts` → `createCatalogRequest` → `lib/portal-tickets.ts` |
+| New ticket | `app/portal/new/page.tsx` | Raise a plain support ticket | `lib/actions/portal.ts` → `createPortalTicket` → `lib/portal-tickets.ts` |
+| My tickets | `app/portal/tickets/page.tsx`, `[id]/page.tsx` | Track own tickets, reply, attach files | `lib/actions/portal.ts` → `addPortalComment`; `components/portal/portal-comment`, `components/attachments/*` |
+| Knowledge | `app/portal/knowledge/page.tsx`, `[slug]/page.tsx` | Read published, public-facing KB articles (search + category pills) | `components/portal/knowledge-browser`; only published/public articles surface |
+| Ask Vio | widget in `app/portal/layout.tsx` | End-user AI assistant (see [ai.md](ai.md#vio-in-the-self-service-portal-end-users)) | `components/portal/vio-widget`; `lib/portal-assistant.ts`; `app/api/portal/assistant/{route,create}` |
 
-Portal write paths are deliberately narrow: requesters can only create tickets/catalog requests and comment on their own tickets (`lib/actions/portal.ts`, `lib/actions/catalog.ts`). All privileged mutations stay in the console action files.
+Portal write paths are deliberately narrow and share one routed core (`lib/portal-tickets.ts`): requesters (and Vio, acting as them, confirm-first) can only create tickets/catalog requests, reply on their **own** tickets, and stage attachments (images/PDF/`.eml`, re-parented onto the new ticket). Catalog requests pre-route to the item's service/category team; free-form tickets default to the Service Desk triage team. All privileged mutations stay in the console action files.
 
 ---
 
