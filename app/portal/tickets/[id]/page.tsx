@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, MessagesSquare } from "lucide-react";
 import { db } from "@/lib/db";
 import { requireUser } from "@/lib/session";
 import { LinkButton } from "@/components/link-button";
@@ -49,31 +49,61 @@ export default async function PortalTicketDetail({
   });
   if (!ticket) notFound();
 
+  const isClosed = ticket.status === "CLOSED" || ticket.status === "CANCELLED";
+
   return (
     <div className="mx-auto max-w-3xl">
-      <LinkButton href="/portal/tickets" variant="ghost" size="sm" className="mb-4">
+      <LinkButton href="/portal/tickets" variant="ghost" size="sm" className="mb-4 -ml-2">
         <ArrowLeft className="size-4" /> Back to my tickets
       </LinkButton>
 
-      <div className="rounded-2xl border bg-card p-6">
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="font-mono text-sm text-muted-foreground">{ticketRef(ticket.id, ticket.prefix)}</span>
-          <StatusBadge map={TICKET_TYPE_META} value={ticket.type} dot />
-          <div className="ml-auto flex items-center gap-2">
-            <StatusBadge map={PRIORITY_META} value={ticket.priority} dot />
-            <StatusBadge map={TICKET_STATUS_META} value={ticket.status} />
+      <div className="overflow-hidden rounded-2xl border bg-card">
+        <div className="p-6">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="font-mono text-sm text-muted-foreground">{ticketRef(ticket.id, ticket.prefix)}</span>
+            <StatusBadge map={TICKET_TYPE_META} value={ticket.type} dot />
+            <div className="ml-auto flex items-center gap-2">
+              <StatusBadge map={PRIORITY_META} value={ticket.priority} dot />
+              <StatusBadge map={TICKET_STATUS_META} value={ticket.status} />
+            </div>
           </div>
+          <h1 className="mt-3 font-display text-2xl font-semibold tracking-tight">{ticket.title}</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Submitted {formatDistanceToNow(ticket.createdAt, { addSuffix: true })}
+            {ticket.service ? ` · ${ticket.service.name}` : ""}
+          </p>
         </div>
-        <h1 className="mt-3 font-display text-2xl font-semibold tracking-tight">{ticket.title}</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Submitted {formatDistanceToNow(ticket.createdAt, { addSuffix: true })}
-          {ticket.service ? ` · ${ticket.service.name}` : ""}
-          {ticket.assignee ? ` · Handled by ${ticket.assignee.name ?? "the Service Desk"}` : " · Awaiting assignment"}
-        </p>
-        <div className="mt-4 rounded-xl border bg-background p-4 text-sm leading-relaxed">
+
+        {/* Handling status strip */}
+        <div className="flex items-center gap-3 border-t bg-muted/30 px-6 py-3">
+          {ticket.assignee ? (
+            <>
+              <UserAvatar name={ticket.assignee.name} email={ticket.assignee.email} size="sm" />
+              <p className="text-sm text-muted-foreground">
+                Handled by{" "}
+                <span className="font-medium text-foreground">
+                  {ticket.assignee.name ?? "the Service Desk"}
+                </span>
+              </p>
+            </>
+          ) : (
+            <>
+              <span className="size-2 rounded-full bg-amber-500" />
+              <p className="text-sm text-muted-foreground">
+                Awaiting assignment. We&apos;ll pick this up shortly.
+              </p>
+            </>
+          )}
+        </div>
+      </div>
+
+      {/* Description */}
+      <div className="mt-6 rounded-2xl border bg-card p-6">
+        <h2 className="mb-3 text-sm font-semibold text-muted-foreground">Description</h2>
+        <div className="text-sm leading-relaxed">
           {ticket.descriptionHtml ? (
             <div
-              className="prose prose-sm dark:prose-invert max-w-none"
+              className="prose prose-sm max-w-none dark:prose-invert"
               dangerouslySetInnerHTML={{ __html: sanitizeCommentHtml(ticket.descriptionHtml) }}
             />
           ) : (
@@ -86,62 +116,80 @@ export default async function PortalTicketDetail({
         <FormAnswers className="mt-6" formSchema={ticket.formSchema ?? ticket.catalogItem?.formSchema} formData={ticket.formData} />
       ) : null}
 
-      {ticket.attachments.length > 0 ? (
+      {ticket.attachments.length > 0 || !isClosed ? (
         <AttachmentsCard
           className="mt-6"
           attachments={ticket.attachments}
           target={{ ticketId: ticket.id }}
-          canUpload={false}
+          canUpload={!isClosed}
           currentUserId={me.id}
         />
       ) : null}
 
-      <div className="mt-6">
-        <h2 className="mb-4 text-sm font-semibold">Conversation</h2>
-        <div className="grid gap-4">
-          {ticket.comments.map((c) => (
-            <div key={c.id} className="flex gap-3">
-              <UserAvatar name={c.author.name} email={c.author.email} className="shrink-0" />
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2">
-                  <span className="text-sm font-medium">{c.author.name ?? c.author.email}</span>
-                  <span className="text-xs text-muted-foreground">{format(c.createdAt, "PP p")}</span>
-                </div>
-                {c.bodyHtml ? (
-                  <div
-                    className="mt-1 rounded-lg border bg-card p-3 text-sm prose prose-sm dark:prose-invert max-w-none [&_[data-mention-id]]:rounded [&_[data-mention-id]]:bg-primary/10 [&_[data-mention-id]]:px-1 [&_[data-mention-id]]:font-medium [&_[data-mention-id]]:text-primary"
-                    dangerouslySetInnerHTML={{ __html: sanitizeCommentHtml(c.bodyHtml) }}
-                  />
-                ) : (
-                  <div className="mt-1 whitespace-pre-wrap rounded-lg border bg-card p-3 text-sm">{c.body}</div>
-                )}
-                {c.attachments.length > 0 ? (
-                  <div className="mt-1.5 flex flex-wrap gap-1.5">
-                    {c.attachments.map((a) => {
-                      const Icon = iconForMime(a.mime);
-                      return (
-                        <a key={a.id} href={`/api/files/${a.id}`} download className="inline-flex items-center gap-1.5 rounded-md border bg-background px-2 py-1 text-xs hover:border-primary/40 hover:text-primary">
-                          <Icon className="size-3.5 shrink-0 text-muted-foreground" />
-                          <span className="max-w-48 truncate font-medium">{a.filename}</span>
-                          <span className="text-muted-foreground">{formatBytes(a.size)}</span>
-                        </a>
-                      );
-                    })}
-                  </div>
-                ) : null}
-              </div>
-            </div>
-          ))}
-          {ticket.comments.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No replies yet. Our team will be in touch soon.</p>
-          ) : null}
-        </div>
+      {/* Conversation */}
+      <div className="mt-8">
+        <h2 className="mb-4 flex items-center gap-2 font-display text-lg font-semibold tracking-tight">
+          <MessagesSquare className="size-4.5 text-muted-foreground" />
+          Conversation
+        </h2>
 
-        {ticket.status !== "CLOSED" && ticket.status !== "CANCELLED" ? (
-          <div className="mt-4">
+        {ticket.comments.length === 0 ? (
+          <div className="rounded-2xl border border-dashed bg-card/40 px-4 py-10 text-center text-sm text-muted-foreground">
+            No replies yet. Our team will be in touch soon.
+          </div>
+        ) : (
+          <div className="grid gap-4">
+            {ticket.comments.map((c) => {
+              const mine = c.authorId === me.id;
+              return (
+                <div key={c.id} className="flex gap-3">
+                  <UserAvatar name={c.author.name} email={c.author.email} className="mt-0.5 shrink-0" />
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-medium">
+                        {mine ? "You" : c.author.name ?? c.author.email}
+                      </span>
+                      <span className="text-xs text-muted-foreground">{format(c.createdAt, "PP p")}</span>
+                    </div>
+                    {c.bodyHtml ? (
+                      <div
+                        className="mt-1.5 rounded-2xl border bg-card p-3.5 text-sm prose prose-sm max-w-none dark:prose-invert [&_[data-mention-id]]:rounded [&_[data-mention-id]]:bg-primary/10 [&_[data-mention-id]]:px-1 [&_[data-mention-id]]:font-medium [&_[data-mention-id]]:text-primary"
+                        dangerouslySetInnerHTML={{ __html: sanitizeCommentHtml(c.bodyHtml) }}
+                      />
+                    ) : (
+                      <div className="mt-1.5 whitespace-pre-wrap rounded-2xl border bg-card p-3.5 text-sm">{c.body}</div>
+                    )}
+                    {c.attachments.length > 0 ? (
+                      <div className="mt-1.5 flex flex-wrap gap-1.5">
+                        {c.attachments.map((a) => {
+                          const Icon = iconForMime(a.mime);
+                          return (
+                            <a key={a.id} href={`/api/files/${a.id}`} download className="inline-flex items-center gap-1.5 rounded-md border bg-background px-2 py-1 text-xs hover:border-primary/40 hover:text-primary">
+                              <Icon className="size-3.5 shrink-0 text-muted-foreground" />
+                              <span className="max-w-48 truncate font-medium">{a.filename}</span>
+                              <span className="text-muted-foreground">{formatBytes(a.size)}</span>
+                            </a>
+                          );
+                        })}
+                      </div>
+                    ) : null}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {!isClosed ? (
+          <div className="mt-5">
             <PortalComment ticketId={ticket.id} />
           </div>
-        ) : null}
+        ) : (
+          <div className="mt-5 rounded-2xl border bg-muted/30 px-4 py-3 text-center text-sm text-muted-foreground">
+            This ticket is {TICKET_STATUS_META[ticket.status]?.label?.toLowerCase() ?? "closed"}. Need more help?{" "}
+            <a href="/portal/new" className="font-medium text-primary hover:underline">Open a new request</a>.
+          </div>
+        )}
       </div>
     </div>
   );

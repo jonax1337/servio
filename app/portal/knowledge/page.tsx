@@ -1,9 +1,9 @@
-import Link from "next/link";
 import type { Metadata } from "next";
-import { BookOpen, Eye, ArrowRight } from "lucide-react";
+import { BookOpen } from "lucide-react";
 import { db } from "@/lib/db";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
+import { LinkButton } from "@/components/link-button";
+import { NoResultsArt } from "@/components/portal/illustrations";
+import { KnowledgeBrowser, type KbCard } from "@/components/portal/knowledge-browser";
 import type { SearchParams } from "@/lib/query";
 import { getParam } from "@/lib/query";
 
@@ -15,52 +15,53 @@ export default async function PortalKnowledge({
 }: {
   searchParams: Promise<SearchParams>;
 }) {
-  const sp = await searchParams;
-  const q = getParam(sp, "q");
+  const q = getParam(await searchParams, "q");
   const articles = await db.article.findMany({
     // End users only ever see published, public-facing articles.
-    where: {
-      status: "PUBLISHED",
-      visibility: "PUBLIC",
-      ...(q ? { OR: [{ title: { contains: q } }, { excerpt: { contains: q } }] } : {}),
-    },
+    where: { status: "PUBLISHED", visibility: "PUBLIC" },
     orderBy: { views: "desc" },
     include: { category: true },
   });
 
+  const cards: KbCard[] = articles.map((a) => ({
+    id: a.id,
+    title: a.title,
+    slug: a.slug,
+    excerpt: a.excerpt ?? "",
+    category: a.category?.name ?? "General",
+    views: a.views,
+  }));
+
   return (
-    <div className="grid gap-6">
-      <div>
-        <h1 className="font-display text-2xl font-semibold tracking-tight">Knowledge base</h1>
-        <p className="text-sm text-muted-foreground">Guides and answers to common questions.</p>
-      </div>
-      <form className="max-w-md">
-        <div className="relative">
-          <BookOpen className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-          <Input name="q" defaultValue={q ?? ""} placeholder="Search articles…" className="pl-9" />
+    <div className="grid gap-8">
+      <header className="flex items-start gap-4">
+        <span className="hidden size-12 shrink-0 place-items-center rounded-2xl bg-primary/10 text-primary sm:grid">
+          <BookOpen className="size-6" />
+        </span>
+        <div>
+          <h1 className="font-display text-2xl font-semibold tracking-tight sm:text-3xl">
+            Knowledge base
+          </h1>
+          <p className="mt-1 max-w-xl text-muted-foreground">
+            Guides and answers to the questions we hear most. Search or browse by category.
+          </p>
         </div>
-      </form>
-      <div className="grid gap-4 sm:grid-cols-2">
-        {articles.map((a) => (
-          <Link key={a.id} href={`/portal/knowledge/${a.slug}`}>
-            <Card className="h-full transition-colors hover:border-primary/40">
-              <CardHeader>
-                <CardTitle className="text-base">{a.title}</CardTitle>
-              </CardHeader>
-              <CardContent className="grid gap-3 text-sm text-muted-foreground">
-                <p className="line-clamp-2">{a.excerpt}</p>
-                <div className="flex items-center justify-between text-xs">
-                  <span>{a.category?.name ?? "General"}</span>
-                  <span className="flex items-center gap-1"><Eye className="size-3.5" /> {a.views}</span>
-                </div>
-                <span className="flex items-center gap-1 text-xs font-medium text-primary">
-                  Read article <ArrowRight className="size-3.5" />
-                </span>
-              </CardContent>
-            </Card>
-          </Link>
-        ))}
-      </div>
+      </header>
+
+      {cards.length === 0 ? (
+        <div className="flex flex-col items-center gap-2 rounded-2xl border bg-card py-14 text-center">
+          <NoResultsArt className="h-28 w-28" />
+          <p className="font-medium">No articles yet</p>
+          <p className="max-w-sm text-sm text-muted-foreground">
+            Check back soon, or ask us anything and we&apos;ll help directly.
+          </p>
+          <LinkButton href="/portal/new" size="sm" variant="outline" className="mt-1">
+            Ask the Service Desk
+          </LinkButton>
+        </div>
+      ) : (
+        <KnowledgeBrowser items={cards} initialQuery={q ?? ""} />
+      )}
     </div>
   );
 }

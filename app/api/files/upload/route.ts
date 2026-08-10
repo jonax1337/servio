@@ -48,16 +48,19 @@ export async function POST(req: Request) {
   const commentId = form.get("commentId");
   const articleId = form.get("articleId");
   const targets = [ticketIdRaw, commentId, articleId].filter((v) => v != null && v !== "");
-  if (targets.length !== 1) return err(422, "Provide exactly one target.");
+  // Zero targets = a STAGING upload: the file is stored owned by the uploader with
+  // no parent yet, to be re-parented onto a ticket when the (not-yet-created)
+  // request form is submitted. Any authenticated user may stage their own files.
+  if (targets.length > 1) return err(422, "Provide at most one target.");
 
-  let target: UploadTarget;
+  let target: UploadTarget | null = null;
   if (ticketIdRaw != null && ticketIdRaw !== "") {
     const ticketId = Number(ticketIdRaw);
     if (!Number.isInteger(ticketId)) return err(422, "Invalid ticket id.");
     target = { kind: "ticket", ticketId };
   } else if (commentId != null && commentId !== "") {
     target = { kind: "comment", commentId: String(commentId) };
-  } else {
+  } else if (articleId != null && articleId !== "") {
     target = { kind: "article", articleId: String(articleId) };
   }
 
@@ -76,8 +79,13 @@ export async function POST(req: Request) {
   }
 
   // 7. Authorize the write (null → 404, after validation, so no exists-but-forbidden leak).
-  const fk = await canUploadTo(actor, target);
-  if (!fk) return err(404, "Not found.");
+  //    Staging uploads (no target) are owned by the uploader and carry no FK.
+  let fk: { ticketId?: number; commentId?: string; articleId?: string } = {};
+  if (target) {
+    const resolved = await canUploadTo(actor, target);
+    if (!resolved) return err(404, "Not found.");
+    fk = resolved;
+  }
 
   // 8. Store the blob (server-generated, unguessable, traversal-free key).
   const key = buildStorageKey(v.safeName);

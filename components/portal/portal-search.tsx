@@ -35,29 +35,36 @@ export function PortalSearch({
   const listId = useId();
 
   // Debounced, race-safe server search against the portal-scoped endpoint.
+  // All state updates happen inside the timeout callback (not synchronously in
+  // the effect body) so we don't trigger cascading renders.
   useEffect(() => {
     const q = query.trim();
-    if (!q) {
-      setResults([]);
-      setLoading(false);
-      return;
-    }
-    setLoading(true);
     const id = ++reqId.current;
-    const t = setTimeout(async () => {
-      try {
-        const res = await fetch(`/api/portal/search?q=${encodeURIComponent(q)}`);
-        const data = await res.json();
-        if (id === reqId.current) {
-          setResults(data.results ?? []);
-          setActive(0);
+    const t = setTimeout(
+      async () => {
+        if (!q) {
+          if (id === reqId.current) {
+            setResults([]);
+            setLoading(false);
+          }
+          return;
         }
-      } catch {
-        if (id === reqId.current) setResults([]);
-      } finally {
-        if (id === reqId.current) setLoading(false);
-      }
-    }, 200);
+        if (id === reqId.current) setLoading(true);
+        try {
+          const res = await fetch(`/api/portal/search?q=${encodeURIComponent(q)}`);
+          const data = await res.json();
+          if (id === reqId.current) {
+            setResults(data.results ?? []);
+            setActive(0);
+          }
+        } catch {
+          if (id === reqId.current) setResults([]);
+        } finally {
+          if (id === reqId.current) setLoading(false);
+        }
+      },
+      q ? 200 : 0,
+    );
     return () => clearTimeout(t);
   }, [query]);
 

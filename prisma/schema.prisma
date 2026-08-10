@@ -288,6 +288,7 @@ model Service {
   owner    User?     @relation("ServiceOwner", fields: [ownerId], references: [id])
   sla      SLA?      @relation(fields: [slaId], references: [id])
   tickets  Ticket[]
+  catalogItems CatalogItem[]
 }
 
 model CatalogItem {
@@ -297,6 +298,7 @@ model CatalogItem {
   shortDescription String?
   icon             String?
   categoryId       String?
+  serviceId        String?  // the service this request maps to (pre-routes the ticket)
   formSchema       String   @default("[]") // JSON: array of form field definitions
   requiresApproval Boolean  @default(false)
   approverId       String?
@@ -307,6 +309,7 @@ model CatalogItem {
   updatedAt        DateTime @updatedAt
 
   category Category? @relation(fields: [categoryId], references: [id])
+  service  Service?  @relation(fields: [serviceId], references: [id])
   approver User?     @relation("CatalogApprover", fields: [approverId], references: [id])
   tickets  Ticket[]
 

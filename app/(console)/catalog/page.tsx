@@ -18,13 +18,15 @@ export const dynamic = "force-dynamic";
 
 export default async function CatalogAdminPage() {
   await requireRole("MANAGER");
-  const [items, categories, agents] = await Promise.all([
+  const [items, categories, services, agents] = await Promise.all([
     db.catalogItem.findMany({ orderBy: [{ order: "asc" }, { name: "asc" }], include: { category: true, _count: { select: { tickets: true } } } }),
     db.category.findMany({ select: { id: true, name: true }, orderBy: { name: "asc" } }),
+    db.service.findMany({ select: { id: true, name: true }, orderBy: { name: "asc" } }),
     db.user.findMany({ where: { role: { in: ["ADMIN", "MANAGER", "AGENT"] }, isActive: true }, select: { id: true, name: true, email: true }, orderBy: { name: "asc" } }),
   ]);
 
   const catOpts = categories.map((c) => ({ value: c.id, label: c.name }));
+  const serviceOpts = services.map((s) => ({ value: s.id, label: s.name }));
   const agentOpts = agents.map((a) => ({ value: a.id, label: a.name ?? a.email }));
 
   return (
@@ -34,13 +36,13 @@ export default async function CatalogAdminPage() {
         title="Service Catalog"
         description="Items users can request from the self-service portal — separate from operational Services."
       >
-        <CatalogEditor categories={catOpts} agents={agentOpts} />
+        <CatalogEditor categories={catOpts} services={serviceOpts} agents={agentOpts} />
       </PageHeader>
 
       <PageBody className="grid gap-3">
         {items.length === 0 ? (
           <EmptyState icon={ShoppingBag} title="No catalog items yet" description="Add requestable items (laptops, access, onboarding…) with their own request forms.">
-            <CatalogEditor categories={catOpts} agents={agentOpts} />
+            <CatalogEditor categories={catOpts} services={serviceOpts} agents={agentOpts} />
           </EmptyState>
         ) : (
           items.map((it) => (
@@ -68,10 +70,11 @@ export default async function CatalogAdminPage() {
                   <PublishToggle id={it.id} published={it.isPublished} />
                   <CatalogEditor
                     categories={catOpts}
+                    services={serviceOpts}
                     agents={agentOpts}
                     item={{
                       id: it.id, name: it.name, description: it.description, shortDescription: it.shortDescription,
-                      icon: it.icon, categoryId: it.categoryId, estimatedDays: it.estimatedDays,
+                      icon: it.icon, categoryId: it.categoryId, serviceId: it.serviceId, estimatedDays: it.estimatedDays,
                       isPublished: it.isPublished, requiresApproval: it.requiresApproval, approverId: it.approverId,
                       fields: parseFormSchema(it.formSchema),
                     }}

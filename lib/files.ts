@@ -20,6 +20,9 @@ export const ALLOWED_MIME: Record<string, MimeSpec> = {
   "application/vnd.openxmlformats-officedocument.presentationml.presentation": { exts: ["pptx"], magic: [{ offset: 0, bytes: [0x50, 0x4b, 0x03, 0x04] }] },
   "text/plain": { exts: ["txt", "log"], magic: [] },
   "text/csv": { exts: ["csv"], magic: [] },
+  // Raw emails. Browsers usually send message/rfc822 for .eml; it's text-based
+  // (RFC 5322 headers) with no reliable magic signature, so trust the extension.
+  "message/rfc822": { exts: ["eml"], magic: [] },
 };
 
 /** Drop ASCII control chars (< 0x20) and DEL (0x7f) without a control-char regex. */

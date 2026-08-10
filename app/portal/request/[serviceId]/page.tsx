@@ -35,19 +35,19 @@ export default async function CatalogRequestPage({
 
   return (
     <div className="mx-auto max-w-2xl">
-      <LinkButton href="/portal/catalog" variant="ghost" size="sm" className="mb-4">
+      <LinkButton href="/portal/catalog" variant="ghost" size="sm" className="mb-4 -ml-2">
         <ArrowLeft className="size-4" /> Back to catalog
       </LinkButton>
 
-      <div className="mb-6 flex items-start gap-3">
-        <span className="grid size-11 place-items-center rounded-xl bg-gradient-to-br from-primary/20 to-primary/5 text-primary ring-1 ring-primary/10">
-          <CatalogIcon name={item.icon} className="size-5" />
+      <div className="mb-6 flex items-start gap-3.5">
+        <span className="grid size-12 shrink-0 place-items-center rounded-2xl bg-primary/10 text-primary">
+          <CatalogIcon name={item.icon} className="size-6" />
         </span>
         <div>
           <h1 className="font-display text-2xl font-semibold tracking-tight">{item.name}</h1>
-          <p className="text-sm text-muted-foreground">{item.description ?? item.shortDescription}</p>
+          <p className="mt-0.5 text-sm text-muted-foreground">{item.description ?? item.shortDescription}</p>
           {item.estimatedDays != null ? (
-            <p className="mt-1 flex items-center gap-1 text-xs text-muted-foreground">
+            <p className="mt-1.5 flex items-center gap-1 text-xs text-muted-foreground">
               <Clock className="size-3.5" /> Usually delivered in ~{item.estimatedDays} day{item.estimatedDays === 1 ? "" : "s"}
             </p>
           ) : null}

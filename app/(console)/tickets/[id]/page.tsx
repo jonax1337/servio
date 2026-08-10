@@ -207,7 +207,8 @@ export default async function TicketDetailPage({
           <p className="mt-1 flex flex-wrap items-center gap-x-1.5 text-sm text-muted-foreground">
             <span>Opened by {ticket.requester.name ?? ticket.requester.email}</span>
             {ticket.requester.isVip ? <VipBadge className="align-middle" /> : null}
-            <span>· {formatDistanceToNow(ticket.createdAt, { addSuffix: true })} · via {SOURCE_META[ticket.source]?.label ?? ticket.source}</span>
+            <span>· {formatDistanceToNow(ticket.createdAt, { addSuffix: true })} · via</span>
+            <StatusBadge map={SOURCE_META} value={ticket.source} />
           </p>
 
           <div className="mt-4 rounded-xl border bg-card p-4 text-sm leading-relaxed">
