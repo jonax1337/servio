@@ -76,7 +76,7 @@ async function computeBreakdown(widget: Widget, where: Prisma.TicketWhereInput):
     .map((g) => ({ label: labelFor((g[col] as string | null) ?? null), value: g._count._all }))
     .sort((a, b) => b.value - a.value)
     .slice(0, 8);
-  return { kind: "breakdown", rows };
+  return { kind: "breakdown", rows, chartType: widget.options?.chartType ?? "bar" };
 }
 
 async function computeVolume(widget: Widget, filters: TicketFilters): Promise<Computed> {

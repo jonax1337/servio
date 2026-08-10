@@ -7,7 +7,24 @@ import {
   Tooltip,
   XAxis,
   YAxis,
+  PieChart,
+  Pie,
+  Cell,
+  RadialBarChart,
+  RadialBar,
+  PolarAngleAxis,
 } from "recharts";
+
+const DONUT_COLORS = [
+  "var(--chart-1)",
+  "var(--chart-3)",
+  "oklch(0.72 0.16 70)",
+  "var(--chart-4)",
+  "var(--primary)",
+  "oklch(0.65 0.2 15)",
+  "oklch(0.6 0.13 250)",
+  "var(--muted-foreground)",
+];
 
 export function VolumeChart({
   data,
@@ -70,6 +87,69 @@ export function VolumeChart({
         />
       </AreaChart>
     </ResponsiveContainer>
+  );
+}
+
+/** Donut/pie for a breakdown (label → value). Legend on the side. */
+export function DonutChart({ data }: { data: { label: string; value: number }[] }) {
+  const total = data.reduce((a, d) => a + d.value, 0);
+  return (
+    <div className="flex h-full min-h-[160px] items-center gap-4">
+      <div className="relative h-40 w-40 shrink-0">
+        <ResponsiveContainer width="100%" height="100%">
+          <PieChart>
+            <Pie data={data} dataKey="value" nameKey="label" innerRadius={44} outerRadius={68} paddingAngle={2} strokeWidth={0}>
+              {data.map((_, i) => (
+                <Cell key={i} fill={DONUT_COLORS[i % DONUT_COLORS.length]} />
+              ))}
+            </Pie>
+            <Tooltip
+              contentStyle={{
+                background: "var(--popover)",
+                border: "1px solid var(--border)",
+                borderRadius: 10,
+                fontSize: 12,
+                color: "var(--popover-foreground)",
+              }}
+            />
+          </PieChart>
+        </ResponsiveContainer>
+        <div className="pointer-events-none absolute inset-0 grid place-items-center">
+          <span className="font-display text-xl font-semibold tabular-nums">{total}</span>
+        </div>
+      </div>
+      <ul className="grid min-w-0 flex-1 gap-1.5 text-sm">
+        {data.map((d, i) => (
+          <li key={d.label} className="flex items-center gap-2">
+            <span className="size-2.5 shrink-0 rounded-full" style={{ background: DONUT_COLORS[i % DONUT_COLORS.length] }} />
+            <span className="min-w-0 flex-1 truncate text-muted-foreground">{d.label}</span>
+            <span className="shrink-0 font-medium tabular-nums">{d.value}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+/** Radial gauge for a single 0–100 percentage (e.g. SLA compliance). */
+export function GaugeChart({ value, label }: { value: number; label?: string }) {
+  const data = [{ name: "v", value: Math.max(0, Math.min(100, value)) }];
+  const color = value >= 90 ? "var(--chart-4)" : value >= 75 ? "oklch(0.72 0.16 70)" : "var(--destructive)";
+  return (
+    <div className="relative h-36 w-36">
+      <ResponsiveContainer width="100%" height="100%">
+        <RadialBarChart innerRadius="70%" outerRadius="100%" data={data} startAngle={90} endAngle={-270}>
+          <PolarAngleAxis type="number" domain={[0, 100]} tick={false} />
+          <RadialBar dataKey="value" cornerRadius={8} fill={color} background={{ fill: "var(--muted)" }} />
+        </RadialBarChart>
+      </ResponsiveContainer>
+      <div className="pointer-events-none absolute inset-0 grid place-items-center text-center">
+        <div>
+          <div className="font-display text-2xl font-semibold tabular-nums">{value}%</div>
+          {label ? <div className="text-[11px] text-muted-foreground">{label}</div> : null}
+        </div>
+      </div>
+    </div>
   );
 }
 

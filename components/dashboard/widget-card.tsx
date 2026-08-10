@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { VolumeChart, BarRow } from "@/components/charts";
+import { VolumeChart, BarRow, DonutChart, GaugeChart } from "@/components/charts";
 import { StatusBadge } from "@/components/status-badge";
 import { TICKET_STATUS_META, PRIORITY_META, ticketRef } from "@/lib/constants";
 import type { Widget, Computed } from "@/lib/dashboard/types";
@@ -42,14 +42,25 @@ function renderBody(data: Computed) {
         </div>
       );
 
-    case "breakdown":
+    case "breakdown": {
+      const total = data.rows.reduce((a, r) => a + r.value, 0);
+      if (total === 0) return <Empty />;
+      if (data.chartType === "donut") return <DonutChart data={data.rows} />;
+      return (
+        <div className="grid gap-3">
+          {data.rows.map((r, i) => (
+            <BarRow key={r.label} label={r.label} value={r.value} total={total} colorVar={PALETTE[i % PALETTE.length]} />
+          ))}
+        </div>
+      );
+    }
+
     case "aging": {
-      const rows = data.rows;
-      const total = rows.reduce((a, r) => a + r.value, 0);
+      const total = data.rows.reduce((a, r) => a + r.value, 0);
       if (total === 0) return <Empty />;
       return (
         <div className="grid gap-3">
-          {rows.map((r, i) => (
+          {data.rows.map((r, i) => (
             <BarRow key={r.label} label={r.label} value={r.value} total={total} colorVar={PALETTE[i % PALETTE.length]} />
           ))}
         </div>
@@ -61,10 +72,12 @@ function renderBody(data: Computed) {
 
     case "sla":
       return (
-        <div className="flex h-full items-center gap-6">
-          <Metric label="SLA met" value={data.pct == null ? "—" : `${data.pct}%`} />
-          <Metric label="MTTR" value={data.mttrHours == null ? "—" : formatHours(data.mttrHours)} />
-          <Metric label="Resolved" value={String(data.resolved)} muted />
+        <div className="flex h-full flex-wrap items-center gap-5">
+          {data.pct == null ? <Empty /> : <GaugeChart value={data.pct} label="SLA met" />}
+          <div className="grid gap-3">
+            <Metric label="MTTR" value={data.mttrHours == null ? "—" : formatHours(data.mttrHours)} />
+            <Metric label="Resolved" value={String(data.resolved)} muted />
+          </div>
         </div>
       );
 

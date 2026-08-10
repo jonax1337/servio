@@ -43,7 +43,10 @@ function sanitizeLayout(raw: string): string {
       h: clampInt(w.h, 1, 8),
       options:
         w.options && typeof w.options === "object"
-          ? { groupBy: (w.options as Record<string, unknown>).groupBy as NonNullable<Widget["options"]>["groupBy"] }
+          ? {
+              groupBy: (w.options as Record<string, unknown>).groupBy as NonNullable<Widget["options"]>["groupBy"],
+              chartType: (w.options as Record<string, unknown>).chartType as NonNullable<Widget["options"]>["chartType"],
+            }
           : undefined,
     });
   }

@@ -66,6 +66,7 @@ export function WidgetConfigDialog({
   const [type, setType] = useState<WidgetType>("stat");
   const [title, setTitle] = useState("");
   const [groupBy, setGroupBy] = useState<BreakdownField>("priority");
+  const [chartType, setChartType] = useState<"bar" | "donut">("bar");
   const [filters, setFilters] = useState<TicketFilters>({});
 
   // Re-seed the form whenever the dialog opens for a new/different widget.
@@ -74,6 +75,7 @@ export function WidgetConfigDialog({
     setType(initial?.type ?? "stat");
     setTitle(initial?.title ?? "");
     setGroupBy((initial?.options?.groupBy as BreakdownField) ?? "priority");
+    setChartType((initial?.options?.chartType as "bar" | "donut") ?? "bar");
     setFilters(initial?.filters ?? {});
   }, [open, initial]);
 
@@ -114,7 +116,7 @@ export function WidgetConfigDialog({
       y: initial?.y ?? Infinity, // Infinity → RGL drops it at the bottom
       w: size.w,
       h: size.h,
-      options: type === "breakdown" ? { groupBy } : undefined,
+      options: type === "breakdown" ? { groupBy, chartType } : undefined,
     };
     onSave(widget);
     onOpenChange(false);
@@ -147,6 +149,17 @@ export function WidgetConfigDialog({
               <div />
             )}
           </div>
+
+          {type === "breakdown" ? (
+            <div className="grid gap-1.5">
+              <Label>Chart type</Label>
+              <Combobox
+                options={[{ value: "bar", label: "Bar" }, { value: "donut", label: "Donut" }]}
+                value={chartType}
+                onChange={(v) => setChartType((v as "bar" | "donut") || "bar")}
+              />
+            </div>
+          ) : null}
 
           <div className="grid gap-1.5">
             <Label htmlFor="w-title">Title</Label>
