@@ -75,7 +75,7 @@ function renderBody(data: Computed) {
       return (
         <div className="grid gap-2">
           {data.rows.map((r, i) => {
-            const bar = <BarRow label={r.label} value={r.value} total={total} colorVar={PALETTE[i % PALETTE.length]} />;
+            const bar = <BarRow label={r.label} value={r.value} total={total} colorVar={r.color ?? PALETTE[i % PALETTE.length]} />;
             return r.href ? (
               <Link key={r.label} href={r.href} className="block rounded-md px-1 py-0.5 transition-colors hover:bg-muted/60">
                 {bar}

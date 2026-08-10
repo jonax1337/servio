@@ -94,9 +94,10 @@ export function VolumeChart({
 
 /** Donut/pie for a breakdown (label → value). Legend on the side. Segments and
  *  legend rows are clickable when a row carries an href (drill down to tickets). */
-export function DonutChart({ data }: { data: { label: string; value: number; href?: string }[] }) {
+export function DonutChart({ data }: { data: { label: string; value: number; href?: string; color?: string }[] }) {
   const router = useRouter();
   const total = data.reduce((a, d) => a + d.value, 0);
+  const colorAt = (i: number) => data[i]?.color ?? DONUT_COLORS[i % DONUT_COLORS.length];
   return (
     <div className="flex h-full min-h-[150px] flex-wrap items-center gap-4">
       <div className="relative aspect-square h-full max-h-[220px] min-h-[120px] shrink-0">
@@ -116,7 +117,7 @@ export function DonutChart({ data }: { data: { label: string; value: number; hre
               }}
             >
               {data.map((d, i) => (
-                <Cell key={i} fill={DONUT_COLORS[i % DONUT_COLORS.length]} className={d.href ? "cursor-pointer" : undefined} />
+                <Cell key={i} fill={colorAt(i)} className={d.href ? "cursor-pointer" : undefined} />
               ))}
             </Pie>
             <Tooltip
@@ -138,7 +139,7 @@ export function DonutChart({ data }: { data: { label: string; value: number; hre
         {data.map((d, i) => {
           const inner = (
             <>
-              <span className="size-2.5 shrink-0 rounded-full" style={{ background: DONUT_COLORS[i % DONUT_COLORS.length] }} />
+              <span className="size-2.5 shrink-0 rounded-full" style={{ background: colorAt(i) }} />
               <span className="min-w-0 flex-1 truncate text-muted-foreground">{d.label}</span>
               <span className="shrink-0 font-medium tabular-nums">{d.value}</span>
             </>
