@@ -1,0 +1,107 @@
+import Link from "next/link";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { VolumeChart, BarRow } from "@/components/charts";
+import { StatusBadge } from "@/components/status-badge";
+import { TICKET_STATUS_META, PRIORITY_META, ticketRef } from "@/lib/constants";
+import type { Widget, Computed } from "@/lib/dashboard/types";
+
+const PALETTE = [
+  "var(--chart-1)",
+  "var(--chart-3)",
+  "oklch(0.72 0.16 70)",
+  "var(--chart-4)",
+  "var(--primary)",
+  "var(--muted-foreground)",
+];
+
+/** Renders one dashboard widget from its server-computed data. */
+export function WidgetCard({ widget, data }: { widget: Widget; data: Computed }) {
+  return (
+    <Card className="flex h-full flex-col">
+      <CardHeader className="pb-2">
+        <CardTitle className="text-sm">{widget.title}</CardTitle>
+      </CardHeader>
+      <CardContent className="flex-1">{renderBody(data)}</CardContent>
+    </Card>
+  );
+}
+
+function renderBody(data: Computed) {
+  switch (data.kind) {
+    case "stat":
+      return (
+        <div className="flex h-full items-center">
+          <span className="font-display text-4xl font-semibold tabular-nums tracking-tight">
+            {data.value}
+          </span>
+        </div>
+      );
+
+    case "breakdown":
+    case "aging": {
+      const rows = data.rows;
+      const total = rows.reduce((a, r) => a + r.value, 0);
+      if (total === 0) return <Empty />;
+      return (
+        <div className="grid gap-3">
+          {rows.map((r, i) => (
+            <BarRow key={r.label} label={r.label} value={r.value} total={total} colorVar={PALETTE[i % PALETTE.length]} />
+          ))}
+        </div>
+      );
+    }
+
+    case "volume":
+      return <VolumeChart data={data.data} />;
+
+    case "sla":
+      return (
+        <div className="flex h-full items-center gap-6">
+          <Metric label="SLA met" value={data.pct == null ? "—" : `${data.pct}%`} />
+          <Metric label="MTTR" value={data.mttrHours == null ? "—" : formatHours(data.mttrHours)} />
+          <Metric label="Resolved" value={String(data.resolved)} muted />
+        </div>
+      );
+
+    case "list":
+      if (data.tickets.length === 0) return <Empty />;
+      return (
+        <ul className="-mx-2 divide-y">
+          {data.tickets.map((t) => (
+            <li key={t.id}>
+              <Link href={`/tickets/${t.id}`} className="flex items-center gap-2.5 rounded-md px-2 py-2 hover:bg-muted/50">
+                <span className="w-14 shrink-0 font-mono text-xs text-muted-foreground">{ticketRef(t.id, t.prefix)}</span>
+                <span className="min-w-0 flex-1 truncate text-sm font-medium">{t.title}</span>
+                <StatusBadge map={PRIORITY_META} value={t.priority} dot />
+                <StatusBadge map={TICKET_STATUS_META} value={t.status} />
+              </Link>
+            </li>
+          ))}
+        </ul>
+      );
+
+    default:
+      return <Empty />;
+  }
+}
+
+function Metric({ label, value, muted }: { label: string; value: string; muted?: boolean }) {
+  return (
+    <div className="grid gap-0.5">
+      <span className={`font-display text-3xl font-semibold tabular-nums tracking-tight ${muted ? "text-muted-foreground" : ""}`}>
+        {value}
+      </span>
+      <span className="text-xs text-muted-foreground">{label}</span>
+    </div>
+  );
+}
+
+function Empty() {
+  return <p className="text-sm text-muted-foreground">No data.</p>;
+}
+
+function formatHours(h: number) {
+  if (h < 24) return `${h}h`;
+  const d = Math.round((h / 24) * 10) / 10;
+  return `${d}d`;
+}

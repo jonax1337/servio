@@ -1,0 +1,60 @@
+/**
+ * Dashboard widget model — pure types + the built-in default layout.
+ * Kept free of server imports so client components can import it safely.
+ * Coordinates (x/y/w/h) are on a 12-column grid, compatible with the
+ * react-grid-layout editor added in phase 2.
+ */
+
+export type WidgetType = "stat" | "breakdown" | "volume" | "sla" | "aging" | "list";
+
+/** A widget's own filters — the same param vocabulary as the tickets list. */
+export type TicketFilters = Partial<
+  Record<"status" | "priority" | "type" | "group" | "assignee" | "category" | "service" | "days", string>
+>;
+
+/** How a "breakdown" widget groups tickets. */
+export type BreakdownField = "priority" | "status" | "type" | "assignee" | "group" | "category";
+
+export type Widget = {
+  id: string;
+  type: WidgetType;
+  title: string;
+  filters: TicketFilters;
+  x: number;
+  y: number;
+  w: number; // columns (1–12)
+  h: number; // row units
+  options?: { groupBy?: BreakdownField };
+};
+
+/** The computed payload the renderer switches on (data resolved server-side). */
+export type Computed =
+  | { kind: "stat"; value: number }
+  | { kind: "breakdown"; rows: { label: string; value: number }[] }
+  | { kind: "aging"; rows: { label: string; value: number }[] }
+  | { kind: "volume"; data: { label: string; created: number; resolved: number }[] }
+  | { kind: "sla"; pct: number | null; mttrHours: number | null; resolved: number }
+  | { kind: "list"; tickets: { id: number; prefix: string; title: string; status: string; priority: string }[] }
+  | { kind: "empty" };
+
+export const WIDGET_LABELS: Record<WidgetType, string> = {
+  stat: "Number",
+  breakdown: "Breakdown",
+  volume: "Volume trend",
+  sla: "SLA & MTTR",
+  aging: "Ticket aging",
+  list: "Ticket list",
+};
+
+/** Built-in default dashboard, shown when a user has none of their own yet. */
+export const DEFAULT_LAYOUT: Widget[] = [
+  { id: "d-open", type: "stat", title: "Open tickets", filters: { status: "open" }, x: 0, y: 0, w: 3, h: 1 },
+  { id: "d-unassigned", type: "stat", title: "Unassigned", filters: { status: "open", assignee: "unassigned" }, x: 3, y: 0, w: 3, h: 1 },
+  { id: "d-critical", type: "stat", title: "Critical open", filters: { status: "open", priority: "CRITICAL" }, x: 6, y: 0, w: 3, h: 1 },
+  { id: "d-sla", type: "sla", title: "SLA & MTTR · 14d", filters: { days: "14" }, x: 9, y: 0, w: 3, h: 1 },
+  { id: "d-volume", type: "volume", title: "Ticket volume", filters: { days: "14" }, x: 0, y: 1, w: 8, h: 2 },
+  { id: "d-priority", type: "breakdown", title: "Open by priority", filters: { status: "open" }, options: { groupBy: "priority" }, x: 8, y: 1, w: 4, h: 2 },
+  { id: "d-workload", type: "breakdown", title: "Open per agent", filters: { status: "open" }, options: { groupBy: "assignee" }, x: 0, y: 3, w: 6, h: 2 },
+  { id: "d-aging", type: "aging", title: "Open ticket aging", filters: { status: "open" }, x: 6, y: 3, w: 6, h: 2 },
+  { id: "d-recent", type: "list", title: "Recent tickets", filters: {}, x: 0, y: 5, w: 12, h: 2 },
+];

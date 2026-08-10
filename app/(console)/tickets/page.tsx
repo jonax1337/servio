@@ -4,6 +4,9 @@ import type { Metadata } from "next";
 import type { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { getFormOptions } from "@/lib/data/options";
+import { getSessionUser, hasRole, type Role } from "@/lib/session";
+import { getVisibleSavedViews } from "@/lib/actions/saved-views";
+import { SavedViewsBar } from "@/components/saved-views-bar";
 import { getParam, getPage, PAGE_SIZE, type SearchParams } from "@/lib/query";
 import { PageHeader, PageBody } from "@/components/page-header";
 import { LinkButton } from "@/components/link-button";
@@ -48,7 +51,11 @@ export default async function TicketsPage({
   const type = getParam(sp, "type");
   const group = getParam(sp, "group");
   const assignee = getParam(sp, "assignee");
-  const opts = await getFormOptions();
+  const me = await getSessionUser();
+  const [opts, savedViews] = await Promise.all([
+    getFormOptions(),
+    me ? getVisibleSavedViews("ticket", me.id) : Promise.resolve([]),
+  ]);
 
   const where: Prisma.TicketWhereInput = {};
   if (q) where.title = { contains: q };
@@ -106,6 +113,15 @@ export default async function TicketsPage({
       </PageHeader>
 
       <PageBody className="grid gap-4">
+        <SavedViewsBar
+          entity="ticket"
+          basePath="/tickets"
+          filterKeys={["q", "status", "priority", "type", "group", "assignee", "category", "service"]}
+          views={savedViews}
+          currentUserId={me?.id ?? ""}
+          canManageShared={!!me && hasRole(me.role as Role, "MANAGER")}
+          teams={opts.groups.map((g) => ({ value: g.id, label: g.name }))}
+        />
         <ListToolbar filters={filters} searchPlaceholder="Search tickets…" />
 
         {tickets.length === 0 ? (

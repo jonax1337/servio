@@ -63,6 +63,8 @@ model User {
   appSettings     AppSetting[]
   notifications   Notification[]
   aiConversations AiConversation[] @relation("AiConversationUser")
+  savedViews      SavedView[] @relation("SavedViewOwner")
+  dashboards      Dashboard[] @relation("DashboardOwner")
   articles        Article[]
   articleRevisions ArticleRevision[]
   attachments     Attachment[] @relation("AttachmentUploader")
@@ -177,6 +179,47 @@ model Group {
   problems Problem[]
   changes  Change[]
   assets   Asset[]
+  savedViews SavedView[]
+  dashboards Dashboard[]
+}
+
+/// A named, saved set of list filters (per-user, optionally shared with a team).
+/// `filters` is a JSON object of URL params (status, priority, type, group, …).
+model SavedView {
+  id        String   @id @default(cuid())
+  name      String
+  entity    String   @default("ticket") // ticket | problem | change | asset
+  filters   String   // JSON map of filter params
+  ownerId   String
+  isShared  Boolean  @default(false) // visible to the owner's team(s)
+  groupId   String?  // optional: scope a shared view to one team
+  order     Int      @default(0)
+  createdAt DateTime @default(now())
+
+  owner User   @relation("SavedViewOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  group Group? @relation(fields: [groupId], references: [id])
+
+  @@index([entity])
+  @@index([ownerId])
+}
+
+/// A customizable dashboard: a JSON `layout` of widgets on a 12-col grid.
+/// Personal by default; managers/admins can share one with a team or the org.
+model Dashboard {
+  id        String   @id @default(cuid())
+  name      String
+  ownerId   String
+  isShared  Boolean  @default(false)
+  groupId   String?
+  layout    String   @default("[]") // JSON: Widget[]
+  order     Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  owner User   @relation("DashboardOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  group Group? @relation(fields: [groupId], references: [id])
+
+  @@index([ownerId])
 }
 
 model GroupMember {
