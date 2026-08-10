@@ -7,9 +7,13 @@
 
 export type WidgetType = "stat" | "breakdown" | "volume" | "sla" | "aging" | "list";
 
-/** A widget's own filters — the same param vocabulary as the tickets list. */
+/** A widget's own filters. Superset of the tickets-list vocabulary + a few flags. */
 export type TicketFilters = Partial<
-  Record<"status" | "priority" | "type" | "group" | "assignee" | "category" | "service" | "days", string>
+  Record<
+    | "status" | "priority" | "type" | "group" | "assignee" | "category" | "service"
+    | "impact" | "urgency" | "source" | "major" | "vip" | "breached" | "days",
+    string
+  >
 >;
 
 /** How a "breakdown" widget groups tickets. */

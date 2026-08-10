@@ -20,6 +20,13 @@ export function buildTicketWhere(f: TicketFilters): Prisma.TicketWhereInput {
   else if (f.assignee && f.assignee !== "all") w.assigneeId = f.assignee;
   if (f.category && f.category !== "all") w.categoryId = f.category;
   if (f.service && f.service !== "all") w.serviceId = f.service;
+  if (f.impact && f.impact !== "all") w.impact = f.impact;
+  if (f.urgency && f.urgency !== "all") w.urgency = f.urgency;
+  if (f.source && f.source !== "all") w.source = f.source;
+  if (f.major === "true") w.isMajorIncident = true;
+  if (f.vip === "true") w.requester = { isVip: true };
+  // SLA breached = already flagged breached, or an open ticket past its resolve deadline.
+  if (f.breached === "true") w.OR = [{ resolveBreached: true }, { resolveDueAt: { lt: new Date() } }];
   return w;
 }
 

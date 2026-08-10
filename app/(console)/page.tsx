@@ -1,6 +1,6 @@
 import { getSessionUser, hasRole, type Role } from "@/lib/session";
 import { getFormOptions } from "@/lib/data/options";
-import { getVisibleDashboards } from "@/lib/actions/dashboards";
+import { getVisibleDashboards, ensurePersonalDashboard } from "@/lib/actions/dashboards";
 import { computeWidget } from "@/lib/dashboard/compute";
 import { DEFAULT_LAYOUT, type Widget, type Computed } from "@/lib/dashboard/types";
 import { DashboardPicker } from "@/components/dashboard/dashboard-picker";
@@ -22,13 +22,21 @@ export default async function DashboardPage({
   const dashboardId = getParam(sp, "dashboard");
   const me = await getSessionUser();
 
+  // Everyone gets an editable personal "My Dashboard" (created on first visit).
+  if (me) await ensurePersonalDashboard(me.id);
+
   const [opts, dashboards] = await Promise.all([
     getFormOptions(),
     me ? getVisibleDashboards(me.id) : Promise.resolve([]),
   ]);
 
-  const active = dashboardId ? dashboards.find((d) => d.id === dashboardId) : null;
-  const activeId = active?.id ?? "default";
+  // Active = the one in the URL, else the user's personal dashboard, else the first.
+  const active =
+    (dashboardId ? dashboards.find((d) => d.id === dashboardId) : null) ??
+    dashboards.find((d) => d.ownerId === me?.id && !d.isShared) ??
+    dashboards[0] ??
+    null;
+  const activeId = active?.id ?? "";
   let layout: Widget[] = DEFAULT_LAYOUT;
   if (active) {
     try {
@@ -61,6 +69,10 @@ export default async function DashboardPage({
         <DashboardCanvas
           dashboardId={active.id}
           dashboardName={active.name}
+          dashboardIsShared={active.isShared}
+          dashboardGroupId={active.groupId}
+          canManageShared={!!me && hasRole(me.role as Role, "MANAGER")}
+          teams={opts.groups.map((g) => ({ value: g.id, label: g.name }))}
           initialWidgets={ordered}
           dataById={dataById}
           options={editorOptions}

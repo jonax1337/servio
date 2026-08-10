@@ -4,7 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useTransition } from "react";
-import { LayoutDashboard, Plus, Users, X } from "lucide-react";
+import { Plus, Users, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -66,10 +66,6 @@ export function DashboardPicker({
 
   return (
     <div className="flex flex-wrap items-center gap-1.5">
-      <Link href="/" className={tab(activeId === "default")}>
-        <LayoutDashboard className="size-4" /> Default
-      </Link>
-
       {dashboards.map((d) => (
         <span key={d.id} className="group/dash inline-flex items-center">
           <Link href={`/?dashboard=${d.id}`} className={tab(activeId === d.id)}>

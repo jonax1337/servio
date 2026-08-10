@@ -9,8 +9,8 @@ import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
 import {
-  TICKET_STATUSES, PRIORITIES, TICKET_TYPES,
-  TICKET_STATUS_META, PRIORITY_META, TICKET_TYPE_META,
+  TICKET_STATUSES, PRIORITIES, TICKET_TYPES, IMPACT_URGENCY, TICKET_SOURCES,
+  TICKET_STATUS_META, PRIORITY_META, TICKET_TYPE_META, LEVEL_META, SOURCE_META,
 } from "@/lib/constants";
 import { WIDGET_LABELS, type Widget, type WidgetType, type TicketFilters, type BreakdownField } from "@/lib/dashboard/types";
 
@@ -96,6 +96,10 @@ export function WidgetConfigDialog({
   const agentOpts: ComboOption[] = [{ value: "", label: "Any assignee" }, { value: "unassigned", label: "Unassigned" }, ...options.agents];
   const catOpts: ComboOption[] = [{ value: "", label: "Any category" }, ...options.categories];
   const svcOpts: ComboOption[] = [{ value: "", label: "Any service" }, ...options.services];
+  const impactOpts: ComboOption[] = [{ value: "", label: "Any impact" }, ...IMPACT_URGENCY.map((l) => ({ value: l, label: LEVEL_META[l].label }))];
+  const urgencyOpts: ComboOption[] = [{ value: "", label: "Any urgency" }, ...IMPACT_URGENCY.map((l) => ({ value: l, label: LEVEL_META[l].label }))];
+  const sourceOpts: ComboOption[] = [{ value: "", label: "Any source" }, ...TICKET_SOURCES.map((s) => ({ value: s, label: SOURCE_META[s]?.label ?? s }))];
+  const yesAny = (any: string): ComboOption[] => [{ value: "", label: any }, { value: "true", label: "Yes" }];
 
   const isTimeBased = type === "volume" || type === "sla";
 
@@ -157,6 +161,12 @@ export function WidgetConfigDialog({
             <Field label="Assignee"><Combobox options={agentOpts} value={filters.assignee ?? ""} onChange={(v) => setF("assignee", v)} searchPlaceholder="Search agents…" /></Field>
             <Field label="Category"><Combobox options={catOpts} value={filters.category ?? ""} onChange={(v) => setF("category", v)} searchPlaceholder="Search categories…" /></Field>
             <Field label="Service"><Combobox options={svcOpts} value={filters.service ?? ""} onChange={(v) => setF("service", v)} searchPlaceholder="Search services…" /></Field>
+            <Field label="Impact"><Combobox options={impactOpts} value={filters.impact ?? ""} onChange={(v) => setF("impact", v)} /></Field>
+            <Field label="Urgency"><Combobox options={urgencyOpts} value={filters.urgency ?? ""} onChange={(v) => setF("urgency", v)} /></Field>
+            <Field label="Source"><Combobox options={sourceOpts} value={filters.source ?? ""} onChange={(v) => setF("source", v)} /></Field>
+            <Field label="Major incident"><Combobox options={yesAny("Any")} value={filters.major ?? ""} onChange={(v) => setF("major", v)} /></Field>
+            <Field label="VIP requester"><Combobox options={yesAny("Any")} value={filters.vip ?? ""} onChange={(v) => setF("vip", v)} /></Field>
+            <Field label="SLA breached"><Combobox options={yesAny("Any")} value={filters.breached ?? ""} onChange={(v) => setF("breached", v)} /></Field>
           </div>
         </div>
         <DialogFooter>

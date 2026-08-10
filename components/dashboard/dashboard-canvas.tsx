@@ -5,22 +5,36 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useTransition } from "react";
 import { GridLayout, useContainerWidth, type Layout } from "react-grid-layout";
-import { GripVertical, Pencil, Trash2, Plus, Check, X, Loader2 } from "lucide-react";
+import { GripVertical, Pencil, Trash2, Plus, Check, X, Loader2, Settings2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Combobox } from "@/components/combobox";
+import {
+  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
+} from "@/components/ui/dialog";
 import { WidgetBody } from "@/components/dashboard/widget-card";
 import { WidgetConfigDialog, type EditorOptions } from "@/components/dashboard/widget-config-dialog";
-import { setDashboardLayout } from "@/lib/actions/dashboards";
+import { setDashboardLayout, updateDashboardSettings } from "@/lib/actions/dashboards";
 import { WIDGET_LABELS, type Widget, type Computed } from "@/lib/dashboard/types";
 
 export function DashboardCanvas({
   dashboardId,
   dashboardName,
+  dashboardIsShared,
+  dashboardGroupId,
+  canManageShared,
+  teams,
   initialWidgets,
   dataById,
   options,
 }: {
   dashboardId: string;
   dashboardName: string;
+  dashboardIsShared: boolean;
+  dashboardGroupId: string | null;
+  canManageShared: boolean;
+  teams: { value: string; label: string }[];
   initialWidgets: Widget[];
   dataById: Record<string, Computed>;
   options: EditorOptions;
@@ -33,6 +47,21 @@ export function DashboardCanvas({
   const [configOpen, setConfigOpen] = useState(false);
   const [editing, setEditing] = useState<Widget | null>(null);
   const [saving, startSave] = useTransition();
+
+  // Dashboard settings (name + sharing) — editable inline.
+  const [name, setName] = useState(dashboardName);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [sharing, setSharing] = useState(dashboardIsShared ? (dashboardGroupId ? "team" : "everyone") : "private");
+  const [team, setTeam] = useState(dashboardGroupId ?? "none");
+  const [savingSettings, startSettings] = useTransition();
+
+  function saveSettings(fd: FormData) {
+    startSettings(async () => {
+      await updateDashboardSettings(fd);
+      setSettingsOpen(false);
+      router.refresh();
+    });
+  }
 
   const layout: Layout = widgets.map((w) => ({
     i: w.id,
@@ -95,10 +124,13 @@ export function DashboardCanvas({
     <div className="grid gap-3">
       <div className="sticky top-0 z-10 flex flex-wrap items-center gap-2 rounded-xl border bg-card/95 px-3 py-2 backdrop-blur">
         <span className="mr-auto text-sm font-medium">
-          Editing <span className="text-muted-foreground">· {dashboardName}</span>
+          Editing <span className="text-muted-foreground">· {name}</span>
         </span>
         <Button type="button" variant="outline" size="sm" onClick={openAdd}>
           <Plus className="size-4" /> Add widget
+        </Button>
+        <Button type="button" variant="outline" size="sm" onClick={() => setSettingsOpen(true)}>
+          <Settings2 className="size-4" /> Settings
         </Button>
         <Button type="button" variant="ghost" size="sm" onClick={() => router.push(`/?dashboard=${dashboardId}`)} disabled={saving}>
           <X className="size-4" /> Cancel
@@ -157,6 +189,53 @@ export function DashboardCanvas({
         options={options}
         onSave={saveWidget}
       />
+
+      <Dialog open={settingsOpen} onOpenChange={setSettingsOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Dashboard settings</DialogTitle>
+            <DialogDescription>Rename this dashboard{canManageShared ? " and choose who can see it" : ""}.</DialogDescription>
+          </DialogHeader>
+          <form action={saveSettings} className="grid gap-3">
+            <input type="hidden" name="id" value={dashboardId} />
+            <div className="grid gap-1.5">
+              <Label htmlFor="dash-settings-name">Name</Label>
+              <Input id="dash-settings-name" name="name" value={name} onChange={(e) => setName(e.target.value)} required />
+            </div>
+            {canManageShared ? (
+              <>
+                <input type="hidden" name="sharing" value={sharing} />
+                <div className="grid gap-1.5">
+                  <Label>Visibility</Label>
+                  <Combobox
+                    options={[
+                      { value: "private", label: "Private (only me)" },
+                      { value: "team", label: "Share with a team" },
+                      { value: "everyone", label: "Everyone (all teams)" },
+                    ]}
+                    value={sharing}
+                    onChange={(v) => setSharing(v || "private")}
+                  />
+                </div>
+                {sharing === "team" ? (
+                  <Combobox
+                    name="groupId"
+                    options={[{ value: "none", label: "Choose a team…" }, ...teams]}
+                    value={team}
+                    onChange={(v) => setTeam(v || "none")}
+                    searchPlaceholder="Search teams…"
+                  />
+                ) : null}
+              </>
+            ) : null}
+            <DialogFooter>
+              <Button type="submit" disabled={!name.trim() || savingSettings}>
+                {savingSettings ? <Loader2 className="size-4 animate-spin" /> : null} Save settings
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

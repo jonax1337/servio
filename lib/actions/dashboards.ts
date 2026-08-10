@@ -90,6 +90,54 @@ export async function setDashboardLayout(formData: FormData) {
   revalidatePath("/");
 }
 
+/** Update a dashboard's name and (managers only) its sharing scope. */
+export async function updateDashboardSettings(formData: FormData) {
+  const me = await requireAgent();
+  if (!me) return;
+  const id = String(formData.get("id") ?? "");
+  const d = await db.dashboard.findUnique({ where: { id } });
+  if (!d) return;
+  const canEdit = d.ownerId === me.id || (d.isShared && hasRole(me.role as Role, "MANAGER"));
+  if (!canEdit) return;
+
+  const data: Record<string, unknown> = {};
+  const name = String(formData.get("name") ?? "").trim();
+  if (name) data.name = name.slice(0, 60);
+
+  // Sharing is manager-only; others keep the existing scope.
+  if (hasRole(me.role as Role, "MANAGER")) {
+    const sharing = String(formData.get("sharing") ?? ""); // private | team | everyone
+    const rawGroup = String(formData.get("groupId") ?? "").trim();
+    if (sharing === "everyone") {
+      data.isShared = true;
+      data.groupId = null;
+    } else if (sharing === "team") {
+      data.isShared = true;
+      data.groupId = rawGroup && rawGroup !== "none" ? rawGroup : null;
+    } else if (sharing === "private") {
+      data.isShared = false;
+      data.groupId = null;
+    }
+  }
+  if (Object.keys(data).length === 0) return;
+  await db.dashboard.update({ where: { id }, data });
+  revalidatePath("/");
+}
+
+/** Ensure the user has a personal "My Dashboard"; returns its id. */
+export async function ensurePersonalDashboard(userId: string) {
+  const existing = await db.dashboard.findFirst({
+    where: { ownerId: userId, isShared: false },
+    orderBy: { createdAt: "asc" },
+    select: { id: true },
+  });
+  if (existing) return existing.id;
+  const created = await db.dashboard.create({
+    data: { name: "My Dashboard", ownerId: userId, isShared: false, layout: JSON.stringify(DEFAULT_LAYOUT), order: 0 },
+  });
+  return created.id;
+}
+
 export async function renameDashboard(formData: FormData) {
   const me = await requireAgent();
   if (!me) return;
