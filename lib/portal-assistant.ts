@@ -5,7 +5,7 @@ import { db } from "@/lib/db";
 import { generateAiChat } from "@/lib/ai";
 import { webSearchTool, fetchUrlTool } from "@/lib/ai-tools";
 import { parseFormSchema } from "@/lib/service-forms";
-import { TICKET_TYPES, PRIORITIES, IMPACT_URGENCY } from "@/lib/constants";
+import { TICKET_TYPES, PRIORITIES, IMPACT_URGENCY, ticketRef } from "@/lib/constants";
 
 /**
  * Vio for the Self-Service Portal — an END-USER assistant.
@@ -50,7 +50,11 @@ const portalCatalogTool = tool({
       },
       take: 5,
       orderBy: [{ order: "asc" }, { name: "asc" }],
-      select: { id: true, name: true, shortDescription: true, description: true, requiresApproval: true, formSchema: true },
+      select: {
+        id: true, name: true, shortDescription: true, description: true, requiresApproval: true, formSchema: true,
+        service: { select: { group: { select: { name: true } } } },
+        category: { select: { group: { select: { name: true } } } },
+      },
     });
     return rows.length
       ? rows.map((r) => ({
@@ -60,8 +64,9 @@ const portalCatalogTool = tool({
           description: r.shortDescription ?? r.description ?? "",
           requiresApproval: r.requiresApproval,
           hasForm: parseFormSchema(r.formSchema).length > 0,
+          handledBy: r.service?.group?.name ?? r.category?.group?.name ?? null,
         }))
-      : [{ id: "", name: "No matching services", url: "", description: "", requiresApproval: false, hasForm: false }];
+      : [{ id: "", name: "No matching services", url: "", description: "", requiresApproval: false, hasForm: false, handledBy: null }];
   },
 });
 
@@ -70,8 +75,13 @@ const listCategoriesTool = tool({
     "List the ticket categories so you can tag a request with the best-fitting one (helps it get routed and organised). Call this before propose_request when you're unsure which category fits.",
   inputSchema: z.object({}),
   execute: async () => {
-    const rows = await db.category.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } });
-    return rows.length ? rows : [{ id: "", name: "No categories" }];
+    const rows = await db.category.findMany({
+      orderBy: { name: "asc" },
+      select: { id: true, name: true, group: { select: { name: true } } },
+    });
+    return rows.length
+      ? rows.map((r) => ({ id: r.id, name: r.name, handledBy: r.group?.name ?? null }))
+      : [{ id: "", name: "No categories", handledBy: null }];
   },
 });
 
@@ -118,7 +128,79 @@ const proposeServiceRequestTool = tool({
   execute: async ({ itemId }) => ({ ok: true, drafted: `Prepared a catalog order (${itemId}) for the user to confirm.` }),
 });
 
-export const PORTAL_ASSISTANT_TOOLS = {
+/* ── User-scoped tools: only ever the signed-in user's OWN tickets, and only
+      the content they can already see in the portal (never internal notes). ── */
+
+function myTicketsTool(userId: string) {
+  return tool({
+    description:
+      "List the signed-in user's OWN tickets (their own requests) with current status. Use for questions like 'what's the status of my request' or 'do I have anything open'. Never shows anyone else's tickets.",
+    inputSchema: z.object({ query: z.string().optional().describe("optional keywords to filter their tickets by title") }),
+    execute: async ({ query }) => {
+      const rows = await db.ticket.findMany({
+        where: { requesterId: userId, ...(query ? { title: { contains: query } } : {}) },
+        take: 10,
+        orderBy: { updatedAt: "desc" },
+        select: { id: true, title: true, prefix: true, type: true, status: true, priority: true, updatedAt: true },
+      });
+      return rows.length
+        ? rows.map((t) => ({
+            ref: ticketRef(t.id, t.prefix),
+            title: t.title,
+            type: t.type,
+            status: t.status,
+            priority: t.priority,
+            url: `/portal/tickets/${t.id}`,
+            updated: t.updatedAt.toISOString().slice(0, 10),
+          }))
+        : [{ ref: "", title: "You have no tickets yet", type: "", status: "", priority: "", url: "", updated: "" }];
+    },
+  });
+}
+
+function myTicketTool(userId: string) {
+  return tool({
+    description:
+      "Read ONE of the user's OWN tickets in full: its description, status, who's handling it, and the PUBLIC conversation. It NEVER returns internal agent notes. Give the ticket ref or number.",
+    inputSchema: z.object({ ref: z.string().describe("the ticket ref or number, e.g. 'INC-0139' or '139'") }),
+    execute: async ({ ref }) => {
+      const id = parseInt(String(ref).replace(/\D/g, ""), 10);
+      if (!Number.isFinite(id)) return { error: "Please give a ticket number, e.g. INC-0139." };
+      const t = await db.ticket.findFirst({
+        where: { id, requesterId: userId }, // scoped to the caller's own tickets
+        select: {
+          id: true, title: true, prefix: true, type: true, status: true, priority: true, description: true, createdAt: true,
+          assignee: { select: { name: true } },
+          // Only public (non-internal) comments — the exact set the portal shows.
+          comments: {
+            where: { isInternal: false },
+            orderBy: { createdAt: "asc" },
+            take: 20,
+            select: { body: true, createdAt: true, author: { select: { name: true } } },
+          },
+        },
+      });
+      if (!t) return { error: "No such ticket, or it doesn't belong to you." };
+      return {
+        ref: ticketRef(t.id, t.prefix),
+        title: t.title,
+        type: t.type,
+        status: t.status,
+        priority: t.priority,
+        description: t.description || "(no description)",
+        handledBy: t.assignee?.name ?? "not yet assigned",
+        replies: t.comments.map((c) => ({
+          from: c.author?.name ?? "Service Desk",
+          when: c.createdAt.toISOString().slice(0, 10),
+          text: (c.body ?? "").slice(0, 1200),
+        })),
+      };
+    },
+  });
+}
+
+/** Tools that don't depend on the caller's identity. */
+const SHARED_TOOLS = {
   search_knowledge: portalKnowledgeTool,
   search_catalog: portalCatalogTool,
   list_categories: listCategoriesTool,
@@ -129,11 +211,21 @@ export const PORTAL_ASSISTANT_TOOLS = {
   propose_service_request: proposeServiceRequestTool,
 };
 
+/** Full tool set for a specific signed-in user (adds their own-ticket tools). */
+function buildPortalTools(userId: string) {
+  return {
+    ...SHARED_TOOLS,
+    list_my_tickets: myTicketsTool(userId),
+    get_my_ticket: myTicketTool(userId),
+  };
+}
+
 const SYSTEM_PROMPT = `You are Vio, the friendly assistant in the Servio Help Center. You help employees and customers get unblocked quickly, and you can act on their behalf.
 
 Who you are talking to: a non-technical end user. Be warm, calm, and plain-spoken. No jargon. Keep answers short — usually two to four sentences or a tight bulleted list.
 
 What you can do, in order of preference:
+0. CHECK THEIR TICKETS: for "what's the status of my request", "any updates on my ticket", etc., call list_my_tickets or get_my_ticket. You only ever see the user's OWN tickets and only their public content (never internal agent notes). Summarise the current status and the latest reply in plain language.
 1. ANSWER: for a problem or "how do I…" question, call search_knowledge first and answer from it, linking the article by its url, e.g. [Reset your password](/portal/knowledge/reset-password). If the help center has nothing and it's a general how-to, you may use web_search (and fetch_url to read a result) and give a short, safe answer, noting it's from the public web.
 2. GUIDE TO A SERVICE: when the user wants to obtain something, call search_catalog and point them to the matching service.
 3. FILL A FORM FOR THEM: if that service has a request form (hasForm=true), call get_service_form, ask the user for any required fields you don't already know, then call propose_service_request with the answers so they can confirm and submit in one click.
@@ -146,6 +238,7 @@ Hard rules:
 - You can only see public help articles and the catalog. You cannot see ticket queues, other people's tickets, accounts, or internal system details.
 - A propose_* call only DRAFTS — the user still confirms. Don't claim something is done until they've confirmed.
 - Ask for missing required details before proposing; never guess required form answers.
+- Some categories and services include a "handledBy" team. You may reassure the user which team typically handles it, but you do not assign or change teams yourself — routing is handled automatically.
 - Always answer in the user's language.
 - Write in clean plain text: no emojis, and use normal punctuation (hyphens, not em-dashes).`;
 
@@ -256,9 +349,11 @@ function buildUserParts(text: string, atts: ChatAttachment[]): UserPart[] {
 /** Run one portal-assistant turn. Returns the answer text and an optional draft
  *  (a ticket or a filled catalog order) the user can confirm to create. */
 export async function runPortalAssistant(
+  userId: string,
   history: { role: "user" | "assistant"; content: string }[],
   attachments: ChatAttachment[] = [],
 ): Promise<{ text: string; proposal: RequestProposal | null }> {
+  const tools = buildPortalTools(userId);
   const base: ModelMessage[] = history
     .slice(-MAX_TURNS)
     .filter((m) => m.content.trim())
@@ -273,7 +368,7 @@ export async function runPortalAssistant(
   }
 
   const run = (messages: ModelMessage[]) =>
-    generateAiChat({ system: SYSTEM_PROMPT, messages, tools: PORTAL_ASSISTANT_TOOLS, maxSteps: 6 });
+    generateAiChat({ system: SYSTEM_PROMPT, messages, tools, maxSteps: 6 });
 
   let result;
   try {

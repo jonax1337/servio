@@ -26,6 +26,7 @@ const createSchema = z.object({
   categoryId: optionalId,
   ownerId: optionalId,
   slaId: optionalId,
+  groupId: optionalId,
 });
 
 export type ActionState =
@@ -64,7 +65,7 @@ export async function createService(
 
 const updateSchema = z.object({
   id: z.string().min(1),
-  field: z.enum(["status", "criticality", "categoryId", "ownerId", "slaId"]),
+  field: z.enum(["status", "criticality", "categoryId", "ownerId", "slaId", "groupId"]),
   value: z.string(),
 });
 

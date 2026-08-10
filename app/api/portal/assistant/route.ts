@@ -60,7 +60,7 @@ export async function POST(req: Request) {
     : [];
 
   try {
-    const { text, proposal } = await runPortalAssistant(messages, attachments);
+    const { text, proposal } = await runPortalAssistant(me.id, messages, attachments);
     const answer = text || "I'm not sure about that one. Would you like to open a request so a person can help?";
     return NextResponse.json({
       configured: true,

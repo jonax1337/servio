@@ -11,6 +11,7 @@ import { ComboField } from "@/components/combo-field";
 import type { ComboOption } from "@/components/combobox";
 
 export type ParentOption = { id: string; name: string };
+export type TeamOption = { id: string; name: string };
 
 function Field({
   label, error, children, hint,
@@ -30,13 +31,14 @@ function Field({
   );
 }
 
-export function CategoryForm({ parents }: { parents: ParentOption[] }) {
+export function CategoryForm({ parents, teams }: { parents: ParentOption[]; teams: TeamOption[] }) {
   const [state, action, pending] = useActionState<ActionState, FormData>(
     createCategory,
     undefined,
   );
   const fe = state?.fieldErrors ?? {};
   const parentOpts: ComboOption[] = parents.map((p) => ({ value: p.id, label: p.name }));
+  const teamOpts: ComboOption[] = teams.map((t) => ({ value: t.id, label: t.name }));
 
   return (
     <form action={action} className="grid gap-5">
@@ -63,6 +65,14 @@ export function CategoryForm({ parents }: { parents: ParentOption[] }) {
           <Input name="color" defaultValue="#64748b" placeholder="#64748b" />
         </Field>
       </div>
+
+      <Field
+        label="Handled by (team)"
+        error={fe.groupId}
+        hint="Optional. Recorded so Vio knows who owns this category — it does not auto-route tickets."
+      >
+        <ComboField name="groupId" options={teamOpts} includeNone noneLabel="— No team —" />
+      </Field>
 
       <Field label="Description" error={fe.description}>
         <Textarea

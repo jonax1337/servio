@@ -15,6 +15,7 @@ type Node = {
   description: string | null;
   color: string;
   parentId: string | null;
+  team: string | null;
   ticketCount: number;
   children: Node[];
 };
@@ -30,6 +31,9 @@ function Tree({ nodes, depth = 0 }: { nodes: Node[]; depth?: number }) {
             {n.description ? (
               <span className="truncate text-xs text-muted-foreground">{n.description}</span>
             ) : null}
+            {n.team ? (
+              <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">{n.team}</span>
+            ) : null}
             {n.ticketCount > 0 ? (
               <span className="ml-auto text-xs text-muted-foreground">{n.ticketCount} tickets</span>
             ) : null}
@@ -42,15 +46,18 @@ function Tree({ nodes, depth = 0 }: { nodes: Node[]; depth?: number }) {
 }
 
 export default async function CategoriesPage() {
-  const categories = await db.category.findMany({
-    orderBy: { name: "asc" },
-    include: { _count: { select: { tickets: true } } },
-  });
+  const [categories, teams] = await Promise.all([
+    db.category.findMany({
+      orderBy: { name: "asc" },
+      include: { _count: { select: { tickets: true } }, group: { select: { name: true } } },
+    }),
+    db.group.findMany({ select: { id: true, name: true }, orderBy: { name: "asc" } }),
+  ]);
   const parents = categories.map((c) => ({ id: c.id, name: c.name }));
 
   const nodes: Node[] = categories.map((c) => ({
     id: c.id, name: c.name, description: c.description, color: c.color,
-    parentId: c.parentId, ticketCount: c._count.tickets, children: [],
+    parentId: c.parentId, team: c.group?.name ?? null, ticketCount: c._count.tickets, children: [],
   }));
   const byId = new Map(nodes.map((n) => [n.id, n]));
   const roots: Node[] = [];
@@ -66,7 +73,7 @@ export default async function CategoriesPage() {
         title="Categories"
         description="Your classification taxonomy — nest categories to organise tickets, problems, changes and assets."
       >
-        <CreateCategoryDialog parents={parents} />
+        <CreateCategoryDialog parents={parents} teams={teams} />
       </PageHeader>
 
       <PageBody>
@@ -76,7 +83,7 @@ export default async function CategoriesPage() {
             title="No categories yet"
             description="Create a top-level category (e.g. Hardware) and nest subcategories under it."
           >
-            <CreateCategoryDialog parents={parents} size="sm" />
+            <CreateCategoryDialog parents={parents} teams={teams} size="sm" />
           </EmptyState>
         ) : (
           <Card>

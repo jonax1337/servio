@@ -9,10 +9,10 @@ export const metadata: Metadata = { title: "New category" };
 export const dynamic = "force-dynamic";
 
 export default async function NewCategoryPage() {
-  const parents = await db.category.findMany({
-    select: { id: true, name: true },
-    orderBy: { name: "asc" },
-  });
+  const [parents, teams] = await Promise.all([
+    db.category.findMany({ select: { id: true, name: true }, orderBy: { name: "asc" } }),
+    db.group.findMany({ select: { id: true, name: true }, orderBy: { name: "asc" } }),
+  ]);
 
   return (
     <>
@@ -24,7 +24,7 @@ export default async function NewCategoryPage() {
       <PageBody>
         <Card className="mx-auto max-w-3xl">
           <CardContent className="pt-6">
-            <CategoryForm parents={parents} />
+            <CategoryForm parents={parents} teams={teams} />
           </CardContent>
         </Card>
       </PageBody>

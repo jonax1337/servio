@@ -11,7 +11,7 @@ import {
 } from "@/lib/constants";
 import type { FormOptions } from "@/lib/data/options";
 
-type Field = "status" | "criticality" | "categoryId" | "ownerId" | "slaId";
+type Field = "status" | "criticality" | "categoryId" | "ownerId" | "slaId" | "groupId";
 
 function initials(s: string) {
   return s.split(" ").map((p) => p[0]).slice(0, 2).join("").toUpperCase();
@@ -61,6 +61,7 @@ export function ServiceProperties({
     categoryId: string | null;
     ownerId: string | null;
     slaId: string | null;
+    groupId: string | null;
   };
   options: FormOptions;
 }) {
@@ -76,6 +77,7 @@ export function ServiceProperties({
     ...options.agents.map((a) => ({ value: a.id, label: a.name ?? a.email, avatar: initials(a.name ?? a.email), hint: a.email })),
   ];
   const catOpts: ComboOption[] = [none("No category"), ...options.categories.map((c) => ({ value: c.id, label: c.name }))];
+  const teamOpts: ComboOption[] = [none("No team"), ...options.groups.map((g) => ({ value: g.id, label: g.name }))];
   const slaOpts: ComboOption[] = [none("No SLA"), ...options.slas.map((s) => ({ value: s.id, label: s.name }))];
 
   return (
@@ -84,6 +86,7 @@ export function ServiceProperties({
       <Prop label="Criticality" serviceId={service.id} field="criticality" value={service.criticality} options={critOpts} />
       <Prop label="Owner" serviceId={service.id} field="ownerId" value={service.ownerId} options={ownerOpts} searchable placeholder="No owner" />
       <Prop label="Category" serviceId={service.id} field="categoryId" value={service.categoryId} options={catOpts} searchable placeholder="No category" />
+      <Prop label="Team" serviceId={service.id} field="groupId" value={service.groupId} options={teamOpts} searchable placeholder="No team" />
       <Prop label="SLA" serviceId={service.id} field="slaId" value={service.slaId} options={slaOpts} searchable placeholder="No SLA" />
     </div>
   );

@@ -110,7 +110,10 @@ export async function createCatalogRequestFor(
   rawAnswers: Record<string, string>,
   source: string = "PORTAL",
 ): Promise<CatalogRequestResult> {
-  const item = await db.catalogItem.findUnique({ where: { id: itemId } });
+  const item = await db.catalogItem.findUnique({
+    where: { id: itemId },
+    include: { service: { select: { groupId: true } }, category: { select: { groupId: true } } },
+  });
   if (!item || !item.isPublished) return { ok: false, error: "This item can't be requested." };
   if (item.requiresApproval && !item.approverId) {
     return { ok: false, error: "This item requires approval but has no approver configured. Please contact IT." };
@@ -126,6 +129,8 @@ export async function createCatalogRequestFor(
 
   const summary = answersToText(fields, values);
   const triage = await db.group.findFirst({ where: { name: "Service Desk" } });
+  // Pre-route: the service's team, else the category's team, else Service Desk triage.
+  const routeGroupId = item.service?.groupId ?? item.category?.groupId ?? triage?.id ?? null;
   const needsApproval = item.requiresApproval && !!item.approverId;
   const sla = await slaCreateData({ priority: "MEDIUM" });
 
@@ -142,7 +147,7 @@ export async function createCatalogRequestFor(
       catalogItemId: item.id,
       categoryId: item.categoryId,
       serviceId: item.serviceId,
-      groupId: triage?.id ?? null,
+      groupId: routeGroupId,
       formData: JSON.stringify(values),
       formSchema: item.formSchema,
       approvalState: needsApproval ? "PENDING" : null,

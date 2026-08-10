@@ -14,12 +14,15 @@ import {
 import { CategoryForm } from "./category-form";
 
 type Parent = { id: string; name: string };
+type Team = { id: string; name: string };
 
 export function CreateCategoryDialog({
   parents,
+  teams,
   size = "default",
 }: {
   parents: Parent[];
+  teams: Team[];
   size?: "default" | "sm";
 }) {
   const [open, setOpen] = useState(false);
@@ -35,7 +38,7 @@ export function CreateCategoryDialog({
             Add a classification for tickets, problems, changes or assets.
           </DialogDescription>
         </DialogHeader>
-        <CategoryForm parents={parents} />
+        <CategoryForm parents={parents} teams={teams} />
       </DialogContent>
     </Dialog>
   );

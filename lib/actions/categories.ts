@@ -20,6 +20,7 @@ const optionalText = z
 const createSchema = z.object({
   name: z.string().min(2, "Name must be at least 2 characters"),
   parentId: optionalId,
+  groupId: optionalId,
   color: z
     .string()
     .regex(/^#[0-9a-fA-F]{6}$/, "Use a hex color like #64748b")
@@ -51,6 +52,7 @@ export async function createCategory(
     data: {
       name: data.name,
       parentId: data.parentId,
+      groupId: data.groupId,
       color: data.color,
       description: data.description,
     },
@@ -72,6 +74,7 @@ const updateSchema = z.object({
   id: z.string().min(1),
   name: z.string().min(2, "Name must be at least 2 characters"),
   parentId: optionalId,
+  groupId: optionalId,
   color: z
     .string()
     .regex(/^#[0-9a-fA-F]{6}$/, "Use a hex color like #64748b")
@@ -103,6 +106,7 @@ export async function updateCategory(
     data: {
       name: data.name,
       parentId,
+      groupId: data.groupId,
       color: data.color,
       description: data.description,
     },
