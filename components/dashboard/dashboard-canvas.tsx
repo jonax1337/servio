@@ -156,7 +156,7 @@ export function DashboardCanvas({
           <GridLayout
             width={width}
             layout={layout}
-            gridConfig={{ cols: 12, rowHeight: 120, margin: [16, 16] }}
+            gridConfig={{ cols: 12, rowHeight: 120, margin: [16, 16], containerPadding: [0, 0] }}
             dragConfig={{ enabled: true, handle: ".rgl-drag-handle" }}
             resizeConfig={{ enabled: true, handles: ["se"] }}
             onLayoutChange={onLayoutChange}
