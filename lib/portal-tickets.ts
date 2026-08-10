@@ -28,6 +28,24 @@ export async function linkStagedAttachments(userId: string, ticketId: number, id
   });
 }
 
+/**
+ * Post a PUBLIC reply on the user's OWN open ticket (used by the Vio assistant
+ * after the user confirms). Scoped to requesterId, never internal, never on a
+ * closed/cancelled ticket.
+ */
+export async function addPortalReply(userId: string, ticketId: number, body: string): Promise<boolean> {
+  const clean = body.trim().slice(0, 5000);
+  if (!clean) return false;
+  const ticket = await db.ticket.findFirst({ where: { id: ticketId, requesterId: userId }, select: { id: true, status: true } });
+  if (!ticket || ticket.status === "CLOSED" || ticket.status === "CANCELLED") return false;
+
+  await db.ticketComment.create({ data: { ticketId, authorId: userId, body: clean, isInternal: false } });
+  await db.ticket.update({ where: { id: ticketId }, data: { updatedAt: new Date() } });
+  revalidatePath(`/portal/tickets/${ticketId}`);
+  revalidatePath(`/tickets/${ticketId}`);
+  return true;
+}
+
 type Level = "LOW" | "MEDIUM" | "HIGH";
 
 export type PortalTicketInput = {

@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Sparkles, X, ArrowUp, Loader2, AlertCircle, Send, Check, ImagePlus } from "lucide-react";
+import { Sparkles, X, ArrowUp, Loader2, AlertCircle, Send, Check, ImagePlus, MessageSquare } from "lucide-react";
 import { iconForMime, formatBytes, MAX_UPLOAD_BYTES } from "@/lib/attachments-ui";
 import { cn } from "@/lib/utils";
 
@@ -23,7 +23,13 @@ type ServiceProposal = {
   requiresApproval: boolean;
   answers: { key: string; label: string; value: string }[];
 };
-type Proposal = TicketProposal | ServiceProposal;
+type CommentProposal = {
+  kind: "comment";
+  ticketId: number;
+  ref: string;
+  body: string;
+};
+type Proposal = TicketProposal | ServiceProposal | CommentProposal;
 
 /** A file the user attached in chat: sent to the model as a data URL, and
  *  staged (uploaded) so it can be linked to a ticket Vio opens. */
@@ -219,16 +225,18 @@ export function VioWidget({
       });
       const data = await res.json();
       if (data.ok) {
-        const withFiles = pendingIds.current.length > 0 ? " with your attachments" : "";
+        let text: string;
+        let html: string;
+        if (data.posted) {
+          text = `Done! I've posted your reply on ${data.ref}.`;
+          html = `Done! I've posted your reply on <a href="${data.url}">${data.ref}</a>. The team will see it.`;
+        } else {
+          const withFiles = pendingIds.current.length > 0 ? " with your attachments" : "";
+          text = `Done! I've opened ${data.ref} and routed it to the right team.`;
+          html = `Done! I've opened <a href="${data.url}">${data.ref}</a>${withFiles} and routed it to the right team. You'll get updates on your ticket.`;
+        }
         pendingIds.current = [];
-        setMessages((m) => [
-          ...m,
-          {
-            role: "assistant",
-            text: `Done! I've opened ${data.ref} and routed it to the right team.`,
-            html: `Done! I've opened <a href="${data.url}">${data.ref}</a>${withFiles} and routed it to the right team. You'll get updates on your ticket.`,
-          },
-        ]);
+        setMessages((m) => [...m, { role: "assistant", text, html }]);
         setProposal(null);
         router.refresh();
       } else {
@@ -364,6 +372,14 @@ export function VioWidget({
                     </p>
                   ) : null}
                 </>
+              ) : proposal.kind === "comment" ? (
+                <>
+                  <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
+                    <MessageSquare className="size-3.5 text-primary" />
+                    Reply to {proposal.ref}
+                  </div>
+                  <p className="mt-1.5 text-sm">{proposal.body}</p>
+                </>
               ) : (
                 <>
                   <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
@@ -393,7 +409,7 @@ export function VioWidget({
                   className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground transition-opacity disabled:opacity-50"
                 >
                   {creating ? <Loader2 className="size-3.5 animate-spin" /> : <Check className="size-3.5" />}
-                  {proposal.kind === "service" ? "Submit request" : "Create request"}
+                  {proposal.kind === "service" ? "Submit request" : proposal.kind === "comment" ? "Post reply" : "Create request"}
                 </button>
                 <button
                   type="button"

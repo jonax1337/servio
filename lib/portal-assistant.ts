@@ -117,6 +117,16 @@ const proposeRequestTool = tool({
   execute: async ({ title }) => ({ ok: true, drafted: `Prepared a request: "${title}" for the user to confirm.` }),
 });
 
+const proposeReplyTool = tool({
+  description:
+    "PROPOSE posting a public reply on one of the user's OWN open tickets — e.g. to add information an agent asked for, or an update. This does NOT post anything; the user confirms it. Give the ticket ref (from list_my_tickets/get_my_ticket) and the message text in the user's words.",
+  inputSchema: z.object({
+    ref: z.string().describe("the ticket ref or number, e.g. 'INC-0139'"),
+    body: z.string().describe("the reply text to post, in plain language"),
+  }),
+  execute: async ({ ref }) => ({ ok: true, drafted: `Reply drafted for ${ref} — awaiting the user's confirmation.` }),
+});
+
 const proposeServiceRequestTool = tool({
   description:
     "PROPOSE ordering a catalog service on the user's behalf, with its request form filled in. Use for catalog items that have a form (hasForm=true). Fill answers using the fields from get_service_form. This does NOT submit anything — it drafts the order for the user to confirm. Make sure every required field has an answer.",
@@ -210,6 +220,7 @@ const SHARED_TOOLS = {
   fetch_url: fetchUrlTool,
   propose_request: proposeRequestTool,
   propose_service_request: proposeServiceRequestTool,
+  propose_reply: proposeReplyTool,
 };
 
 /** Full tool set for a specific signed-in user (adds their own-ticket tools). */
@@ -230,7 +241,8 @@ What you can do, in order of preference:
 1. ANSWER: for a problem or "how do I…" question, call search_knowledge first and answer from it, linking the article by its url, e.g. [Reset your password](/portal/knowledge/reset-password). If the help center has nothing and it's a general how-to, you may use web_search (and fetch_url to read a result) and give a short, safe answer, noting it's from the public web.
 2. GUIDE TO A SERVICE: when the user wants to obtain something, call search_catalog and point them to the matching service.
 3. FILL A FORM FOR THEM: if that service has a request form (hasForm=true), call get_service_form, ask the user for any required fields you don't already know, then call propose_service_request with the answers so they can confirm and submit in one click.
-4. OPEN A REQUEST: if the issue needs a person and isn't a catalog service, gather a clear title and short description, optionally call list_categories to pick a fitting categoryId, then call propose_request. Use INCIDENT for problems, REQUEST to obtain something. Judge impact (how many people are affected: just them, a team, or many) and urgency (how time-sensitive it is) from what the user tells you, and set priority accordingly (MEDIUM by default; CRITICAL only for outages or many blocked users).
+4. OPEN A REQUEST: if the issue needs a person and isn't a catalog service, gather a clear title and short description, optionally call list_categories to pick a fitting categoryId, then call propose_request. Use INCIDENT for problems, REQUEST to obtain something. Judge impact (how many people are affected: just them, a team, or many) and urgency (how time-sensitive it is) from what the user tells you, and set priority accordingly (MEDIUM by default; CRITICAL only for outages or many blocked users). If a knowledge-base article is relevant to the issue, reference it in the description (its markdown link) so the assignee has that context.
+5. REPLY TO A TICKET: if the user wants to add information or respond on an existing request of theirs (e.g. "tell them it's still happening"), find it with list_my_tickets/get_my_ticket, then call propose_reply with the ticket ref and the message. Call propose_reply directly once you have the ref and text — do not ask for permission in plain text first; the confirm button the user sees IS the confirmation. It only works on their own open tickets.
 
 Reading attachments: the user can attach screenshots or files. Read any attached image (e.g. an error dialog), quote the exact error text you see, and use it to search_knowledge / web_search for a fix. If it needs a person, propose_request and mention that their attachment will be added to the ticket.
 
@@ -267,8 +279,29 @@ export const ServiceProposalSchema = z.object({
   answers: z.array(z.object({ key: z.string(), label: z.string(), value: z.string() })).max(40).default([]),
 });
 
-export const ProposalSchema = z.discriminatedUnion("kind", [TicketProposalSchema, ServiceProposalSchema]);
+export const CommentProposalSchema = z.object({
+  kind: z.literal("comment"),
+  ticketId: z.number().int().positive(),
+  ref: z.string(),
+  body: z.string().min(1).max(5000),
+});
+
+export const ProposalSchema = z.discriminatedUnion("kind", [TicketProposalSchema, ServiceProposalSchema, CommentProposalSchema]);
 export type RequestProposal = z.infer<typeof ProposalSchema>;
+
+/** Resolve a propose_reply draft to one of the caller's OWN open tickets. */
+async function buildCommentProposal(userId: string, input: unknown): Promise<RequestProposal | null> {
+  const raw = z.object({ ref: z.string(), body: z.string().min(1) }).safeParse(input);
+  if (!raw.success) return null;
+  const id = parseInt(raw.data.ref.replace(/\D/g, ""), 10);
+  if (!Number.isFinite(id)) return null;
+  const t = await db.ticket.findFirst({
+    where: { id, requesterId: userId },
+    select: { id: true, prefix: true, status: true },
+  });
+  if (!t || t.status === "CLOSED" || t.status === "CANCELLED") return null;
+  return { kind: "comment", ticketId: t.id, ref: ticketRef(t.id, t.prefix), body: raw.data.body.slice(0, 5000) };
+}
 
 async function buildTicketProposal(input: unknown): Promise<RequestProposal | null> {
   const raw = z
@@ -386,12 +419,16 @@ export async function runPortalAssistant(
 
   // Surface the most recent draft (whichever propose_* ran last) for the widget.
   let proposal: RequestProposal | null = null;
-  const last = [...result.toolCalls].reverse().find((t) => t.name === "propose_request" || t.name === "propose_service_request");
+  const last = [...result.toolCalls]
+    .reverse()
+    .find((t) => t.name === "propose_request" || t.name === "propose_service_request" || t.name === "propose_reply");
   if (last) {
     proposal =
       last.name === "propose_service_request"
         ? await buildServiceProposal(last.input)
-        : await buildTicketProposal(last.input);
+        : last.name === "propose_reply"
+          ? await buildCommentProposal(userId, last.input)
+          : await buildTicketProposal(last.input);
   }
 
   return { text: result.text, proposal };

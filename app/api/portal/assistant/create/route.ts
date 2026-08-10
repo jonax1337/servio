@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/session";
 import { ProposalSchema } from "@/lib/portal-assistant";
-import { createPortalTicketFor, createCatalogRequestFor, linkStagedAttachments } from "@/lib/portal-tickets";
+import { createPortalTicketFor, createCatalogRequestFor, linkStagedAttachments, addPortalReply } from "@/lib/portal-tickets";
 import { ticketRef } from "@/lib/constants";
 
 export const runtime = "nodejs";
@@ -33,6 +33,12 @@ export async function POST(req: Request) {
   const attachmentIds = Array.isArray(rawIds) ? rawIds.map(String) : [];
 
   try {
+    if (parsed.data.kind === "comment") {
+      const ok = await addPortalReply(me.id, parsed.data.ticketId, parsed.data.body);
+      if (!ok) return NextResponse.json({ error: "Couldn't post the reply — the ticket may be closed." }, { status: 400 });
+      return NextResponse.json({ ok: true, id: parsed.data.ticketId, ref: parsed.data.ref, url: `/portal/tickets/${parsed.data.ticketId}`, posted: true });
+    }
+
     if (parsed.data.kind === "service") {
       const answers: Record<string, string> = {};
       for (const a of parsed.data.answers) answers[a.key] = a.value;
