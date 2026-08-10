@@ -9,6 +9,7 @@ import { getParam, getPage, PAGE_SIZE, type SearchParams } from "@/lib/query";
 import { PageHeader, PageBody } from "@/components/page-header";
 import { CreateProblemDialog } from "@/components/problems/create-problem-dialog";
 import { ListToolbar, type FilterDef } from "@/components/list-toolbar";
+import { SortableHead } from "@/components/sort-header";
 import { PaginationBar } from "@/components/pagination-bar";
 import { StatusBadge } from "@/components/status-badge";
 import { EmptyState } from "@/components/empty-state";
@@ -50,6 +51,19 @@ export default async function ProblemsPage({
   if (status && status !== "all") where.status = status;
   if (priority && priority !== "all") where.priority = priority;
 
+  const sort = getParam(sp, "sort") ?? "createdAt";
+  const dir: "asc" | "desc" = getParam(sp, "dir") === "asc" ? "asc" : "desc";
+  const ORDER: Record<string, Prisma.ProblemOrderByWithRelationInput> = {
+    id: { id: dir },
+    title: { title: dir },
+    status: { status: dir },
+    priority: { priority: dir },
+    assignee: { assignee: { name: dir } },
+    incidents: { tickets: { _count: dir } },
+    createdAt: { createdAt: dir },
+  };
+  const orderBy = ORDER[sort] ?? ORDER.createdAt;
+
   const [total, problems] = await Promise.all([
     db.problem.count({ where }),
     db.problem.findMany({
@@ -59,7 +73,7 @@ export default async function ProblemsPage({
         category: true,
         _count: { select: { tickets: true } },
       },
-      orderBy: [{ createdAt: "desc" }],
+      orderBy: [orderBy],
       skip: (page - 1) * PAGE_SIZE,
       take: PAGE_SIZE,
     }),
@@ -96,13 +110,13 @@ export default async function ProblemsPage({
             <Table>
               <TableHeader>
                 <TableRow className="hover:bg-transparent">
-                  <TableHead className="w-[92px]">Ref</TableHead>
-                  <TableHead>Title</TableHead>
-                  <TableHead>Status</TableHead>
+                  <SortableHead k="id" label="Ref" sort={sort} dir={dir} numeric className="w-[92px]" />
+                  <SortableHead k="title" label="Title" sort={sort} dir={dir} />
+                  <SortableHead k="status" label="Status" sort={sort} dir={dir} />
                   <TableHead>Priority</TableHead>
-                  <TableHead className="hidden md:table-cell">Assignee</TableHead>
-                  <TableHead className="hidden lg:table-cell text-right">Incidents</TableHead>
-                  <TableHead className="hidden xl:table-cell text-right">Created</TableHead>
+                  <SortableHead k="assignee" label="Assignee" sort={sort} dir={dir} className="hidden md:table-cell" />
+                  <SortableHead k="incidents" label="Incidents" sort={sort} dir={dir} numeric className="hidden lg:table-cell text-right" />
+                  <SortableHead k="createdAt" label="Created" sort={sort} dir={dir} numeric className="hidden xl:table-cell text-right" />
                 </TableRow>
               </TableHeader>
               <TableBody>

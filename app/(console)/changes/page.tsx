@@ -7,6 +7,7 @@ import { getParam, getPage, PAGE_SIZE, type SearchParams } from "@/lib/query";
 import { PageHeader, PageBody } from "@/components/page-header";
 import { LinkButton } from "@/components/link-button";
 import { ListToolbar, type FilterDef } from "@/components/list-toolbar";
+import { SortableHead } from "@/components/sort-header";
 import { PaginationBar } from "@/components/pagination-bar";
 import { StatusBadge } from "@/components/status-badge";
 import { EmptyState } from "@/components/empty-state";
@@ -51,12 +52,24 @@ export default async function ChangesPage({
   if (type && type !== "all") where.type = type;
   if (risk && risk !== "all") where.risk = risk;
 
+  const sort = getParam(sp, "sort") ?? "updatedAt";
+  const dir: "asc" | "desc" = getParam(sp, "dir") === "asc" ? "asc" : "desc";
+  const ORDER: Record<string, Prisma.ChangeOrderByWithRelationInput> = {
+    id: { id: dir },
+    title: { title: dir },
+    status: { status: dir },
+    plannedStart: { plannedStart: dir },
+    assignee: { assignee: { name: dir } },
+    updatedAt: { updatedAt: dir },
+  };
+  const orderBy = ORDER[sort] ?? ORDER.updatedAt;
+
   const [total, changes] = await Promise.all([
     db.change.count({ where }),
     db.change.findMany({
       where,
       include: { assignee: true, category: true },
-      orderBy: [{ updatedAt: "desc" }],
+      orderBy: [orderBy],
       skip: (page - 1) * PAGE_SIZE,
       take: PAGE_SIZE,
     }),
@@ -110,13 +123,13 @@ export default async function ChangesPage({
             <Table>
               <TableHeader>
                 <TableRow className="hover:bg-transparent">
-                  <TableHead className="w-[96px]">Ref</TableHead>
-                  <TableHead>Title</TableHead>
+                  <SortableHead k="id" label="Ref" sort={sort} dir={dir} numeric className="w-[96px]" />
+                  <SortableHead k="title" label="Title" sort={sort} dir={dir} />
                   <TableHead>Type</TableHead>
-                  <TableHead>Status</TableHead>
+                  <SortableHead k="status" label="Status" sort={sort} dir={dir} />
                   <TableHead>Risk</TableHead>
-                  <TableHead className="hidden lg:table-cell text-right">Planned start</TableHead>
-                  <TableHead className="hidden md:table-cell">Assignee</TableHead>
+                  <SortableHead k="plannedStart" label="Planned start" sort={sort} dir={dir} numeric className="hidden lg:table-cell text-right" />
+                  <SortableHead k="assignee" label="Assignee" sort={sort} dir={dir} className="hidden md:table-cell" />
                 </TableRow>
               </TableHeader>
               <TableBody>
