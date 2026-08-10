@@ -26,6 +26,11 @@ export function WidgetCard({ widget, data }: { widget: Widget; data: Computed })
   );
 }
 
+/** Just the body of a widget (no card chrome) — reused by the editor canvas. */
+export function WidgetBody({ data }: { data: Computed }) {
+  return renderBody(data);
+}
+
 function renderBody(data: Computed) {
   switch (data.kind) {
     case "stat":
