@@ -5,7 +5,7 @@ import { computeWidget } from "@/lib/dashboard/compute";
 import { DEFAULT_LAYOUT, type Widget, type Computed } from "@/lib/dashboard/types";
 import { DashboardPicker } from "@/components/dashboard/dashboard-picker";
 import { DashboardCanvas } from "@/components/dashboard/dashboard-canvas";
-import { WidgetCard } from "@/components/dashboard/widget-card";
+import { DashboardGridView } from "@/components/dashboard/dashboard-grid-view";
 import { PageHeader, PageBody } from "@/components/page-header";
 import { LinkButton } from "@/components/link-button";
 import { getParam, type SearchParams } from "@/lib/query";
@@ -33,6 +33,7 @@ export default async function DashboardPage({
   // Active = the one in the URL, else the user's personal dashboard, else the first.
   const active =
     (dashboardId ? dashboards.find((d) => d.id === dashboardId) : null) ??
+    dashboards.find((d) => d.ownerId === me?.id && !d.isShared && d.name === "My Dashboard") ??
     dashboards.find((d) => d.ownerId === me?.id && !d.isShared) ??
     dashboards[0] ??
     null;
@@ -105,13 +106,7 @@ export default async function DashboardPage({
           teams={opts.groups.map((g) => ({ value: g.id, label: g.name }))}
         />
 
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-12">
-          {ordered.map((w, i) => (
-            <div key={w.id} style={{ gridColumn: `span ${Math.min(12, Math.max(1, w.w))}` }}>
-              <WidgetCard widget={w} data={computed[i]} />
-            </div>
-          ))}
-        </div>
+        <DashboardGridView widgets={ordered} dataById={dataById} />
       </PageBody>
     </>
   );

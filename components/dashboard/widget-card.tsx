@@ -33,24 +33,37 @@ export function WidgetBody({ data }: { data: Computed }) {
 
 function renderBody(data: Computed) {
   switch (data.kind) {
-    case "stat":
+    case "stat": {
+      const num = (
+        <span className="font-display text-4xl font-semibold tabular-nums tracking-tight">{data.value}</span>
+      );
       return (
         <div className="flex h-full items-center">
-          <span className="font-display text-4xl font-semibold tabular-nums tracking-tight">
-            {data.value}
-          </span>
+          {data.href ? (
+            <Link href={data.href} className="transition-colors hover:text-primary">{num}</Link>
+          ) : (
+            num
+          )}
         </div>
       );
+    }
 
     case "breakdown": {
       const total = data.rows.reduce((a, r) => a + r.value, 0);
       if (total === 0) return <Empty />;
       if (data.chartType === "donut") return <DonutChart data={data.rows} />;
       return (
-        <div className="grid gap-3">
-          {data.rows.map((r, i) => (
-            <BarRow key={r.label} label={r.label} value={r.value} total={total} colorVar={PALETTE[i % PALETTE.length]} />
-          ))}
+        <div className="grid gap-2">
+          {data.rows.map((r, i) => {
+            const bar = <BarRow label={r.label} value={r.value} total={total} colorVar={PALETTE[i % PALETTE.length]} />;
+            return r.href ? (
+              <Link key={r.label} href={r.href} className="block rounded-md px-1 py-0.5 transition-colors hover:bg-muted/60">
+                {bar}
+              </Link>
+            ) : (
+              <div key={r.label}>{bar}</div>
+            );
+          })}
         </div>
       );
     }

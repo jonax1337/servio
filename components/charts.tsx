@@ -1,5 +1,7 @@
 "use client";
 
+import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   Area,
   AreaChart,
@@ -90,17 +92,31 @@ export function VolumeChart({
   );
 }
 
-/** Donut/pie for a breakdown (label → value). Legend on the side. */
-export function DonutChart({ data }: { data: { label: string; value: number }[] }) {
+/** Donut/pie for a breakdown (label → value). Legend on the side. Segments and
+ *  legend rows are clickable when a row carries an href (drill down to tickets). */
+export function DonutChart({ data }: { data: { label: string; value: number; href?: string }[] }) {
+  const router = useRouter();
   const total = data.reduce((a, d) => a + d.value, 0);
   return (
     <div className="flex h-full min-h-[160px] items-center gap-4">
       <div className="relative h-40 w-40 shrink-0">
         <ResponsiveContainer width="100%" height="100%">
           <PieChart>
-            <Pie data={data} dataKey="value" nameKey="label" innerRadius={44} outerRadius={68} paddingAngle={2} strokeWidth={0}>
-              {data.map((_, i) => (
-                <Cell key={i} fill={DONUT_COLORS[i % DONUT_COLORS.length]} />
+            <Pie
+              data={data}
+              dataKey="value"
+              nameKey="label"
+              innerRadius={44}
+              outerRadius={68}
+              paddingAngle={2}
+              strokeWidth={0}
+              onClick={(_, i) => {
+                const href = data[i]?.href;
+                if (href) router.push(href);
+              }}
+            >
+              {data.map((d, i) => (
+                <Cell key={i} fill={DONUT_COLORS[i % DONUT_COLORS.length]} className={d.href ? "cursor-pointer" : undefined} />
               ))}
             </Pie>
             <Tooltip
@@ -118,14 +134,27 @@ export function DonutChart({ data }: { data: { label: string; value: number }[] 
           <span className="font-display text-xl font-semibold tabular-nums">{total}</span>
         </div>
       </div>
-      <ul className="grid min-w-0 flex-1 gap-1.5 text-sm">
-        {data.map((d, i) => (
-          <li key={d.label} className="flex items-center gap-2">
-            <span className="size-2.5 shrink-0 rounded-full" style={{ background: DONUT_COLORS[i % DONUT_COLORS.length] }} />
-            <span className="min-w-0 flex-1 truncate text-muted-foreground">{d.label}</span>
-            <span className="shrink-0 font-medium tabular-nums">{d.value}</span>
-          </li>
-        ))}
+      <ul className="grid min-w-0 flex-1 gap-1">
+        {data.map((d, i) => {
+          const inner = (
+            <>
+              <span className="size-2.5 shrink-0 rounded-full" style={{ background: DONUT_COLORS[i % DONUT_COLORS.length] }} />
+              <span className="min-w-0 flex-1 truncate text-muted-foreground">{d.label}</span>
+              <span className="shrink-0 font-medium tabular-nums">{d.value}</span>
+            </>
+          );
+          return (
+            <li key={d.label}>
+              {d.href ? (
+                <Link href={d.href} className="flex items-center gap-2 rounded-md px-1 py-0.5 text-sm transition-colors hover:bg-muted/60">
+                  {inner}
+                </Link>
+              ) : (
+                <span className="flex items-center gap-2 px-1 py-0.5 text-sm">{inner}</span>
+              )}
+            </li>
+          );
+        })}
       </ul>
     </div>
   );

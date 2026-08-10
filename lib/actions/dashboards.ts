@@ -127,16 +127,19 @@ export async function updateDashboardSettings(formData: FormData) {
   revalidatePath("/");
 }
 
-/** Ensure the user has a personal "My Dashboard"; returns its id. */
+/**
+ * Ensure the user always has their personal "My Dashboard" (the home default),
+ * regardless of any other dashboards they've created. Returns its id.
+ */
 export async function ensurePersonalDashboard(userId: string) {
   const existing = await db.dashboard.findFirst({
-    where: { ownerId: userId, isShared: false },
+    where: { ownerId: userId, isShared: false, name: "My Dashboard" },
     orderBy: { createdAt: "asc" },
     select: { id: true },
   });
   if (existing) return existing.id;
   const created = await db.dashboard.create({
-    data: { name: "My Dashboard", ownerId: userId, isShared: false, layout: JSON.stringify(DEFAULT_LAYOUT), order: 0 },
+    data: { name: "My Dashboard", ownerId: userId, isShared: false, layout: JSON.stringify(DEFAULT_LAYOUT), order: -1 },
   });
   return created.id;
 }

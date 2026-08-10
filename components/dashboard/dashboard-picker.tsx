@@ -1,33 +1,30 @@
 "use client";
 
-import { useState } from "react";
-import Link from "next/link";
+import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { useTransition } from "react";
-import { Plus, Users, X } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { Plus, Users, LayoutDashboard } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Combobox } from "@/components/combobox";
+import { Combobox, type ComboOption } from "@/components/combobox";
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
-import { createDashboard, deleteDashboard } from "@/lib/actions/dashboards";
+import { createDashboard } from "@/lib/actions/dashboards";
 
 export type DashboardRow = {
   id: string;
   name: string;
   isShared: boolean;
   ownerId: string;
+  groupId: string | null;
   owner: { name: string | null; email: string };
 };
 
 export function DashboardPicker({
   dashboards,
   activeId,
-  currentUserId,
   canManageShared,
   teams,
 }: {
@@ -44,13 +41,12 @@ export function DashboardPicker({
   const [team, setTeam] = useState("none");
   const [pending, start] = useTransition();
 
-  const tab = (active: boolean) =>
-    cn(
-      "inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm font-medium transition-colors",
-      active
-        ? "border-primary/40 bg-primary/10 text-primary"
-        : "text-muted-foreground hover:border-primary/40 hover:text-foreground",
-    );
+  const options: ComboOption[] = dashboards.map((d) => ({
+    value: d.id,
+    label: d.name,
+    icon: d.isShared ? Users : LayoutDashboard,
+    hint: d.isShared ? (d.groupId ? "Team" : "Shared") : undefined,
+  }));
 
   function submitCreate(fd: FormData) {
     start(async () => {
@@ -65,31 +61,18 @@ export function DashboardPicker({
   }
 
   return (
-    <div className="flex flex-wrap items-center gap-1.5">
-      {dashboards.map((d) => (
-        <span key={d.id} className="group/dash inline-flex items-center">
-          <Link href={`/?dashboard=${d.id}`} className={tab(activeId === d.id)}>
-            {d.isShared ? <Users className="size-3.5 opacity-70" /> : null}
-            {d.name}
-          </Link>
-          {d.ownerId === currentUserId || canManageShared ? (
-            <form action={deleteDashboard} className="-ml-1">
-              <input type="hidden" name="id" value={d.id} />
-              <button
-                type="submit"
-                aria-label={`Delete dashboard ${d.name}`}
-                title="Delete dashboard"
-                className="grid size-5 place-items-center rounded-full text-muted-foreground opacity-0 transition-opacity hover:text-destructive group-hover/dash:opacity-100"
-              >
-                <X className="size-3" />
-              </button>
-            </form>
-          ) : null}
-        </span>
-      ))}
-
-      <Button type="button" variant="ghost" size="sm" className="h-8 gap-1.5 text-xs text-muted-foreground" onClick={() => setOpen(true)}>
-        <Plus className="size-3.5" /> New dashboard
+    <div className="flex flex-wrap items-center gap-2">
+      <Combobox
+        options={options}
+        value={activeId}
+        onChange={(v) => v && router.push(`/?dashboard=${v}`)}
+        placeholder="Select dashboard"
+        searchPlaceholder="Search dashboards…"
+        size="sm"
+        className="w-auto min-w-[13rem]"
+      />
+      <Button type="button" variant="outline" size="sm" onClick={() => setOpen(true)}>
+        <Plus className="size-4" /> New dashboard
       </Button>
 
       <Dialog open={open} onOpenChange={setOpen}>

@@ -34,6 +34,34 @@ function startOfDay(d: Date) {
   return new Date(d.getFullYear(), d.getMonth(), d.getDate());
 }
 
+const TICKETS_HREF_KEYS: (keyof TicketFilters)[] = [
+  "status", "priority", "type", "group", "assignee", "category", "service",
+  "impact", "urgency", "source", "major", "vip", "breached",
+];
+
+/**
+ * A /tickets URL carrying this widget's filters — optionally overriding one
+ * dimension (e.g. the clicked breakdown segment). Makes widgets drill down into
+ * the exact filtered ticket list. The tickets page honours the same params.
+ */
+export function ticketsHref(filters: TicketFilters, over?: { field: string; value: string | null }): string {
+  const p = new URLSearchParams();
+  for (const k of TICKETS_HREF_KEYS) {
+    const v = filters[k];
+    if (v) p.set(k, v);
+  }
+  if (over) {
+    if (over.value === null) {
+      if (over.field === "assignee") p.set("assignee", "unassigned");
+      else p.delete(over.field);
+    } else {
+      p.set(over.field, over.value);
+    }
+  }
+  const qs = p.toString();
+  return qs ? `/tickets?${qs}` : "/tickets";
+}
+
 const GROUP_COL: Record<BreakdownField, string> = {
   priority: "priority",
   status: "status",
@@ -73,7 +101,14 @@ async function computeBreakdown(widget: Widget, where: Prisma.TicketWhereInput):
   }
 
   const rows = grouped
-    .map((g) => ({ label: labelFor((g[col] as string | null) ?? null), value: g._count._all }))
+    .map((g) => {
+      const raw = (g[col] as string | null) ?? null;
+      return {
+        label: labelFor(raw),
+        value: g._count._all,
+        href: ticketsHref(widget.filters, { field, value: raw }),
+      };
+    })
     .sort((a, b) => b.value - a.value)
     .slice(0, 8);
   return { kind: "breakdown", rows, chartType: widget.options?.chartType ?? "bar" };
@@ -154,7 +189,7 @@ export async function computeWidget(widget: Widget): Promise<Computed> {
   const where = buildTicketWhere(widget.filters);
   switch (widget.type) {
     case "stat":
-      return { kind: "stat", value: await db.ticket.count({ where }) };
+      return { kind: "stat", value: await db.ticket.count({ where }), href: ticketsHref(widget.filters) };
     case "breakdown":
       return computeBreakdown(widget, where);
     case "volume":

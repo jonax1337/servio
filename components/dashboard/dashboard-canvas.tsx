@@ -5,7 +5,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useTransition } from "react";
 import { GridLayout, useContainerWidth, type Layout } from "react-grid-layout";
-import { GripVertical, Pencil, Trash2, Plus, Check, X, Loader2, Settings2 } from "lucide-react";
+import { GripVertical, Pencil, Trash2, Plus, Check, X, Loader2, Settings2, Trash } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -15,7 +15,7 @@ import {
 } from "@/components/ui/dialog";
 import { WidgetBody } from "@/components/dashboard/widget-card";
 import { WidgetConfigDialog, type EditorOptions } from "@/components/dashboard/widget-config-dialog";
-import { setDashboardLayout, updateDashboardSettings } from "@/lib/actions/dashboards";
+import { setDashboardLayout, updateDashboardSettings, deleteDashboard } from "@/lib/actions/dashboards";
 import { WIDGET_LABELS, type Widget, type Computed } from "@/lib/dashboard/types";
 
 export function DashboardCanvas({
@@ -59,6 +59,17 @@ export function DashboardCanvas({
     startSettings(async () => {
       await updateDashboardSettings(fd);
       setSettingsOpen(false);
+      router.refresh();
+    });
+  }
+
+  function deleteDash() {
+    if (!confirm("Delete this dashboard? This can't be undone.")) return;
+    const fd = new FormData();
+    fd.set("id", dashboardId);
+    startSettings(async () => {
+      await deleteDashboard(fd);
+      router.push("/");
       router.refresh();
     });
   }
@@ -229,6 +240,15 @@ export function DashboardCanvas({
               </>
             ) : null}
             <DialogFooter>
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={deleteDash}
+                disabled={savingSettings}
+                className="mr-auto text-muted-foreground hover:text-destructive"
+              >
+                <Trash className="size-4" /> Delete
+              </Button>
               <Button type="submit" disabled={!name.trim() || savingSettings}>
                 {savingSettings ? <Loader2 className="size-4 animate-spin" /> : null} Save settings
               </Button>
