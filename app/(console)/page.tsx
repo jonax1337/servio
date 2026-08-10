@@ -89,22 +89,24 @@ export default async function DashboardPage({
         title={`Good ${greeting()}, ${me?.name?.split(" ")[0] ?? "there"}`}
         description="Your service desk at a glance — pick or build a dashboard."
       >
-        {editable ? (
-          <LinkButton href={`/?dashboard=${activeId}&edit=1`} variant="outline">
-            <Pencil className="size-4" /> Edit
-          </LinkButton>
-        ) : null}
         <LinkButton href="/tickets/new">New ticket</LinkButton>
       </PageHeader>
 
       <PageBody className="grid gap-4">
-        <DashboardPicker
-          dashboards={dashboards}
-          activeId={activeId}
-          currentUserId={me?.id ?? ""}
-          canManageShared={!!me && hasRole(me.role as Role, "MANAGER")}
-          teams={opts.groups.map((g) => ({ value: g.id, label: g.name }))}
-        />
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <DashboardPicker
+            dashboards={dashboards}
+            activeId={activeId}
+            currentUserId={me?.id ?? ""}
+            canManageShared={!!me && hasRole(me.role as Role, "MANAGER")}
+            teams={opts.groups.map((g) => ({ value: g.id, label: g.name }))}
+          />
+          {editable ? (
+            <LinkButton href={`/?dashboard=${activeId}&edit=1`} variant="outline" size="sm">
+              <Pencil className="size-4" /> Edit
+            </LinkButton>
+          ) : null}
+        </div>
 
         <DashboardGridView widgets={ordered} dataById={dataById} />
       </PageBody>

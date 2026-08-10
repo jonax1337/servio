@@ -21,7 +21,7 @@ export function WidgetCard({ widget, data }: { widget: Widget; data: Computed })
       <CardHeader className="pb-2">
         <CardTitle className="text-sm">{widget.title}</CardTitle>
       </CardHeader>
-      <CardContent className="flex-1">{renderBody(data)}</CardContent>
+      <CardContent className="min-h-0 flex-1 overflow-auto">{renderBody(data)}</CardContent>
     </Card>
   );
 }
@@ -81,7 +81,11 @@ function renderBody(data: Computed) {
     }
 
     case "volume":
-      return <VolumeChart data={data.data} />;
+      return (
+        <div className="h-full min-h-[160px]">
+          <VolumeChart data={data.data} />
+        </div>
+      );
 
     case "sla":
       return (

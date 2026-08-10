@@ -35,9 +35,22 @@ const TYPE_OPTS: ComboOption[] = (Object.keys(WIDGET_LABELS) as WidgetType[]).ma
   label: WIDGET_LABELS[t],
 }));
 
-const GROUPBY_OPTS: ComboOption[] = (
-  ["priority", "status", "type", "assignee", "group", "category"] as BreakdownField[]
-).map((g) => ({ value: g, label: g[0].toUpperCase() + g.slice(1) }));
+const GROUPBY_LABELS: Record<BreakdownField, string> = {
+  priority: "Priority",
+  status: "Status",
+  type: "Type",
+  assignee: "Assignee",
+  group: "Team",
+  category: "Category",
+  service: "Service",
+  source: "Source",
+  impact: "Impact",
+  urgency: "Urgency",
+};
+const GROUPBY_OPTS: ComboOption[] = (Object.keys(GROUPBY_LABELS) as BreakdownField[]).map((g) => ({
+  value: g,
+  label: GROUPBY_LABELS[g],
+}));
 
 const DAYS_OPTS: ComboOption[] = [
   { value: "7", label: "Last 7 days" },

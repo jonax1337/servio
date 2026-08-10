@@ -27,9 +27,13 @@ export function DashboardGridView({
     h: Math.max(1, w.h),
   }));
 
+  // Desktop: exact RGL grid. Narrow/mobile (or before we've measured): a single
+  // stacked column with a fixed per-widget height so charts still fill their card.
+  const useGrid = mounted && width >= 768;
+
   return (
     <div ref={containerRef}>
-      {mounted && width > 0 ? (
+      {useGrid ? (
         <GridLayout
           width={width}
           layout={layout}
@@ -44,9 +48,9 @@ export function DashboardGridView({
           ))}
         </GridLayout>
       ) : (
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-12">
+        <div className="grid grid-cols-1 gap-4">
           {widgets.map((w) => (
-            <div key={w.id} style={{ gridColumn: `span ${Math.min(12, Math.max(1, w.w))}` }}>
+            <div key={w.id} style={{ height: Math.max(120, Math.min(4, Math.max(1, w.h)) * 120) }}>
               <WidgetCard widget={w} data={dataById[w.id]} />
             </div>
           ))}

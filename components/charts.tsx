@@ -34,7 +34,7 @@ export function VolumeChart({
   data: { label: string; created: number; resolved: number }[];
 }) {
   return (
-    <ResponsiveContainer width="100%" height={220}>
+    <ResponsiveContainer width="100%" height="100%" minHeight={140}>
       <AreaChart data={data} margin={{ top: 8, right: 8, left: -18, bottom: 0 }}>
         <defs>
           <linearGradient id="gCreated" x1="0" y1="0" x2="0" y2="1">
@@ -98,8 +98,8 @@ export function DonutChart({ data }: { data: { label: string; value: number; hre
   const router = useRouter();
   const total = data.reduce((a, d) => a + d.value, 0);
   return (
-    <div className="flex h-full min-h-[160px] items-center gap-4">
-      <div className="relative h-40 w-40 shrink-0">
+    <div className="flex h-full min-h-[150px] flex-wrap items-center gap-4">
+      <div className="relative aspect-square h-full max-h-[220px] min-h-[120px] shrink-0">
         <ResponsiveContainer width="100%" height="100%">
           <PieChart>
             <Pie
@@ -165,7 +165,7 @@ export function GaugeChart({ value, label }: { value: number; label?: string }) 
   const data = [{ name: "v", value: Math.max(0, Math.min(100, value)) }];
   const color = value >= 90 ? "var(--chart-4)" : value >= 75 ? "oklch(0.72 0.16 70)" : "var(--destructive)";
   return (
-    <div className="relative h-36 w-36">
+    <div className="relative aspect-square h-full max-h-[170px] min-h-[110px] shrink-0">
       <ResponsiveContainer width="100%" height="100%">
         <RadialBarChart innerRadius="70%" outerRadius="100%" data={data} startAngle={90} endAngle={-270}>
           <PolarAngleAxis type="number" domain={[0, 100]} tick={false} />

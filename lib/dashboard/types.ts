@@ -17,7 +17,9 @@ export type TicketFilters = Partial<
 >;
 
 /** How a "breakdown" widget groups tickets. */
-export type BreakdownField = "priority" | "status" | "type" | "assignee" | "group" | "category";
+export type BreakdownField =
+  | "priority" | "status" | "type" | "assignee" | "group" | "category"
+  | "service" | "source" | "impact" | "urgency";
 
 export type Widget = {
   id: string;

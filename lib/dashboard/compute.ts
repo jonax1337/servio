@@ -5,6 +5,8 @@ import {
   PRIORITY_META,
   TICKET_STATUS_META,
   TICKET_TYPE_META,
+  LEVEL_META,
+  SOURCE_META,
 } from "@/lib/constants";
 import type { Widget, Computed, TicketFilters, BreakdownField } from "@/lib/dashboard/types";
 
@@ -69,6 +71,10 @@ const GROUP_COL: Record<BreakdownField, string> = {
   assignee: "assigneeId",
   group: "groupId",
   category: "categoryId",
+  service: "serviceId",
+  source: "source",
+  impact: "impact",
+  urgency: "urgency",
 };
 
 async function computeBreakdown(widget: Widget, where: Prisma.TicketWhereInput): Promise<Computed> {
@@ -84,6 +90,8 @@ async function computeBreakdown(widget: Widget, where: Prisma.TicketWhereInput):
   if (field === "priority") labelFor = (k) => (k ? PRIORITY_META[k]?.label ?? k : "—");
   else if (field === "status") labelFor = (k) => (k ? TICKET_STATUS_META[k]?.label ?? k : "—");
   else if (field === "type") labelFor = (k) => (k ? TICKET_TYPE_META[k]?.label ?? k : "—");
+  else if (field === "impact" || field === "urgency") labelFor = (k) => (k ? LEVEL_META[k]?.label ?? k : "—");
+  else if (field === "source") labelFor = (k) => (k ? SOURCE_META[k]?.label ?? k : "—");
   else {
     const ids = grouped.map((g) => g[col]).filter((v): v is string => typeof v === "string");
     const map = new Map<string, string>();
@@ -93,6 +101,9 @@ async function computeBreakdown(widget: Widget, where: Prisma.TicketWhereInput):
     } else if (field === "group") {
       const groups = await db.group.findMany({ where: { id: { in: ids } }, select: { id: true, name: true } });
       groups.forEach((g) => map.set(g.id, g.name));
+    } else if (field === "service") {
+      const services = await db.service.findMany({ where: { id: { in: ids } }, select: { id: true, name: true } });
+      services.forEach((s) => map.set(s.id, s.name));
     } else {
       const cats = await db.category.findMany({ where: { id: { in: ids } }, select: { id: true, name: true } });
       cats.forEach((c) => map.set(c.id, c.name));
