@@ -14,6 +14,7 @@
 import { db } from "@/lib/db";
 import { getConnector } from "@/lib/connectors";
 import { mapEntry, ldapPreset } from "@/lib/connectors/ldap";
+import { isSyncDue } from "@/lib/scheduler";
 import { encryptionAvailable, encryptSecret } from "@/lib/crypto";
 import type { SyncSource } from "@prisma/client";
 
@@ -105,6 +106,20 @@ function selftest(): void {
   // Missing external id → error.
   const noId = mapEntry({ dn: "CN=Carol", mail: "carol@corp.local" } as never, attr);
   check("missing external id → error", "error" in noId);
+
+  // Cron scheduling: isSyncDue.
+  const now = new Date("2026-08-11T12:30:00Z");
+  const hourly = "0 * * * *";
+  check(
+    "hourly due when lastRun was 2h ago",
+    isSyncDue(hourly, new Date("2026-08-11T10:00:00Z"), now) === true,
+  );
+  check(
+    "hourly NOT due when lastRun was this hour",
+    isSyncDue(hourly, new Date("2026-08-11T12:00:00Z"), now) === false,
+  );
+  check("never-run scheduled source is due", isSyncDue(hourly, null, now) === true);
+  check("invalid cron never fires", isSyncDue("not a cron", null, now) === false);
 
   console.log(`selftest: ${pass} passed, ${fail} failed`);
   if (fail) process.exitCode = 1;

@@ -7,6 +7,7 @@ import { getCurrentUser, hasRole, type Role } from "@/lib/session";
 import { encryptionAvailable, encryptSecret } from "@/lib/crypto";
 import { writeAudit } from "@/lib/audit";
 import { getConnector } from "@/lib/connectors";
+import { executeSyncRun } from "@/lib/sync-runner";
 import { ldapConfigSchema } from "@/lib/connectors/ldap";
 
 export type ActionState = { error?: string; ok?: boolean } | undefined;
@@ -41,66 +42,7 @@ export async function runSync(
   const source = await db.syncSource.findUnique({ where: { id: sourceId } });
   if (!source) return { ok: false, message: "Sync source not found." };
 
-  const connector = getConnector(source.type);
-
-  const run = await db.syncRun.create({
-    data: { sourceId, status: "RUNNING", trigger: "MANUAL" },
-  });
-
-  // No connector for this type yet — record a PARTIAL run instead of pretending.
-  if (!connector) {
-    const log = `No connector implemented for type "${source.type}" yet.`;
-    const finishedAt = new Date();
-    await db.syncRun.update({
-      where: { id: run.id },
-      data: { status: "PARTIAL", created: 0, updated: 0, failed: 0, finishedAt, log },
-    });
-    await db.syncSource.update({
-      where: { id: sourceId },
-      data: { lastRunAt: finishedAt, lastStatus: "PARTIAL" },
-    });
-    revalidatePath("/syncs");
-    revalidatePath(`/syncs/${sourceId}`);
-    return { ok: false, message: log };
-  }
-
-  let result;
-  try {
-    result = await connector.run(source, { trigger: "MANUAL" });
-  } catch (e) {
-    result = {
-      status: "FAILED" as const,
-      created: 0,
-      updated: 0,
-      failed: 1,
-      log: `Unexpected error: ${e instanceof Error ? e.message : String(e)}`,
-    };
-  }
-
-  const finishedAt = new Date();
-  await db.syncRun.update({
-    where: { id: run.id },
-    data: {
-      status: result.status,
-      created: result.created,
-      updated: result.updated,
-      failed: result.failed,
-      finishedAt,
-      log: result.log,
-    },
-  });
-  await db.syncSource.update({
-    where: { id: sourceId },
-    data: { lastRunAt: finishedAt, lastStatus: result.status },
-  });
-
-  await writeAudit({
-    userId: me.id,
-    action: "SYNC",
-    entity: "SyncSource",
-    entityId: sourceId,
-    summary: `Ran sync "${source.name}" — ${result.created} created, ${result.updated} updated, ${result.failed} failed (${result.status})`,
-  });
+  const result = await executeSyncRun(source, { trigger: "MANUAL", actorId: me.id });
 
   revalidatePath("/syncs");
   revalidatePath(`/syncs/${sourceId}`);

@@ -152,7 +152,7 @@ export function SyncSourceForm({
             defaultValue={source?.schedule ?? ""}
             placeholder="0 * * * *"
             mono
-            hint="Optional. Leave blank to run manually only. Automatic scheduled runs are wired up in a later step."
+            hint="Optional cron expression — e.g. 0 * * * * (hourly), 0 2 * * * (daily at 02:00). Runs automatically while the source is active. Leave blank for manual runs only."
           />
         </div>
 
