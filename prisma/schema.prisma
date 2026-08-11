@@ -48,6 +48,8 @@ model User {
   changeComments  ChangeComment[]
   problemComments ProblemComment[]
   watching        TicketWatcher[]
+  participating   TicketParticipant[] @relation("TicketParticipantUser")
+  notifiedOn      TicketNotifiedContact[] @relation("TicketNotifiedBy")
   assignedTasks   Task[]
   workLogs        WorkLog[]
   assignedProblems Problem[]  @relation("ProblemAssignee")
@@ -61,6 +63,7 @@ model User {
   apiTokens       ApiToken[]
   auditLogs       AuditLog[]
   appSettings     AppSetting[]
+  emailTemplates  EmailTemplate[]
   notifications   Notification[]
   aiConversations AiConversation[] @relation("AiConversationUser")
   savedViews      SavedView[] @relation("SavedViewOwner")
@@ -386,6 +389,9 @@ model Ticket {
 
   comments    TicketComment[]
   watchers    TicketWatcher[]
+  participants     TicketParticipant[]
+  notifiedContacts TicketNotifiedContact[]
+  emails      EmailMessage[]
   attachments Attachment[]
   assets      TicketAsset[]
   tasks       Task[]
@@ -409,6 +415,9 @@ model TicketComment {
   body       String   // plaintext twin (search / notifications / mentions)
   bodyHtml   String?  // sanitized rich-text HTML; null = legacy plaintext row
   isInternal Boolean  @default(false)
+  channel    String   @default("WEB") // WEB | EMAIL — how this reply arrived
+  fromEmail  String?  // external sender address when it came in via email
+  emailMessageId String? // link to the inbound EmailMessage that produced it
   createdAt  DateTime @default(now())
 
   ticket      Ticket       @relation(fields: [ticketId], references: [id], onDelete: Cascade)
@@ -478,6 +487,7 @@ model TicketApproval {
   @@index([approverId, status])
 }
 
+// Internal followers: agents who "watch" a ticket for in-app notifications.
 model TicketWatcher {
   ticketId Int
   userId   String
@@ -485,6 +495,37 @@ model TicketWatcher {
   user     User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@id([ticketId, userId])
+}
+
+// Customer-side collaborators (e.g. a requester's manager CC'd on the request).
+// DISTINCT from a watcher: a participant can SEE and REPLY to the ticket in the
+// self-service PORTAL and is CC'd on customer-facing emails.
+model TicketParticipant {
+  ticketId  Int
+  userId    String
+  addedById String?
+  createdAt DateTime @default(now())
+  ticket    Ticket  @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  user      User    @relation("TicketParticipantUser", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([ticketId, userId])
+  @@index([userId])
+}
+
+// External parties a ticket was forwarded to ("Notified"). NOT participants: they
+// have no portal access, and their email replies land as INTERNAL comments.
+model TicketNotifiedContact {
+  id           String   @id @default(cuid())
+  ticketId     Int
+  email        String
+  name         String?
+  notifiedById String?
+  createdAt    DateTime @default(now())
+  ticket       Ticket   @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  notifiedBy   User?    @relation("TicketNotifiedBy", fields: [notifiedById], references: [id])
+
+  @@unique([ticketId, email])
+  @@index([ticketId])
 }
 
 
@@ -826,20 +867,52 @@ model Notification {
 
 model EmailMessage {
   id         String    @id @default(cuid())
+  direction  String    @default("OUTBOUND") // OUTBOUND | INBOUND
   toEmail    String
   toName     String?
+  fromEmail  String?   // inbound sender; outbound falls back to SMTP_FROM
+  fromName   String?
+  cc         String?   // JSON array of addresses
+  bcc        String?   // JSON array of addresses
+  replyTo    String?
   subject    String
-  body       String
+  body       String    // plaintext twin
+  bodyHtml   String?   // HTML variant (multipart/alternative)
   template   String    @default("generic")
-  status     String    @default("QUEUED") // QUEUED | SENT | FAILED
+  status     String    @default("QUEUED") // QUEUED | SENT | FAILED | RECEIVED
   error      String?
+  // ── RFC 2822 threading metadata (the load-bearing part of a real mail thread) ──
+  messageId  String?   @unique // generated on send, captured on receive
+  inReplyTo  String?
+  references String?   // full thread chain
+  headers    String?   // JSON: selected raw headers (debug / replay / loop-detection)
   entity     String?
   entityId   String?
+  ticketId   Int?      // direct FK (in addition to generic entity/entityId)
+  commentId  String?   // the TicketComment created from/for this mail
   createdAt  DateTime  @default(now())
   sentAt     DateTime?
 
+  ticket     Ticket?   @relation(fields: [ticketId], references: [id], onDelete: SetNull)
+
   @@index([status])
   @@index([createdAt])
+  @@index([ticketId])
+  @@index([direction])
+}
+
+// Admin-editable email templates. A missing/disabled row falls back to the
+// built-in default in lib/email-templates.ts, so mail never breaks. Body is HTML
+// with {{placeholders}} resolved at send time; it is wrapped in the branded shell.
+model EmailTemplate {
+  key         String   @id // ticket_received | ticket_reply | ticket_resolved | ticket_assigned | ticket_participant
+  subject     String
+  bodyHtml    String
+  enabled     Boolean  @default(true)
+  updatedAt   DateTime @updatedAt
+  updatedById String?
+
+  updatedBy User? @relation(fields: [updatedById], references: [id])
 }
 
 model AutomationRule {

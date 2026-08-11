@@ -11,6 +11,8 @@ import {
   Info,
   Palette,
   Mail,
+  Inbox,
+  MailCheck,
   Bot,
   UploadCloud,
 } from "lucide-react";
@@ -42,6 +44,18 @@ const CARDS: SettingCard[] = [
     title: "Email (SMTP)",
     description: "Configure outgoing mail delivery, or run in outbox mode.",
     icon: Mail,
+  },
+  {
+    href: "/settings/inbound",
+    title: "Inbound Mail (IMAP)",
+    description: "Poll a shared mailbox so replies become ticket comments.",
+    icon: Inbox,
+  },
+  {
+    href: "/settings/email-templates",
+    title: "Email Templates",
+    description: "Edit the subject and content of the ticket emails users receive.",
+    icon: MailCheck,
   },
   {
     href: "/settings/ai",

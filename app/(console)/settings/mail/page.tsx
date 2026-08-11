@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Mail, CheckCircle2, Server, Inbox } from "lucide-react";
+import { Mail, CheckCircle2, Server, Inbox, ArrowUpRight, ArrowDownLeft } from "lucide-react";
 import { db } from "@/lib/db";
 import { requireRole } from "@/lib/session";
 import { smtpConfigured } from "@/lib/mail";
@@ -19,7 +19,19 @@ const MAIL_STATUS_META = {
   QUEUED: { label: "Queued", tone: "info" as const },
   SENT: { label: "Sent", tone: "success" as const },
   FAILED: { label: "Failed", tone: "danger" as const },
+  RECEIVED: { label: "Received", tone: "purple" as const },
 };
+
+/** cc is stored as a JSON array string; parse it defensively for display. */
+function parseList(v: string | null): string[] {
+  if (!v) return [];
+  try {
+    const arr = JSON.parse(v);
+    return Array.isArray(arr) ? arr.filter((x): x is string => typeof x === "string") : [];
+  } catch {
+    return [];
+  }
+}
 
 export default async function MailSettingsPage() {
   await requireRole("MANAGER");
@@ -34,7 +46,7 @@ export default async function MailSettingsPage() {
       <PageHeader
         icon={Mail}
         title="Mail"
-        description="Outgoing notifications for tickets, assignments and updates."
+        description="Outgoing notifications and incoming email replies for tickets."
       />
       <PageBody className="grid gap-6">
         <Card>
@@ -77,11 +89,26 @@ export default async function MailSettingsPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {messages.map((m) => (
+                {messages.map((m) => {
+                  const inbound = m.direction === "INBOUND";
+                  const cc = parseList(m.cc);
+                  return (
                   <TableRow key={m.id}>
                     <TableCell className="whitespace-nowrap text-sm">
-                      <div className="font-medium">{m.toName ?? m.toEmail}</div>
-                      <div className="text-xs text-muted-foreground">{m.toEmail}</div>
+                      <div className="flex items-center gap-1.5 font-medium">
+                        {inbound ? (
+                          <ArrowDownLeft className="size-3.5 text-purple-500" />
+                        ) : (
+                          <ArrowUpRight className="size-3.5 text-emerald-500" />
+                        )}
+                        {inbound ? (m.fromName ?? m.fromEmail ?? "—") : (m.toName ?? m.toEmail)}
+                      </div>
+                      <div className="text-xs text-muted-foreground">
+                        {inbound ? m.fromEmail : m.toEmail}
+                      </div>
+                      {cc.length > 0 ? (
+                        <div className="text-xs text-muted-foreground">Cc: {cc.join(", ")}</div>
+                      ) : null}
                     </TableCell>
                     <TableCell className="max-w-[420px]">
                       <div className="truncate text-sm">{m.subject}</div>
@@ -96,7 +123,8 @@ export default async function MailSettingsPage() {
                       {formatDistanceToNow(m.createdAt, { addSuffix: true })}
                     </TableCell>
                   </TableRow>
-                ))}
+                  );
+                })}
               </TableBody>
             </Table>
           </div>

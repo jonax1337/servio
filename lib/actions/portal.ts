@@ -56,8 +56,10 @@ export async function addPortalComment(formData: FormData) {
   }
   if (!id || !body) return;
 
-  // portal users can only comment on their own tickets
-  const ticket = await db.ticket.findFirst({ where: { id, requesterId: me.id } });
+  // Portal users can comment on tickets they requested OR participate in (CC'd).
+  const ticket = await db.ticket.findFirst({
+    where: { id, OR: [{ requesterId: me.id }, { participants: { some: { userId: me.id } } }] },
+  });
   if (!ticket) return;
 
   // Attach files staged on the requester's own ticket onto this comment (atomic + capped).
