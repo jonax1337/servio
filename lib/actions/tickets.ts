@@ -939,7 +939,7 @@ export async function forwardComment(_prev: ForwardState, formData: FormData): P
   const commentId = String(formData.get("commentId") ?? "");
   const to = String(formData.get("to") ?? "").trim().toLowerCase();
   const note = String(formData.get("note") ?? "").trim();
-  const cc = String(formData.get("cc") ?? "").split(",").map((s) => s.trim().toLowerCase()).filter(Boolean);
+  let cc = String(formData.get("cc") ?? "").split(",").map((s) => s.trim().toLowerCase()).filter(Boolean);
   if (!ticketId || !commentId) return { error: "Missing data." };
   if (!EMAIL_RE.test(to)) return { error: "Please enter a valid email address." };
 
@@ -958,9 +958,19 @@ export async function forwardComment(_prev: ForwardState, formData: FormData): P
   }
 
   const ref = ticketRef(ticket.id, ticket.type);
-  const recipients = [to, ...cc].filter((e) => EMAIL_RE.test(e));
+  const requesterEmail = (ticket.requester?.email ?? "").toLowerCase();
+  // The requester must never end up on a forward — that would silently flip their
+  // future replies to internal (and leak the internal forward to them). Drop them
+  // from the actual Cc (To is guarded above), then from the notified recipients.
+  cc = cc.filter((e) => e !== requesterEmail);
+  const recipients = [to, ...cc].filter((e) => EMAIL_RE.test(e) && e !== requesterEmail);
   // Record each recipient as a "Notified" contact → their reply routes internal.
+  // Skip the requester and existing participants so we never reclassify a
+  // customer-side party's replies as internal.
   for (const email of recipients) {
+    if (email === requesterEmail) continue;
+    const isParticipant = await db.ticketParticipant.findFirst({ where: { ticketId, user: { email } }, select: { userId: true } });
+    if (isParticipant) continue;
     await db.ticketNotifiedContact.upsert({
       where: { ticketId_email: { ticketId, email } },
       create: { ticketId, email, notifiedById: me.id },

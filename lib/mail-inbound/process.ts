@@ -44,10 +44,15 @@ export async function processInboundMail(mail: ParsedInboundMail): Promise<Inbou
   }
 
   const sender = await resolveSender(from, mail.fromName);
+  // Spoof guard: the inbound From is unauthenticated (no SPF/DKIM at this layer).
+  // NEVER author a comment/ticket as a privileged (agent/admin) account — those
+  // users act via the app, so an inbound mail from such an address is almost
+  // certainly spoofed. Drop it rather than impersonate.
+  if (sender.role !== "USER") return { action: "skipped", reason: "privileged sender" };
   const bodyHtml = mail.html ? sanitizeCommentHtml(mail.html) : null;
   const body = mail.text?.trim() || (bodyHtml ? htmlToText(bodyHtml) : "");
 
-  const ticketId = await matchTicket(mail);
+  const ticketId = await matchTicket(mail, from);
 
   // ── No match → open a new ticket from the email ──
   if (ticketId == null) {
@@ -166,8 +171,9 @@ export async function processInboundMail(mail: ParsedInboundMail): Promise<Inbou
 }
 
 // ── Matching ───────────────────────────────────────────────────────────────
-async function matchTicket(mail: ParsedInboundMail): Promise<number | null> {
-  // 1. Threading headers → our own outbound Message-ID → its ticket.
+async function matchTicket(mail: ParsedInboundMail, from: string): Promise<number | null> {
+  // 1. Threading headers → our own outbound Message-ID → its ticket. TRUSTED:
+  //    Message-IDs are unguessable cuids, so no sender corroboration is needed.
   const refs = [mail.inReplyTo, ...mail.references].filter(Boolean) as string[];
   if (refs.length) {
     const row = await db.emailMessage.findFirst({
@@ -177,23 +183,41 @@ async function matchTicket(mail: ParsedInboundMail): Promise<number | null> {
     });
     if (row?.ticketId) return row.ticketId;
   }
-  // 2. Subject token, e.g. "Re: [INC-0042] …".
+  // 2/3. Subject token ("Re: [INC-0042] …") and plus-addressing are GUESSABLE, so a
+  //      match is only accepted when the sender is ALREADY known on that ticket —
+  //      otherwise an outsider could inject into (and gain portal access to)
+  //      arbitrary tickets just by guessing the number. Uncorroborated → new ticket.
+  const candidates: number[] = [];
   const subjectRef = parseTicketRef(mail.subject);
-  if (subjectRef) {
-    const id = await verifyTicket(subjectRef);
-    if (id) return id;
-  }
-  // 3. Plus-addressing: support+INC-42@company.com in To/Cc.
+  if (subjectRef) { const id = await verifyTicket(subjectRef); if (id) candidates.push(id); }
   for (const addr of [...mail.to, ...mail.cc]) {
     if (!addr.includes("+")) continue;
-    const local = addr.split("@")[0];
-    const ref = parseTicketRef(local);
-    if (ref) {
-      const id = await verifyTicket(ref);
-      if (id) return id;
-    }
+    const ref = parseTicketRef(addr.split("@")[0]);
+    if (ref) { const id = await verifyTicket(ref); if (id) candidates.push(id); }
+  }
+  for (const id of candidates) {
+    if (await senderKnownToTicket(id, from)) return id;
   }
   return null;
+}
+
+/**
+ * Corroborates a guessable (subject/plus) match: the sender must already be known
+ * on the ticket — the requester, an existing participant, a notified contact, or a
+ * prior outbound recipient. Blocks ticket hijacking by outsiders guessing numbers.
+ */
+async function senderKnownToTicket(ticketId: number, from: string): Promise<boolean> {
+  const t = await db.ticket.findUnique({ where: { id: ticketId }, select: { requester: { select: { email: true } } } });
+  if ((t?.requester?.email ?? "").toLowerCase() === from) return true;
+  const part = await db.ticketParticipant.findFirst({ where: { ticketId, user: { email: from } }, select: { userId: true } });
+  if (part) return true;
+  const notified = await db.ticketNotifiedContact.findUnique({ where: { ticketId_email: { ticketId, email: from } }, select: { id: true } });
+  if (notified) return true;
+  const outbound = await db.emailMessage.findFirst({
+    where: { ticketId, direction: "OUTBOUND", OR: [{ toEmail: from }, { cc: { contains: from } }] },
+    select: { id: true },
+  });
+  return !!outbound;
 }
 
 async function verifyTicket(ref: { id: number; prefix: string }): Promise<number | null> {
