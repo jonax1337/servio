@@ -2,14 +2,40 @@ import { z } from "zod";
 import type { SyncSource } from "@prisma/client";
 import type { Connector, ConnectorTestResult, SyncResult } from "./types";
 import { SyncLog } from "./types";
-import { importUsers, errMessage, type ImportError, type ImportUser } from "./import";
+import {
+  importUsers,
+  importAssets,
+  errMessage,
+  type ImportAsset,
+  type ImportError,
+  type ImportUser,
+} from "./import";
 
 /**
- * CSV user import. The CSV is either fetched from a URL or pasted inline into the
- * source config. Columns are mapped by header name (when the first row is a
- * header) or by 0-based index. No external service — great for a quick import or
- * for validating the connector pipeline without infrastructure.
+ * CSV user/asset import. The CSV is either fetched from a URL or pasted inline.
+ * Columns are mapped by header name (when the first row is a header) or by a
+ * 0-based index. No external service — good for quick imports or validating the
+ * pipeline without infrastructure.
  */
+
+const mappingKeys = {
+  externalId: z.string().optional().default(""),
+  email: z.string().optional().default(""),
+  name: z.string().optional().default(""),
+  jobTitle: z.string().optional().default(""),
+  phone: z.string().optional().default(""),
+  department: z.string().optional().default(""),
+  assetTag: z.string().optional().default(""),
+  serial: z.string().optional().default(""),
+  model: z.string().optional().default(""),
+  manufacturer: z.string().optional().default(""),
+  type: z.string().optional().default(""),
+  status: z.string().optional().default(""),
+  ipAddress: z.string().optional().default(""),
+  macAddress: z.string().optional().default(""),
+  os: z.string().optional().default(""),
+  location: z.string().optional().default(""),
+};
 
 export const csvConfigSchema = z
   .object({
@@ -19,12 +45,7 @@ export const csvConfigSchema = z
     delimiter: z.string().optional().default(","),
     hasHeader: z.coerce.boolean().optional().default(true),
     deactivateMissing: z.coerce.boolean().optional().default(false),
-    externalId: z.string().min(1),
-    email: z.string().min(1),
-    name: z.string().optional().default(""),
-    jobTitle: z.string().optional().default(""),
-    phone: z.string().optional().default(""),
-    department: z.string().optional().default(""),
+    ...mappingKeys,
   })
   .refine((c) => (c.mode === "url" ? c.url.trim().length > 0 : c.data.trim().length > 0), {
     message: "a URL (mode=url) or inline data (mode=inline) is required",
@@ -101,20 +122,25 @@ async function loadRows(cfg: CsvConfig): Promise<string[][]> {
   return parseCsv(text, cfg.delimiter);
 }
 
-function buildRecords(cfg: CsvConfig, rows: string[][]): (ImportUser | ImportError)[] {
-  const headers = cfg.hasHeader ? rows[0]?.map((h) => h) ?? [] : null;
+/** Resolve a scope's mapped column indices and a cell reader for a run. */
+function reader(cfg: CsvConfig, rows: string[][], keys: string[]) {
+  const headers = cfg.hasHeader ? rows[0] ?? [] : null;
   const dataRows = cfg.hasHeader ? rows.slice(1) : rows;
-
-  const idx = {
-    externalId: columnIndex(cfg.externalId, headers),
-    email: columnIndex(cfg.email, headers),
-    name: columnIndex(cfg.name, headers),
-    jobTitle: columnIndex(cfg.jobTitle, headers),
-    phone: columnIndex(cfg.phone, headers),
-    department: columnIndex(cfg.department, headers),
-  };
+  const idx: Record<string, number> = {};
+  for (const k of keys) idx[k] = columnIndex(cfg[k as keyof CsvConfig] as string, headers);
   const cell = (row: string[], i: number) => (i >= 0 && i < row.length ? String(row[i]).trim() : "");
+  return { idx, dataRows, cell };
+}
 
+function buildUserRecords(cfg: CsvConfig, rows: string[][]): (ImportUser | ImportError)[] {
+  const { idx, dataRows, cell } = reader(cfg, rows, [
+    "externalId",
+    "email",
+    "name",
+    "jobTitle",
+    "phone",
+    "department",
+  ]);
   return dataRows.map((row, n): ImportUser | ImportError => {
     const externalId = cell(row, idx.externalId);
     const email = cell(row, idx.email).toLowerCase();
@@ -125,6 +151,49 @@ function buildRecords(cfg: CsvConfig, rows: string[][]): (ImportUser | ImportErr
     if (cfg.phone) u.phone = idx.phone >= 0 ? cell(row, idx.phone) || null : undefined;
     if (cfg.department) u.department = idx.department >= 0 ? cell(row, idx.department) || null : undefined;
     return u;
+  });
+}
+
+function buildAssetRecords(cfg: CsvConfig, rows: string[][]): (ImportAsset | ImportError)[] {
+  const keys = [
+    "externalId",
+    "name",
+    "assetTag",
+    "serial",
+    "model",
+    "manufacturer",
+    "type",
+    "status",
+    "ipAddress",
+    "macAddress",
+    "os",
+    "location",
+  ];
+  const { idx, dataRows, cell } = reader(cfg, rows, keys);
+  const nullable = (row: string[], key: string): string | null | undefined =>
+    cfg[key as keyof CsvConfig] ? (idx[key] >= 0 ? cell(row, idx[key]) || null : undefined) : undefined;
+  const enumish = (row: string[], key: string): string | undefined =>
+    cfg[key as keyof CsvConfig] && idx[key] >= 0 ? cell(row, idx[key]) || undefined : undefined;
+
+  return dataRows.map((row, n): ImportAsset | ImportError => {
+    const externalId = cell(row, idx.externalId);
+    const name = cell(row, idx.name);
+    if (!externalId || !name)
+      return { error: `missing ${!externalId ? "external id" : "name"}`, ref: `row ${n + 1}` };
+    return {
+      externalId,
+      name,
+      assetTag: nullable(row, "assetTag"),
+      serial: nullable(row, "serial"),
+      model: nullable(row, "model"),
+      manufacturer: nullable(row, "manufacturer"),
+      type: enumish(row, "type"),
+      status: enumish(row, "status"),
+      ipAddress: nullable(row, "ipAddress"),
+      macAddress: nullable(row, "macAddress"),
+      os: nullable(row, "os"),
+      location: nullable(row, "location"),
+    };
   });
 }
 
@@ -170,7 +239,10 @@ async function run(source: SyncSource): Promise<SyncResult> {
     return { status: "FAILED", created: 0, updated: 0, failed: 1, log: log.toString() };
   }
 
-  await importUsers(source, buildRecords(cfg, rows), cfg.deactivateMissing, log);
+  if (source.scope === "ASSETS")
+    await importAssets(source, buildAssetRecords(cfg, rows), cfg.deactivateMissing, log);
+  else await importUsers(source, buildUserRecords(cfg, rows), cfg.deactivateMissing, log);
+
   return log.result();
 }
 

@@ -116,9 +116,13 @@ function selftest(): void {
   check("csv quoted comma", rows[1]?.[2] === "Doe, Alice");
   check("csv escaped quote", rows[2]?.[2] === 'Bob "B"');
 
-  // REST: dot-path extraction.
+  // REST: dot-path extraction (incl. NetBox-style nested asset field).
   check("getByPath nested", getByPath({ a: { b: { c: 7 } } }, "a.b.c") === 7);
   check("getByPath missing → undefined", getByPath({ a: {} }, "a.b.c") === undefined);
+  check(
+    "getByPath netbox device_type.model",
+    getByPath({ device_type: { model: "PowerEdge R740" } }, "device_type.model") === "PowerEdge R740",
+  );
 
   // Cron scheduling: isSyncDue.
   const now = new Date("2026-08-11T12:30:00Z");
@@ -177,6 +181,47 @@ async function csvDemo(): Promise<void> {
   }
 }
 
+/** Real end-to-end run of a scope=ASSETS CSV import against the DB, then clean up. */
+async function assetDemo(): Promise<void> {
+  const name = "Dev CSV assets (inline)";
+  const config = {
+    mode: "inline",
+    data:
+      "id,name,serial,model,type,status\n" +
+      "a-1,web01,SN123,PowerEdge R740,SERVER,IN_USE\n" +
+      "a-2,,SN124,PowerEdge R740,SERVER,IN_USE\n" +
+      "a-3,db01,SN125,PowerEdge R750,SERVER,IN_USE",
+    delimiter: ",",
+    hasHeader: true,
+    deactivateMissing: false,
+    externalId: "id",
+    name: "name",
+    serial: "serial",
+    model: "model",
+    type: "type",
+    status: "status",
+  };
+  const source = await db.syncSource.upsert({
+    where: { name },
+    create: { name, type: "CSV", direction: "IMPORT", scope: "ASSETS", config: JSON.stringify(config) },
+    update: { scope: "ASSETS", config: JSON.stringify(config) },
+  });
+  try {
+    const result = await getConnector("CSV")!.run(source, { trigger: "MANUAL" });
+    console.log(result.log);
+    console.log(`status=${result.status} created=${result.created} updated=${result.updated} failed=${result.failed}`);
+    const imported = await db.asset.findMany({
+      where: { syncSourceId: source.id },
+      select: { name: true, serial: true, model: true, type: true, status: true },
+    });
+    console.log("imported assets:", JSON.stringify(imported));
+  } finally {
+    const del = await db.asset.deleteMany({ where: { syncSourceId: source.id } });
+    await db.syncSource.delete({ where: { id: source.id } });
+    console.log(`cleaned up ${del.count} asset(s) + source`);
+  }
+}
+
 async function main() {
   if (has("selftest")) {
     selftest();
@@ -185,6 +230,11 @@ async function main() {
 
   if (has("csvdemo")) {
     await csvDemo();
+    return;
+  }
+
+  if (has("assetdemo")) {
+    await assetDemo();
     return;
   }
 

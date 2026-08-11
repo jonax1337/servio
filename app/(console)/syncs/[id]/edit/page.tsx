@@ -21,7 +21,7 @@ export default async function EditSyncSourcePage({
   const source = await db.syncSource.findUnique({ where: { id } });
   if (!source) notFound();
 
-  const { values, passwordSet } = configToFormValues(source.type, source.config);
+  const { values, passwordSet } = configToFormValues(source.type, source.scope, source.config);
 
   return (
     <>
@@ -38,6 +38,7 @@ export default async function EditSyncSourcePage({
             name: source.name,
             type: source.type,
             schedule: source.schedule,
+            scope: source.scope,
           }}
           values={values}
           passwordSet={passwordSet}

@@ -107,3 +107,110 @@ export async function importUsers(
 
   log.line(`Done: ${log.created} created, ${log.updated} updated, ${log.failed} failed.`);
 }
+
+/**
+ * The normalised asset shape connectors map onto. `type`/`status` are never set
+ * to null (they are non-null enum columns) — an empty mapping leaves them at the
+ * DB default (create) or unchanged (update); other empty-but-mapped fields clear.
+ */
+export type ImportAsset = {
+  externalId: string;
+  name: string;
+  assetTag?: string | null;
+  serial?: string | null;
+  model?: string | null;
+  manufacturer?: string | null;
+  type?: string;
+  status?: string;
+  ipAddress?: string | null;
+  macAddress?: string | null;
+  os?: string | null;
+  location?: string | null;
+};
+
+/**
+ * Upsert a batch of assets for a sync source and stamp `lastSeenAt`. Assets that
+ * vanished are retired (status=RETIRED) when `deactivateMissing` is on — never
+ * deleted. Keyed by (syncSourceId, externalId), falling back to the unique
+ * assetTag so a manually-created asset can be adopted.
+ */
+export async function importAssets(
+  source: SyncSource,
+  records: (ImportAsset | ImportError)[],
+  deactivateMissing: boolean,
+  log: SyncLog,
+): Promise<void> {
+  const seen: string[] = [];
+  const now = new Date();
+
+  for (const rec of records) {
+    if ("error" in rec) {
+      log.failed++;
+      log.line(`Skipped ${rec.ref ?? "record"}: ${rec.error}.`);
+      continue;
+    }
+    seen.push(rec.externalId);
+
+    // Only enum columns get special-cased (never null); the rest pass through.
+    const data = {
+      name: rec.name,
+      assetTag: rec.assetTag,
+      serial: rec.serial,
+      model: rec.model,
+      manufacturer: rec.manufacturer,
+      ipAddress: rec.ipAddress,
+      macAddress: rec.macAddress,
+      os: rec.os,
+      location: rec.location,
+      ...(rec.type ? { type: rec.type } : {}),
+      ...(rec.status ? { status: rec.status } : {}),
+    };
+
+    try {
+      const existing = await db.asset.findFirst({
+        where: {
+          OR: [
+            { syncSourceId: source.id, externalId: rec.externalId },
+            ...(rec.assetTag ? [{ assetTag: rec.assetTag }] : []),
+          ],
+        },
+        select: { id: true },
+      });
+      if (existing) {
+        await db.asset.update({
+          where: { id: existing.id },
+          data: { ...data, syncSourceId: source.id, externalId: rec.externalId, lastSeenAt: now },
+        });
+        log.updated++;
+      } else {
+        await db.asset.create({
+          data: { ...data, syncSourceId: source.id, externalId: rec.externalId, lastSeenAt: now },
+        });
+        log.created++;
+      }
+    } catch (e) {
+      log.failed++;
+      log.line(`Failed ${rec.name}: ${errMessage(e)}`);
+    }
+  }
+
+  if (deactivateMissing) {
+    if (seen.length === 0) {
+      log.line(
+        "Skipped retirement: the source returned no assets (guarding against mass-retirement from a misconfiguration).",
+      );
+    } else {
+      const res = await db.asset.updateMany({
+        where: {
+          syncSourceId: source.id,
+          externalId: { notIn: seen },
+          status: { not: "RETIRED" },
+        },
+        data: { status: "RETIRED" },
+      });
+      if (res.count) log.line(`Retired ${res.count} asset(s) no longer present in the source.`);
+    }
+  }
+
+  log.line(`Done: ${log.created} created, ${log.updated} updated, ${log.failed} failed.`);
+}

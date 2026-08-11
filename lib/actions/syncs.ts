@@ -8,7 +8,7 @@ import { encryptionAvailable, encryptSecret } from "@/lib/crypto";
 import { writeAudit } from "@/lib/audit";
 import { getConnector, getConfigSchema } from "@/lib/connectors";
 import { executeSyncRun } from "@/lib/sync-runner";
-import { getSpec, CONFIGURABLE_TYPES } from "@/lib/connectors/spec";
+import { getSpec, fieldsFor, CONFIGURABLE_TYPES } from "@/lib/connectors/spec";
 
 export type ActionState = { error?: string; ok?: boolean } | undefined;
 
@@ -96,17 +96,29 @@ function safeParseObj(raw?: string): Record<string, unknown> {
   }
 }
 
+/** Resolve the source scope for a type: honour the form value, else the default. */
+function resolveScope(type: string, requested: string): string {
+  const spec = getSpec(type);
+  if (!spec) return "USERS";
+  return spec.scopes.includes(requested) ? requested : spec.scopes[0];
+}
+
 /**
- * Assemble a connector's flat config from the form, driven by its field spec —
- * so every connector shares one builder. Secret fields are encrypted at rest; a
- * blank secret keeps the stored value ("leave blank to keep").
+ * Assemble a connector's flat config from the form, driven by its field spec for
+ * the given scope — so every connector shares one builder. Secret fields are
+ * encrypted at rest; a blank secret keeps the stored value ("leave blank to keep").
  */
-function buildConfig(type: string, fd: FormData, prevRaw?: string): Record<string, unknown> {
+function buildConfig(
+  type: string,
+  scope: string,
+  fd: FormData,
+  prevRaw?: string,
+): Record<string, unknown> {
   const spec = getSpec(type);
   if (!spec) return {};
   const prev = safeParseObj(prevRaw);
   const out: Record<string, unknown> = {};
-  for (const f of spec.fields) {
+  for (const f of fieldsFor(spec, scope)) {
     if (spec.secretFields.includes(f.name)) {
       const v = str(fd, f.name);
       out[f.name] = v ? encryptSecret(v) : typeof prev[f.name] === "string" ? prev[f.name] : "";
@@ -125,6 +137,20 @@ function buildConfig(type: string, fd: FormData, prevRaw?: string): Record<strin
 /** True when the form submitted a value for any of the type's secret fields. */
 function hasSecretInput(type: string, fd: FormData): boolean {
   return (getSpec(type)?.secretFields ?? []).some((k) => str(fd, k).length > 0);
+}
+
+/** Ensure the required mapping fields for the scope are set (skips fixed-mapping types). */
+function requiredMappingError(type: string, scope: string, config: Record<string, unknown>): string | null {
+  const spec = getSpec(type);
+  if (!spec || (spec.mapping[scope] ?? []).length === 0) return null;
+  const has = (k: string) => typeof config[k] === "string" && (config[k] as string).trim().length > 0;
+  if (scope === "ASSETS") {
+    if (!has("externalId") || !has("name"))
+      return "External ID and Name mappings are required for asset import.";
+  } else if (!has("externalId") || !has("email")) {
+    return "External ID and Email mappings are required for user import.";
+  }
+  return null;
 }
 
 /** Validate the assembled config against the type's schema. Returns an error string or null. */
@@ -152,14 +178,16 @@ export async function createSyncSource(
   if (!name) return { error: "Name is required." };
   if (!CONFIGURABLE.has(type)) return { error: "Unsupported sync type." };
 
+  const scope = resolveScope(type, str(fd, "scope"));
+
   if (hasSecretInput(type, fd) && !encryptionAvailable())
     return {
       error:
         "Encryption key not configured — set a valid SETTINGS_ENCRYPTION_KEY to store secrets.",
     };
 
-  const config = buildConfig(type, fd);
-  const invalid = validateConfig(type, config);
+  const config = buildConfig(type, scope, fd);
+  const invalid = validateConfig(type, config) ?? requiredMappingError(type, scope, config);
   if (invalid) return { error: invalid };
 
   const schedule = str(fd, "schedule") || null;
@@ -171,7 +199,7 @@ export async function createSyncSource(
         name,
         type,
         direction: "IMPORT",
-        scope: "USERS",
+        scope,
         schedule,
         config: JSON.stringify(config),
         isActive: true,
@@ -216,8 +244,10 @@ export async function updateSyncSource(
         "Encryption key not configured — set a valid SETTINGS_ENCRYPTION_KEY to store secrets.",
     };
 
-  const config = buildConfig(existing.type, fd, existing.config);
-  const invalid = validateConfig(existing.type, config);
+  const config = buildConfig(existing.type, existing.scope, fd, existing.config);
+  const invalid =
+    validateConfig(existing.type, config) ??
+    requiredMappingError(existing.type, existing.scope, config);
   if (invalid) return { error: invalid };
 
   const schedule = str(fd, "schedule") || null;

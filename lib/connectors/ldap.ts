@@ -21,13 +21,13 @@ export const ldapConfigSchema = z.object({
   bindDN: z.string().min(1),
   bindPassword: z.string().optional().default(""),
   userFilter: z.string().min(1),
-  scope: z.enum(["sub", "one"]).optional().default("sub"),
+  searchScope: z.enum(["sub", "one"]).optional().default("sub"),
   pageSize: z.coerce.number().int().positive().max(5000).optional().default(500),
   tlsRejectUnauthorized: z.coerce.boolean().optional().default(true),
   deactivateMissing: z.coerce.boolean().optional().default(false),
-  externalId: z.string().min(1),
-  email: z.string().min(1),
-  name: z.string().min(1),
+  externalId: z.string().optional().default(""),
+  email: z.string().optional().default(""),
+  name: z.string().optional().default(""),
   jobTitle: z.string().optional().default(""),
   phone: z.string().optional().default(""),
   department: z.string().optional().default(""),
@@ -104,7 +104,7 @@ async function testConnection(source: SyncSource): Promise<ConnectorTestResult> 
   try {
     await client.bind(cfg.bindDN, cfg.bindPassword);
     const { searchEntries } = await client.search(cfg.baseDN, {
-      scope: cfg.scope,
+      scope: cfg.searchScope,
       filter: cfg.userFilter,
       sizeLimit: 1,
       paged: false,
@@ -143,10 +143,10 @@ async function run(source: SyncSource): Promise<SyncResult> {
   const client = makeClient(cfg);
   try {
     await client.bind(cfg.bindDN, cfg.bindPassword);
-    log.line(`Bound as ${cfg.bindDN}. Searching ${cfg.baseDN} (${cfg.scope}) …`);
+    log.line(`Bound as ${cfg.bindDN}. Searching ${cfg.baseDN} (${cfg.searchScope}) …`);
 
     const { searchEntries } = await client.search(cfg.baseDN, {
-      scope: cfg.scope,
+      scope: cfg.searchScope,
       filter: cfg.userFilter,
       paged: { pageSize: cfg.pageSize },
       attributes: attrList(cfg),

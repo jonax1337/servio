@@ -3,14 +3,43 @@ import type { SyncSource } from "@prisma/client";
 import { decryptSecret } from "@/lib/crypto";
 import type { Connector, ConnectorTestResult, SyncResult } from "./types";
 import { SyncLog } from "./types";
-import { importUsers, errMessage, type ImportError, type ImportUser } from "./import";
+import {
+  importUsers,
+  importAssets,
+  errMessage,
+  type ImportAsset,
+  type ImportError,
+  type ImportUser,
+} from "./import";
 
 /**
- * Generic REST/JSON user import. Fetches a JSON endpoint, locates the array of
- * records via a dot path, and maps each record's fields (also dot paths) onto a
- * user. An optional Authorization header (stored encrypted) and extra headers
- * (JSON) are supported.
+ * Generic REST/JSON user or asset import. Fetches a JSON endpoint, locates the
+ * array of records via a dot path, and maps each record's fields (also dot
+ * paths) onto a user or asset. Supports pagination by following a next-page URL
+ * (dot path), an optional encrypted Authorization header, and extra headers.
+ *
+ * NetBox: scope=Assets, recordsPath "results", nextPath "next",
+ * Authorization "Token <key>".
  */
+
+const mappingKeys = {
+  externalId: z.string().optional().default(""),
+  email: z.string().optional().default(""),
+  name: z.string().optional().default(""),
+  jobTitle: z.string().optional().default(""),
+  phone: z.string().optional().default(""),
+  department: z.string().optional().default(""),
+  assetTag: z.string().optional().default(""),
+  serial: z.string().optional().default(""),
+  model: z.string().optional().default(""),
+  manufacturer: z.string().optional().default(""),
+  type: z.string().optional().default(""),
+  status: z.string().optional().default(""),
+  ipAddress: z.string().optional().default(""),
+  macAddress: z.string().optional().default(""),
+  os: z.string().optional().default(""),
+  location: z.string().optional().default(""),
+};
 
 export const restConfigSchema = z.object({
   url: z.string().min(1),
@@ -18,13 +47,9 @@ export const restConfigSchema = z.object({
   authHeader: z.string().optional().default(""),
   headers: z.string().optional().default(""),
   recordsPath: z.string().optional().default(""),
+  nextPath: z.string().optional().default(""),
   deactivateMissing: z.coerce.boolean().optional().default(false),
-  externalId: z.string().min(1),
-  email: z.string().min(1),
-  name: z.string().optional().default(""),
-  jobTitle: z.string().optional().default(""),
-  phone: z.string().optional().default(""),
-  department: z.string().optional().default(""),
+  ...mappingKeys,
 });
 
 export type RestConfig = z.infer<typeof restConfigSchema>;
@@ -61,20 +86,30 @@ function buildHeaders(cfg: RestConfig): Record<string, string> {
 }
 
 async function fetchRecords(cfg: RestConfig): Promise<unknown[]> {
-  const res = await fetch(cfg.url, { method: cfg.method, headers: buildHeaders(cfg) });
-  if (!res.ok) throw new Error(`HTTP ${res.status} from endpoint`);
-  const json = await res.json();
-  const arr = getByPath(json, cfg.recordsPath);
-  if (!Array.isArray(arr))
-    throw new Error(
-      cfg.recordsPath
-        ? `Path "${cfg.recordsPath}" is not an array`
-        : "Response is not a JSON array — set a records path",
-    );
-  return arr;
+  const headers = buildHeaders(cfg);
+  const out: unknown[] = [];
+  let url = cfg.url;
+  // Cap pages defensively so a bad nextPath can't loop forever.
+  for (let page = 0; url && page < 1000; page++) {
+    const res = await fetch(url, { method: cfg.method, headers });
+    if (!res.ok) throw new Error(`HTTP ${res.status} from endpoint`);
+    const json = await res.json();
+    const arr = getByPath(json, cfg.recordsPath);
+    if (!Array.isArray(arr))
+      throw new Error(
+        cfg.recordsPath
+          ? `Path "${cfg.recordsPath}" is not an array`
+          : "Response is not a JSON array — set a records path",
+      );
+    out.push(...arr);
+    if (!cfg.nextPath) break;
+    const next = getByPath(json, cfg.nextPath);
+    url = typeof next === "string" ? next : "";
+  }
+  return out;
 }
 
-function buildRecords(cfg: RestConfig, records: unknown[]): (ImportUser | ImportError)[] {
+function buildUserRecords(cfg: RestConfig, records: unknown[]): (ImportUser | ImportError)[] {
   return records.map((rec, n): ImportUser | ImportError => {
     const externalId = asStr(getByPath(rec, cfg.externalId));
     const email = asStr(getByPath(rec, cfg.email)).toLowerCase();
@@ -85,6 +120,34 @@ function buildRecords(cfg: RestConfig, records: unknown[]): (ImportUser | Import
     if (cfg.phone) u.phone = asStr(getByPath(rec, cfg.phone)) || null;
     if (cfg.department) u.department = asStr(getByPath(rec, cfg.department)) || null;
     return u;
+  });
+}
+
+function buildAssetRecords(cfg: RestConfig, records: unknown[]): (ImportAsset | ImportError)[] {
+  const nullable = (rec: unknown, key: keyof RestConfig): string | null | undefined =>
+    cfg[key] ? asStr(getByPath(rec, cfg[key] as string)) || null : undefined;
+  const enumish = (rec: unknown, key: keyof RestConfig): string | undefined =>
+    cfg[key] ? asStr(getByPath(rec, cfg[key] as string)) || undefined : undefined;
+
+  return records.map((rec, n): ImportAsset | ImportError => {
+    const externalId = asStr(getByPath(rec, cfg.externalId));
+    const name = asStr(getByPath(rec, cfg.name));
+    if (!externalId || !name)
+      return { error: `missing ${!externalId ? "external id" : "name"}`, ref: `record ${n + 1}` };
+    return {
+      externalId,
+      name,
+      assetTag: nullable(rec, "assetTag"),
+      serial: nullable(rec, "serial"),
+      model: nullable(rec, "model"),
+      manufacturer: nullable(rec, "manufacturer"),
+      type: enumish(rec, "type"),
+      status: enumish(rec, "status"),
+      ipAddress: nullable(rec, "ipAddress"),
+      macAddress: nullable(rec, "macAddress"),
+      os: nullable(rec, "os"),
+      location: nullable(rec, "location"),
+    };
   });
 }
 
@@ -124,7 +187,10 @@ async function run(source: SyncSource): Promise<SyncResult> {
     return { status: "FAILED", created: 0, updated: 0, failed: 1, log: log.toString() };
   }
 
-  await importUsers(source, buildRecords(cfg, records), cfg.deactivateMissing, log);
+  if (source.scope === "ASSETS")
+    await importAssets(source, buildAssetRecords(cfg, records), cfg.deactivateMissing, log);
+  else await importUsers(source, buildUserRecords(cfg, records), cfg.deactivateMissing, log);
+
   return log.result();
 }
 

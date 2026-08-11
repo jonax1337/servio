@@ -21,7 +21,9 @@ import {
 import {
   CONNECTOR_SPECS,
   CONFIGURABLE_TYPES,
+  SCOPE_LABELS,
   getSpec,
+  fieldsFor,
   sectionsOf,
   type ConnectorSpec,
   type FieldSpec,
@@ -46,23 +48,25 @@ function SubmitButton({ label }: { label: string }) {
   );
 }
 
-/** Renders the fields for one connector type, grouped by section. */
+/** Renders the fields for one connector type + scope, grouped by section. */
 function ConnectorFields({
   spec,
+  scope,
   values,
   passwordSet,
 }: {
   spec: ConnectorSpec;
+  scope: string;
   values?: Record<string, FieldValue>;
   passwordSet: boolean;
 }) {
-  const val = (name: string): FieldValue =>
-    values?.[name] ?? spec.defaults[name] ?? "";
+  const fields = fieldsFor(spec, scope);
+  const val = (name: string): FieldValue => values?.[name] ?? spec.defaults[name] ?? "";
 
   // Only select fields need to be controlled (to drive showWhen).
   const [watch, setWatch] = useState<Record<string, string>>(() => {
     const w: Record<string, string> = {};
-    for (const f of spec.fields) if (f.type === "select") w[f.name] = String(val(f.name));
+    for (const f of fields) if (f.type === "select") w[f.name] = String(val(f.name));
     return w;
   });
 
@@ -71,13 +75,13 @@ function ConnectorFields({
 
   return (
     <div className="grid gap-6">
-      {sectionsOf(spec).map((section) => {
-        const fields = spec.fields.filter((f) => f.section === section && visible(f));
-        if (fields.length === 0) return null;
+      {sectionsOf(fields).map((section) => {
+        const inSection = fields.filter((f) => f.section === section && visible(f));
+        if (inSection.length === 0) return null;
         return (
           <section key={section} className="grid gap-4">
             <h3 className="text-sm font-semibold">{section}</h3>
-            {fields.map((f) => (
+            {inSection.map((f) => (
               <Fieldset key={f.name} field={f} value={val(f.name)} watch={watch} setWatch={setWatch} passwordSet={passwordSet} />
             ))}
           </section>
@@ -167,11 +171,15 @@ export function SyncSourceForm({
   passwordSet = false,
 }: {
   mode: "create" | "edit";
-  source?: { id: string; name: string; type: string; schedule: string | null };
+  source?: { id: string; name: string; type: string; schedule: string | null; scope: string };
   values?: Record<string, FieldValue>;
   passwordSet?: boolean;
 }) {
-  const [type, setType] = useState(source?.type ?? CONFIGURABLE_TYPES[0].type);
+  const initialType = source?.type ?? CONFIGURABLE_TYPES[0].type;
+  const [type, setType] = useState(initialType);
+  const [scope, setScope] = useState(
+    source?.scope ?? getSpec(initialType)?.scopes[0] ?? "USERS",
+  );
   const action = mode === "create" ? createSyncSource : updateSyncSource;
   const [state, formAction] = useActionState<ActionState, FormData>(action, undefined);
   const wasErr = useRef<string | undefined>(undefined);
@@ -182,6 +190,12 @@ export function SyncSourceForm({
   }, [state]);
 
   const spec = getSpec(type) ?? CONNECTOR_SPECS[CONFIGURABLE_TYPES[0].type];
+
+  // Switching type resets the scope to that type's first supported scope.
+  function changeType(t: string) {
+    setType(t);
+    setScope(getSpec(t)?.scopes[0] ?? "USERS");
+  }
 
   return (
     <div className="grid max-w-2xl gap-4">
@@ -201,13 +215,34 @@ export function SyncSourceForm({
                 name="type"
                 options={CONFIGURABLE_TYPES.map((s) => ({ value: s.type, label: s.label }))}
                 value={type}
-                onChange={setType}
+                onChange={changeType}
                 searchPlaceholder="Search…"
               />
             ) : (
               <p className="text-sm font-medium">{spec.label}</p>
             )}
             <p className="text-xs text-muted-foreground">{spec.blurb}</p>
+          </div>
+
+          <div className="grid gap-1.5">
+            <Label>Import</Label>
+            {mode === "create" && spec.scopes.length > 1 ? (
+              <Combobox
+                name="scope"
+                options={spec.scopes.map((s) => ({ value: s, label: SCOPE_LABELS[s] ?? s }))}
+                value={scope}
+                onChange={setScope}
+                searchPlaceholder="Search…"
+              />
+            ) : (
+              <>
+                <p className="text-sm font-medium">{SCOPE_LABELS[scope] ?? scope}</p>
+                {mode === "create" ? <input type="hidden" name="scope" value={scope} /> : null}
+              </>
+            )}
+            <p className="text-xs text-muted-foreground">
+              What this source imports. Fixed after creation.
+            </p>
           </div>
 
           <div className="grid gap-1.5">
@@ -220,8 +255,8 @@ export function SyncSourceForm({
           </div>
         </div>
 
-        {/* Remounts on type change so field defaults reload for the new type. */}
-        <ConnectorFields key={type} spec={spec} values={mode === "edit" ? values : undefined} passwordSet={passwordSet} />
+        {/* Remounts on type/scope change so field defaults reload. */}
+        <ConnectorFields key={`${type}-${scope}`} spec={spec} scope={scope} values={mode === "edit" ? values : undefined} passwordSet={passwordSet} />
 
         <div className="flex items-center justify-end gap-2">
           <LinkButton href={mode === "edit" && source ? `/syncs/${source.id}` : "/syncs"} variant="ghost">
