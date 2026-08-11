@@ -213,11 +213,23 @@ async function senderKnownToTicket(ticketId: number, from: string): Promise<bool
   if (part) return true;
   const notified = await db.ticketNotifiedContact.findUnique({ where: { ticketId_email: { ticketId, email: from } }, select: { id: true } });
   if (notified) return true;
-  const outbound = await db.emailMessage.findFirst({
-    where: { ticketId, direction: "OUTBOUND", OR: [{ toEmail: from }, { cc: { contains: from } }] },
-    select: { id: true },
+  // Prior outbound recipient (To or Cc). `cc` is a JSON array string, so compare
+  // against the EXACT parsed addresses — never a substring of the serialized list
+  // (a substring match would let "hef@x.com" corroborate against "chef@x.com").
+  const rows = await db.emailMessage.findMany({
+    where: { ticketId, direction: "OUTBOUND" },
+    select: { toEmail: true, cc: true },
   });
-  return !!outbound;
+  return rows.some((r) => {
+    if ((r.toEmail ?? "").toLowerCase() === from) return true;
+    if (!r.cc) return false;
+    try {
+      const list = JSON.parse(r.cc) as unknown;
+      return Array.isArray(list) && list.some((e) => String(e).toLowerCase() === from);
+    } catch {
+      return false;
+    }
+  });
 }
 
 async function verifyTicket(ref: { id: number; prefix: string }): Promise<number | null> {
