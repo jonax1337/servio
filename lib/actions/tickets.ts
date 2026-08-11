@@ -51,6 +51,7 @@ const createSchema = z.object({
   urgency: z.enum(IMPACT_URGENCY),
   source: z.enum(TICKET_SOURCES).default("AGENT"),
   requesterId: z.string().min(1, "Requester is required"),
+  requestedByUserId: optionalId,
   assigneeId: optionalId,
   groupId: optionalId,
   categoryId: optionalId,
@@ -74,10 +75,16 @@ export async function createTicketCore(
 ) {
   // Resolve the SLA and stamp response/resolve deadlines at creation time.
   const sla = await slaCreateData({ slaId: data.slaId, serviceId: data.serviceId, priority: data.priority });
+  // "Requested on behalf of" only matters when the reporter differs from the
+  // requester — collapse a self-request back to null so the UI stays clean.
+  const requestedByUserId =
+    data.requestedByUserId && data.requestedByUserId !== data.requesterId
+      ? data.requestedByUserId
+      : null;
   const ticket = await db.ticket.create({
     // `prefix` is fixed here from the initial type and never changes afterwards,
     // so switching the type later leaves the ticket's ref number untouched.
-    data: { ...data, prefix: prefixForType(data.type), ...sla, status: "NEW" },
+    data: { ...data, requestedByUserId, prefix: prefixForType(data.type), ...sla, status: "NEW" },
     include: { requester: true, assignee: true },
   });
 

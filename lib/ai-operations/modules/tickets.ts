@@ -99,6 +99,7 @@ export const OPERATIONS: AiOperation[] = [
           urgency: "MEDIUM",
           source: "AGENT",
           requesterId,
+          requestedByUserId: null,
           assigneeId: null,
           groupId: team?.id ?? null,
           categoryId: category?.id ?? null,
