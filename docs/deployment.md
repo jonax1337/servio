@@ -2,7 +2,7 @@
 
 Production deployment guide for Servio. This covers moving the database from SQLite to
 PostgreSQL, the required production environment, building and running the app, persistent
-file storage, and the honest state of scheduled syncs.
+file storage, and how scheduled syncs run.
 
 For the full list of environment variables and their meaning, see
 [configuration.md](./configuration.md). For the schema itself, see
@@ -195,22 +195,27 @@ until an object-storage adapter is implemented.**
 
 ## ⏰ Scheduled syncs
 
-Servio has a **directory/asset sync** feature (`SyncSource` in
-[`prisma/schema.prisma`](../prisma/schema.prisma)) with a `schedule` field documented as a
-cron expression. **However, there is no cron runner or scheduled entrypoint in the
-codebase.** The only trigger is the manual `runSync` server action in
-[`lib/actions/syncs.ts`](../lib/actions/syncs.ts), invoked from the UI, and its current
-implementation is a demo/simulated run.
+Servio's sync engine (`SyncSource` in [`prisma/schema.prisma`](../prisma/schema.prisma))
+runs on an **in-process scheduler** started at server boot from
+[`instrumentation.ts`](../instrumentation.ts) → [`lib/scheduler.ts`](../lib/scheduler.ts)
+(Node runtime only, HMR-guarded). The same scheduler runs the inbound-mail poll and a
+`syncTick` that fires any active source whose `schedule` (cron) is due.
 
-Practically, for production this means:
+- Cron is parsed with `cron-parser`; a source is due when its next occurrence after
+  `lastRunAt` has passed (`isSyncDue`). A never-run scheduled source fires once, then
+  advances. Invalid cron never fires.
+- Tick cadence: the `SYNC_TICK_SECONDS` setting (default `60`, min `30`) — independent of
+  the IMAP poll interval. Manual **Run now** from the UI (`runSync`) still works.
+- Runs execute via the session-less `executeSyncRun` ([`lib/sync-runner.ts`](../lib/sync-runner.ts)),
+  shared by manual and scheduled runs, with a per-source in-process lock so the two never
+  overlap.
 
-- The `schedule` value is **stored but not acted on** — nothing reads it to fire jobs.
-- Syncs run only when a user triggers them manually.
-- If you need scheduled execution, you must add your own scheduler (e.g. an external cron
-  hitting an authenticated endpoint/action) — no `CRON_*` env var or cron entrypoint
-  exists yet.
+**Multi-instance caveat:** the scheduler runs in *every* server instance. If you scale
+horizontally, each replica fires due sources → duplicate runs (imports are idempotent, so
+data stays correct, but you get duplicate `SyncRun` rows). For multiple replicas, run the
+scheduler on a single instance/worker or add external locking.
 
-There is no other background job or cron dependency to provision.
+There is no external cron dependency to provision.
 
 ---
 

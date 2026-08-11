@@ -219,13 +219,15 @@ Rule engine (trigger → conditions → actions), MANAGER+.
 Internal-note actions are authored by a pseudo **"Automation"** system account (inactive, no login) via `getAutomationUserId()` in `lib/system-user.ts`, so automated comments are clearly attributed to the system rather than an admin.
 
 ### Syncs / Integrations
-External data sync connectors (e.g. directory/asset imports), MANAGER+.
+Pluggable connectors that import **users and assets** (LDAP/AD, Azure AD/Entra, CSV, REST — e.g. NetBox), on a cron schedule or on demand. View/run MANAGER+, configure ADMIN.
 
 | | |
 | --- | --- |
-| Routes | `app/(console)/syncs/page.tsx`, `[id]/page.tsx` |
-| Actions | `lib/actions/syncs.ts` — `runSync`, `toggleSyncActive` |
-| Components | `components/syncs/` — `run-button`, `toggle-active` |
+| Routes | `app/(console)/syncs/` — `page.tsx`, `[id]/page.tsx`, `new/page.tsx`, `[id]/edit/page.tsx` |
+| Connectors | `lib/connectors/` — `types.ts`, `index.ts` (registry), `spec.ts` (form fields, pure), `import.ts` (shared upsert), `ldap.ts`, `azure.ts`, `csv.ts`, `rest.ts` |
+| Actions | `lib/actions/syncs.ts` — `runSync`, `create`/`update`/`delete` `SyncSource`, `testSyncConnection`, `toggleSyncActive` |
+| Runner / scheduler | `lib/sync-runner.ts` (`executeSyncRun`), `lib/scheduler.ts` (`syncTick`/`isSyncDue`, from `instrumentation.ts`) |
+| Components | `components/syncs/` — `source-form`, `run-button`, `toggle-active` |
 
 ### Settings
 A hub page (`app/(console)/settings/page.tsx`, MANAGER+) linking to sub-pages:

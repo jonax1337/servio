@@ -30,8 +30,10 @@ and an **AI assistant that can actually do the work** (with your approval).
   (depends-on / runs-on / connects-to …) and linked tickets.
 - **Service catalog** with live status (operational / degraded / outage) and SLAs.
 - **Organisation** — groups & teams, people/roles, categories (tree).
-- **Infrastructure Syncs** — pluggable connectors (Active Directory, Azure AD / Entra,
-  Intune, CSV, ServiceNow, GLPI import, REST) with run history and manual runs.
+- **Infrastructure Syncs** — pluggable connectors importing **users and assets** on a
+  **cron schedule** or on demand, with run history: Active Directory / LDAP, Azure AD /
+  Entra, CSV (URL or inline), and generic REST (e.g. NetBox). Intune / ServiceNow / GLPI
+  are stubbed (report a partial run, no crash).
 - **Self-Service Portal** — a redesigned end-user help center: one **live search** across the
   knowledge base, catalog and your own tickets; report an issue or request a service with
   **screenshot/file attachments** (images, PDF, Office docs, `.eml`); track and reply to tickets;

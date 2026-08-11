@@ -264,33 +264,47 @@ a token sees org-wide data or only the owner's objects. See [rest-api.md](./rest
 
 ## 🔄 Sync / integrations engine
 
-Servio can import users and assets from external systems (AD, Azure AD/Entra,
-Intune, LDAP, CSV, ServiceNow, GLPI, generic REST). The engine is modelled by two
-tables and driven from the console.
+Servio imports **users and assets** from external systems via a pluggable connector
+layer. A source is one `SyncSource` row; a run is one `SyncRun`.
 
-- **`SyncSource`** — a configured integration: `type`, `direction`
-  (`IMPORT`/`EXPORT`/`BIDIRECTIONAL`), `scope` (`USERS`/`ASSETS`/`TICKETS`/`ALL`),
-  `isActive`, `lastRunAt`, `lastStatus`.
-- **`SyncRun`** — one execution: `status`, `trigger` (`MANUAL`/scheduled),
+- **`SyncSource`** — `type`, `direction` (`IMPORT`), `scope` (`USERS`/`ASSETS`),
+  `schedule` (cron), `config` (JSON as TEXT; per-source secrets are AES-GCM encrypted
+  via [`lib/crypto.ts`](../lib/crypto.ts)), `isActive`, `lastRunAt`, `lastStatus`.
+- **`SyncRun`** — one execution: `status`, `trigger` (`MANUAL`/`SCHEDULE`),
   counts (`created`/`updated`/`failed`), `log`, `finishedAt`.
 
 The valid `type`, direction, scope, and run-status values are enumerated in
 [`lib/constants.ts`](../lib/constants.ts) (`SYNC_TYPES`, `SYNC_DIRECTIONS`,
 `SYNC_SCOPES`, `SYNC_RUN_STATUSES`).
 
-The UI lives at `app/(console)/syncs` (list `page.tsx` + a `[id]` detail page),
-gated to `MANAGER`+ in the sidebar. Runs are triggered by Server Actions in
+**Connector layer** ([`lib/connectors/`](../lib/connectors)). Each connector implements a
+`Connector` (`test()` + `run()`) and is resolved by `SyncSource.type` from the registry
+(`index.ts`). A pure, client-safe `spec.ts` declares each type's form fields per scope, so
+the config UI and the form↔config conversion are generic — adding a connector is ~one file.
+Implemented: **LDAP / Active Directory** (`ldapts`, paged, binary `objectGUID`→hex),
+**Azure AD / Entra** (Graph client-credentials + paging), **CSV** (URL or inline, RFC 4180),
+and **REST** (generic JSON + dot-path mapping + `next` pagination — **NetBox** works this
+way: scope Assets, records path `results`, next path `next`). `INTUNE`/`SNOW`/`GLPI` are not
+yet implemented and report a `PARTIAL` run rather than failing. Records are upserted by
+`(syncSourceId, externalId)` (email/`assetTag` fallback) through the shared `import.ts`
+(`importUsers`/`importAssets`); "reconcile removed" deactivates users / retires assets,
+never deletes.
+
+**Running.** `executeSyncRun` ([`lib/sync-runner.ts`](../lib/sync-runner.ts)) is
+session-less and shared by manual and scheduled runs, guarded by a per-source in-process
+lock. The in-process scheduler ([`lib/scheduler.ts`](../lib/scheduler.ts), started from
+[`instrumentation.ts`](../instrumentation.ts)) fires due sources via a cron `syncTick`
+next to the inbound-mail poll (see [deployment.md](./deployment.md)). Server Actions in
 [`lib/actions/syncs.ts`](../lib/actions/syncs.ts):
 
-- `runSync(formData)` — creates a `SyncRun` (`RUNNING`), performs the sync, updates
-  the run + source status, writes an audit entry, and revalidates `/syncs`.
+- `runSync(formData)` — dispatches to the connector, writes the `SyncRun` + source status,
+  audits, and returns a real `{ ok, message }`.
+- `createSyncSource` / `updateSyncSource` / `deleteSyncSource` / `testSyncConnection` —
+  spec-driven config CRUD (secrets encrypted; test uses a saved source).
 - `toggleSyncActive(formData)` — pauses/activates a source with an audit trail.
 
-> **Reference-implementation note:** `runSync` currently *simulates* a run
-> (deterministic demo counts) rather than calling a live connector — the data
-> model, run history, audit trail, and UI are complete, and the connector body is
-> the extension point. Replace the body of `runSync` with a real client keyed off
-> `source.type`.
+The UI lives at `app/(console)/syncs` (list + `[id]` detail + `new` + `[id]/edit`).
+List, detail and **Run now** require `MANAGER`; create/edit/delete require `ADMIN`.
 
 ## 🗄️ One schema, two databases
 
