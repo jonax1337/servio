@@ -1,6 +1,13 @@
 "use client";
 
-import { useActionState, useEffect, useRef, useState } from "react";
+import {
+  useActionState,
+  useEffect,
+  useRef,
+  useState,
+  type Dispatch,
+  type SetStateAction,
+} from "react";
 import { useFormStatus } from "react-dom";
 import { Loader2, Save, Trash2, Plug } from "lucide-react";
 import { toast } from "sonner";
@@ -11,75 +18,23 @@ import {
   testSyncConnection,
   type ActionState,
 } from "@/lib/actions/syncs";
+import {
+  CONNECTOR_SPECS,
+  CONFIGURABLE_TYPES,
+  getSpec,
+  sectionsOf,
+  type ConnectorSpec,
+  type FieldSpec,
+} from "@/lib/connectors/spec";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import { Textarea } from "@/components/ui/textarea";
 import { Combobox } from "@/components/combobox";
-import { ComboField } from "@/components/combo-field";
 import { LinkButton } from "@/components/link-button";
 
-/** LDAP config as plain form values (no secret — the password is write-only). */
-export type LdapFormValues = {
-  url: string;
-  baseDN: string;
-  bindDN: string;
-  userFilter: string;
-  scope: string;
-  pageSize: number;
-  tlsRejectUnauthorized: boolean;
-  deactivateMissing: boolean;
-  attr: {
-    externalId: string;
-    email: string;
-    name: string;
-    jobTitle: string;
-    phone: string;
-    department: string;
-  };
-};
-
-const TYPE_OPTIONS = [
-  { value: "ACTIVE_DIRECTORY", label: "Active Directory" },
-  { value: "LDAP", label: "LDAP" },
-];
-const SCOPE_OPTIONS = [
-  { value: "sub", label: "Subtree (all descendants)" },
-  { value: "one", label: "One level (direct children)" },
-];
-
-function Field({
-  name,
-  label,
-  defaultValue,
-  placeholder,
-  type = "text",
-  hint,
-  mono = false,
-}: {
-  name: string;
-  label: string;
-  defaultValue?: string | number;
-  placeholder?: string;
-  type?: string;
-  hint?: string;
-  mono?: boolean;
-}) {
-  return (
-    <div className="grid gap-1.5">
-      <Label htmlFor={`f-${name}`}>{label}</Label>
-      <Input
-        id={`f-${name}`}
-        name={name}
-        type={type}
-        defaultValue={defaultValue}
-        placeholder={placeholder}
-        className={mono ? "font-mono text-xs" : undefined}
-      />
-      {hint ? <p className="text-xs text-muted-foreground">{hint}</p> : null}
-    </div>
-  );
-}
+type FieldValue = string | number | boolean;
 
 function SubmitButton({ label }: { label: string }) {
   const { pending } = useFormStatus();
@@ -91,20 +46,132 @@ function SubmitButton({ label }: { label: string }) {
   );
 }
 
+/** Renders the fields for one connector type, grouped by section. */
+function ConnectorFields({
+  spec,
+  values,
+  passwordSet,
+}: {
+  spec: ConnectorSpec;
+  values?: Record<string, FieldValue>;
+  passwordSet: boolean;
+}) {
+  const val = (name: string): FieldValue =>
+    values?.[name] ?? spec.defaults[name] ?? "";
+
+  // Only select fields need to be controlled (to drive showWhen).
+  const [watch, setWatch] = useState<Record<string, string>>(() => {
+    const w: Record<string, string> = {};
+    for (const f of spec.fields) if (f.type === "select") w[f.name] = String(val(f.name));
+    return w;
+  });
+
+  const visible = (f: FieldSpec) =>
+    !f.showWhen || String(watch[f.showWhen.field]) === String(f.showWhen.equals);
+
+  return (
+    <div className="grid gap-6">
+      {sectionsOf(spec).map((section) => {
+        const fields = spec.fields.filter((f) => f.section === section && visible(f));
+        if (fields.length === 0) return null;
+        return (
+          <section key={section} className="grid gap-4">
+            <h3 className="text-sm font-semibold">{section}</h3>
+            {fields.map((f) => (
+              <Fieldset key={f.name} field={f} value={val(f.name)} watch={watch} setWatch={setWatch} passwordSet={passwordSet} />
+            ))}
+          </section>
+        );
+      })}
+    </div>
+  );
+}
+
+function Fieldset({
+  field: f,
+  value,
+  watch,
+  setWatch,
+  passwordSet,
+}: {
+  field: FieldSpec;
+  value: FieldValue;
+  watch: Record<string, string>;
+  setWatch: Dispatch<SetStateAction<Record<string, string>>>;
+  passwordSet: boolean;
+}) {
+  if (f.type === "switch") {
+    return (
+      <label className="flex items-center justify-between gap-4">
+        <span className="grid gap-0.5">
+          <span className="text-sm font-medium">{f.label}</span>
+          {f.hint ? <span className="text-xs text-muted-foreground">{f.hint}</span> : null}
+        </span>
+        <Switch name={f.name} defaultChecked={Boolean(value)} />
+      </label>
+    );
+  }
+
+  return (
+    <div className="grid gap-1.5">
+      <div className="flex items-center justify-between gap-2">
+        <Label htmlFor={`f-${f.name}`}>{f.label}</Label>
+        {f.type === "password" && passwordSet ? (
+          <span className="rounded-full bg-emerald-500/10 px-2 py-0.5 text-[11px] font-medium text-emerald-600 dark:text-emerald-400">
+            Configured
+          </span>
+        ) : null}
+      </div>
+
+      {f.type === "select" ? (
+        <Combobox
+          name={f.name}
+          options={f.options ?? []}
+          value={watch[f.name]}
+          onChange={(v) => setWatch((w) => ({ ...w, [f.name]: v }))}
+          searchPlaceholder="Search…"
+        />
+      ) : f.type === "textarea" ? (
+        <Textarea
+          id={`f-${f.name}`}
+          name={f.name}
+          defaultValue={String(value)}
+          placeholder={f.placeholder}
+          rows={6}
+          className={f.mono ? "font-mono text-xs" : undefined}
+        />
+      ) : (
+        <Input
+          id={`f-${f.name}`}
+          name={f.name}
+          type={f.type === "number" ? "number" : f.type === "password" ? "password" : "text"}
+          defaultValue={f.type === "password" ? "" : String(value)}
+          placeholder={
+            f.type === "password" && passwordSet ? "•••••••• (leave blank to keep)" : f.placeholder
+          }
+          autoComplete={f.type === "password" ? "new-password" : undefined}
+          className={f.mono ? "font-mono text-xs" : undefined}
+        />
+      )}
+      {f.type !== "password" && f.hint ? (
+        <p className="text-xs text-muted-foreground">{f.hint}</p>
+      ) : null}
+    </div>
+  );
+}
+
 export function SyncSourceForm({
   mode,
   source,
   values,
   passwordSet = false,
-  presets,
 }: {
   mode: "create" | "edit";
   source?: { id: string; name: string; type: string; schedule: string | null };
-  values: LdapFormValues;
+  values?: Record<string, FieldValue>;
   passwordSet?: boolean;
-  presets?: Record<string, LdapFormValues>;
 }) {
-  const [type, setType] = useState(source?.type ?? "ACTIVE_DIRECTORY");
+  const [type, setType] = useState(source?.type ?? CONFIGURABLE_TYPES[0].type);
   const action = mode === "create" ? createSyncSource : updateSyncSource;
   const [state, formAction] = useActionState<ActionState, FormData>(action, undefined);
   const wasErr = useRef<string | undefined>(undefined);
@@ -114,9 +181,7 @@ export function SyncSourceForm({
     wasErr.current = state?.error;
   }, [state]);
 
-  // In create mode, switching the type reloads that type's sensible defaults.
-  const cfg: LdapFormValues =
-    mode === "create" && presets?.[type] ? presets[type] : values;
+  const spec = getSpec(type) ?? CONNECTOR_SPECS[CONFIGURABLE_TYPES[0].type];
 
   return (
     <div className="grid max-w-2xl gap-4">
@@ -124,104 +189,39 @@ export function SyncSourceForm({
         {mode === "edit" && source ? <input type="hidden" name="id" value={source.id} /> : null}
 
         <div className="grid gap-4">
-          <Field name="name" label="Name" defaultValue={source?.name} placeholder="Corporate Active Directory" />
+          <div className="grid gap-1.5">
+            <Label htmlFor="f-name">Name</Label>
+            <Input id="f-name" name="name" defaultValue={source?.name} placeholder="Corporate directory" />
+          </div>
 
           <div className="grid gap-1.5">
             <Label>Type</Label>
             {mode === "create" ? (
               <Combobox
                 name="type"
-                options={TYPE_OPTIONS}
+                options={CONFIGURABLE_TYPES.map((s) => ({ value: s.type, label: s.label }))}
                 value={type}
                 onChange={setType}
                 searchPlaceholder="Search…"
               />
             ) : (
-              <p className="text-sm font-medium">
-                {TYPE_OPTIONS.find((t) => t.value === type)?.label ?? type}
-              </p>
+              <p className="text-sm font-medium">{spec.label}</p>
             )}
-            <p className="text-xs text-muted-foreground">
-              Imports users into Servio. More connectors (Azure AD, CSV, REST) are coming.
-            </p>
+            <p className="text-xs text-muted-foreground">{spec.blurb}</p>
           </div>
 
-          <Field
-            name="schedule"
-            label="Schedule (cron)"
-            defaultValue={source?.schedule ?? ""}
-            placeholder="0 * * * *"
-            mono
-            hint="Optional cron expression — e.g. 0 * * * * (hourly), 0 2 * * * (daily at 02:00). Runs automatically while the source is active. Leave blank for manual runs only."
-          />
-        </div>
-
-        {/* Type-specific config remounts on type change to reload preset defaults. */}
-        <div key={type} className="grid gap-6">
-          <section className="grid gap-4">
-            <h3 className="text-sm font-semibold">Connection</h3>
-            <Field name="ldap_url" label="Server URL" defaultValue={cfg.url} placeholder="ldaps://dc01.corp.local:636" mono />
-            <Field name="ldap_bindDN" label="Bind DN" defaultValue={cfg.bindDN} placeholder="CN=svc-servio,…" mono />
-            <div className="grid gap-1.5">
-              <div className="flex items-center justify-between gap-2">
-                <Label htmlFor="f-ldap_bindPassword">Bind password</Label>
-                {passwordSet ? (
-                  <span className="rounded-full bg-emerald-500/10 px-2 py-0.5 text-[11px] font-medium text-emerald-600 dark:text-emerald-400">
-                    Configured
-                  </span>
-                ) : null}
-              </div>
-              <Input
-                id="f-ldap_bindPassword"
-                name="ldap_bindPassword"
-                type="password"
-                autoComplete="new-password"
-                placeholder={passwordSet ? "•••••••• (leave blank to keep)" : ""}
-              />
-            </div>
-            <label className="flex items-center justify-between gap-4">
-              <span className="text-sm font-medium">Verify TLS certificate</span>
-              <Switch name="ldap_tlsRejectUnauthorized" defaultChecked={cfg.tlsRejectUnauthorized} />
-            </label>
-          </section>
-
-          <section className="grid gap-4">
-            <h3 className="text-sm font-semibold">Directory</h3>
-            <Field name="ldap_baseDN" label="Base DN" defaultValue={cfg.baseDN} placeholder="DC=corp,DC=local" mono />
-            <Field name="ldap_userFilter" label="User filter" defaultValue={cfg.userFilter} mono />
-            <div className="grid gap-1.5">
-              <Label>Search scope</Label>
-              <ComboField key={`scope-${type}`} name="ldap_scope" options={SCOPE_OPTIONS} defaultValue={cfg.scope} />
-            </div>
-            <Field name="ldap_pageSize" label="Page size" type="number" defaultValue={cfg.pageSize} placeholder="500" />
-          </section>
-
-          <section className="grid gap-4">
-            <h3 className="text-sm font-semibold">Attribute mapping</h3>
-            <p className="-mt-2 text-xs text-muted-foreground">
-              LDAP attribute → Servio user field. <span className="font-medium">External ID</span> and{" "}
-              <span className="font-medium">Email</span> are required per entry.
+          <div className="grid gap-1.5">
+            <Label htmlFor="f-schedule">Schedule (cron)</Label>
+            <Input id="f-schedule" name="schedule" defaultValue={source?.schedule ?? ""} placeholder="0 * * * *" className="font-mono text-xs" />
+            <p className="text-xs text-muted-foreground">
+              Optional cron expression — e.g. <code className="font-mono">0 * * * *</code> (hourly),{" "}
+              <code className="font-mono">0 2 * * *</code> (daily 02:00). Runs automatically while active. Blank = manual only.
             </p>
-            <div className="grid gap-4 sm:grid-cols-2">
-              <Field name="attr_externalId" label="External ID" defaultValue={cfg.attr.externalId} mono />
-              <Field name="attr_email" label="Email" defaultValue={cfg.attr.email} mono />
-              <Field name="attr_name" label="Full name" defaultValue={cfg.attr.name} mono />
-              <Field name="attr_jobTitle" label="Job title" defaultValue={cfg.attr.jobTitle} mono />
-              <Field name="attr_phone" label="Phone" defaultValue={cfg.attr.phone} mono />
-              <Field name="attr_department" label="Department" defaultValue={cfg.attr.department} mono />
-            </div>
-          </section>
-
-          <label className="flex items-center justify-between gap-4">
-            <span className="grid gap-0.5">
-              <span className="text-sm font-medium">Deactivate users removed from the directory</span>
-              <span className="text-xs text-muted-foreground">
-                Sets isActive=false for users no longer returned (never deletes — ticket history is kept).
-              </span>
-            </span>
-            <Switch name="ldap_deactivateMissing" defaultChecked={cfg.deactivateMissing} />
-          </label>
+          </div>
         </div>
+
+        {/* Remounts on type change so field defaults reload for the new type. */}
+        <ConnectorFields key={type} spec={spec} values={mode === "edit" ? values : undefined} passwordSet={passwordSet} />
 
         <div className="flex items-center justify-end gap-2">
           <LinkButton href={mode === "edit" && source ? `/syncs/${source.id}` : "/syncs"} variant="ghost">
@@ -263,7 +263,7 @@ function TestConnectionButton({ id }: { id: string }) {
           {state.error}
         </span>
       ) : (
-        <span className="text-xs text-muted-foreground">Verify the bind &amp; base DN.</span>
+        <span className="text-xs text-muted-foreground">Verify credentials &amp; reachability.</span>
       )}
     </form>
   );

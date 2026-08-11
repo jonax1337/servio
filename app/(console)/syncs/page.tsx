@@ -2,6 +2,7 @@ import Link from "next/link";
 import { RefreshCw, Clock, ArrowLeftRight, Plus } from "lucide-react";
 import type { Metadata } from "next";
 import { db } from "@/lib/db";
+import { requireRole } from "@/lib/session";
 import { PageHeader, PageBody } from "@/components/page-header";
 import { StatusBadge } from "@/components/status-badge";
 import { EmptyState } from "@/components/empty-state";
@@ -27,6 +28,7 @@ const SCOPE_LABEL: Record<string, string> = {
 };
 
 export default async function SyncsPage() {
+  await requireRole("MANAGER");
   const sources = await db.syncSource.findMany({
     orderBy: [{ name: "asc" }],
   });

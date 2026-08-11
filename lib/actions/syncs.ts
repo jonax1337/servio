@@ -6,9 +6,9 @@ import { db } from "@/lib/db";
 import { getCurrentUser, hasRole, type Role } from "@/lib/session";
 import { encryptionAvailable, encryptSecret } from "@/lib/crypto";
 import { writeAudit } from "@/lib/audit";
-import { getConnector } from "@/lib/connectors";
+import { getConnector, getConfigSchema } from "@/lib/connectors";
 import { executeSyncRun } from "@/lib/sync-runner";
-import { ldapConfigSchema } from "@/lib/connectors/ldap";
+import { getSpec, CONFIGURABLE_TYPES } from "@/lib/connectors/spec";
 
 export type ActionState = { error?: string; ok?: boolean } | undefined;
 
@@ -22,8 +22,8 @@ async function requireAdmin() {
   return me;
 }
 
-/** Types that currently have a real connector implementation. */
-const IMPLEMENTED_TYPES = ["LDAP", "ACTIVE_DIRECTORY"] as const;
+/** Types offered in the create form (i.e. have a config UI + connector). */
+const CONFIGURABLE = new Set(CONFIGURABLE_TYPES.map((s) => s.type));
 
 // --------------------------------------------------------------------------
 // Run a sync
@@ -33,7 +33,7 @@ export async function runSync(
   formData: FormData,
 ): Promise<{ ok: boolean; message: string }> {
   const me = await getCurrentUser();
-  if (!me || !me.isActive || !hasRole(me.role as Role, "AGENT"))
+  if (!me || !me.isActive || !hasRole(me.role as Role, "MANAGER"))
     return { ok: false, message: "Not authorised." };
 
   const sourceId = str(formData, "sourceId");
@@ -86,56 +86,56 @@ export async function toggleSyncActive(formData: FormData) {
 // Create / update / delete a sync source
 // --------------------------------------------------------------------------
 
-/**
- * Assemble the connector config JSON from the flat form fields. For LDAP the
- * bind password is encrypted at rest; a blank submission keeps the stored one
- * (same "leave blank to keep" convention as the settings forms).
- */
-function buildLdapConfig(fd: FormData, prevConfigRaw?: string) {
-  let prev: Record<string, unknown> = {};
+function safeParseObj(raw?: string): Record<string, unknown> {
+  if (!raw) return {};
   try {
-    if (prevConfigRaw) prev = JSON.parse(prevConfigRaw) as Record<string, unknown>;
+    const o = JSON.parse(raw) as unknown;
+    return o && typeof o === "object" && !Array.isArray(o) ? (o as Record<string, unknown>) : {};
   } catch {
-    prev = {};
+    return {};
   }
-
-  const passIn = str(fd, "ldap_bindPassword");
-  const bindPassword = passIn
-    ? encryptSecret(passIn)
-    : typeof prev.bindPassword === "string"
-      ? prev.bindPassword
-      : "";
-
-  return {
-    url: str(fd, "ldap_url"),
-    baseDN: str(fd, "ldap_baseDN"),
-    bindDN: str(fd, "ldap_bindDN"),
-    bindPassword,
-    userFilter: str(fd, "ldap_userFilter"),
-    scope: str(fd, "ldap_scope") === "one" ? "one" : "sub",
-    pageSize: Number(str(fd, "ldap_pageSize")) || 500,
-    tlsRejectUnauthorized: checked(fd, "ldap_tlsRejectUnauthorized"),
-    deactivateMissing: checked(fd, "ldap_deactivateMissing"),
-    attr: {
-      externalId: str(fd, "attr_externalId"),
-      email: str(fd, "attr_email"),
-      name: str(fd, "attr_name"),
-      jobTitle: str(fd, "attr_jobTitle"),
-      phone: str(fd, "attr_phone"),
-      department: str(fd, "attr_department"),
-    },
-  };
 }
 
-/** Validate the assembled config for the given type. Returns an error string or null. */
-function validateConfig(type: string, config: unknown): string | null {
-  if (type === "LDAP" || type === "ACTIVE_DIRECTORY") {
-    const parsed = ldapConfigSchema.safeParse(config);
-    if (!parsed.success) {
-      const first = parsed.error.issues[0];
-      const path = first?.path.join(".");
-      return `Invalid LDAP configuration${path ? ` (${path})` : ""}: ${first?.message ?? "check the fields"}.`;
+/**
+ * Assemble a connector's flat config from the form, driven by its field spec —
+ * so every connector shares one builder. Secret fields are encrypted at rest; a
+ * blank secret keeps the stored value ("leave blank to keep").
+ */
+function buildConfig(type: string, fd: FormData, prevRaw?: string): Record<string, unknown> {
+  const spec = getSpec(type);
+  if (!spec) return {};
+  const prev = safeParseObj(prevRaw);
+  const out: Record<string, unknown> = {};
+  for (const f of spec.fields) {
+    if (spec.secretFields.includes(f.name)) {
+      const v = str(fd, f.name);
+      out[f.name] = v ? encryptSecret(v) : typeof prev[f.name] === "string" ? prev[f.name] : "";
+    } else if (f.type === "switch") {
+      out[f.name] = checked(fd, f.name);
+    } else if (f.type === "number") {
+      const n = Number(str(fd, f.name));
+      out[f.name] = Number.isFinite(n) && n > 0 ? n : (spec.defaults[f.name] ?? 0);
+    } else {
+      out[f.name] = str(fd, f.name);
     }
+  }
+  return out;
+}
+
+/** True when the form submitted a value for any of the type's secret fields. */
+function hasSecretInput(type: string, fd: FormData): boolean {
+  return (getSpec(type)?.secretFields ?? []).some((k) => str(fd, k).length > 0);
+}
+
+/** Validate the assembled config against the type's schema. Returns an error string or null. */
+function validateConfig(type: string, config: unknown): string | null {
+  const schema = getConfigSchema(type);
+  if (!schema) return null;
+  const parsed = schema.safeParse(config);
+  if (!parsed.success) {
+    const first = parsed.error.issues[0];
+    const path = first?.path.join(".");
+    return `Invalid configuration${path ? ` (${path})` : ""}: ${first?.message ?? "check the fields"}.`;
   }
   return null;
 }
@@ -150,17 +150,15 @@ export async function createSyncSource(
   const name = str(fd, "name");
   const type = str(fd, "type");
   if (!name) return { error: "Name is required." };
-  if (!(IMPLEMENTED_TYPES as readonly string[]).includes(type))
-    return { error: "Unsupported sync type." };
+  if (!CONFIGURABLE.has(type)) return { error: "Unsupported sync type." };
 
-  const password = str(fd, "ldap_bindPassword");
-  if (password && !encryptionAvailable())
+  if (hasSecretInput(type, fd) && !encryptionAvailable())
     return {
       error:
-        "Encryption key not configured — set a valid SETTINGS_ENCRYPTION_KEY to store the bind password.",
+        "Encryption key not configured — set a valid SETTINGS_ENCRYPTION_KEY to store secrets.",
     };
 
-  const config = buildLdapConfig(fd);
+  const config = buildConfig(type, fd);
   const invalid = validateConfig(type, config);
   if (invalid) return { error: invalid };
 
@@ -212,14 +210,13 @@ export async function updateSyncSource(
   const name = str(fd, "name");
   if (!name) return { error: "Name is required." };
 
-  const password = str(fd, "ldap_bindPassword");
-  if (password && !encryptionAvailable())
+  if (hasSecretInput(existing.type, fd) && !encryptionAvailable())
     return {
       error:
-        "Encryption key not configured — set a valid SETTINGS_ENCRYPTION_KEY to store the bind password.",
+        "Encryption key not configured — set a valid SETTINGS_ENCRYPTION_KEY to store secrets.",
     };
 
-  const config = buildLdapConfig(fd, existing.config);
+  const config = buildConfig(existing.type, fd, existing.config);
   const invalid = validateConfig(existing.type, config);
   if (invalid) return { error: invalid };
 

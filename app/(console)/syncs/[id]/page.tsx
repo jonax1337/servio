@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import { ArrowLeft, RefreshCw, Clock, Settings2, Pencil } from "lucide-react";
 import { db } from "@/lib/db";
+import { requireRole } from "@/lib/session";
 import { LinkButton } from "@/components/link-button";
 import { StatusBadge } from "@/components/status-badge";
 import { EmptyState } from "@/components/empty-state";
@@ -88,6 +89,7 @@ export default async function SyncDetailPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
+  await requireRole("MANAGER");
   const { id } = await params;
 
   const source = await db.syncSource.findUnique({

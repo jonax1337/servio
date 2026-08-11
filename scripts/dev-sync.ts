@@ -5,15 +5,19 @@
  *   pnpm exec tsx --env-file=.env scripts/dev-sync.ts --test "Corporate AD"
  *   pnpm exec tsx --env-file=.env scripts/dev-sync.ts --run  "Corporate AD"
  *   pnpm exec tsx --env-file=.env scripts/dev-sync.ts --demo            # real run vs. public test LDAP
- *   pnpm exec tsx --env-file=.env scripts/dev-sync.ts --selftest        # offline check of the attribute mapping
+ *   pnpm exec tsx --env-file=.env scripts/dev-sync.ts --csvdemo         # real CSV run vs. the DB, then cleans up
+ *   pnpm exec tsx --env-file=.env scripts/dev-sync.ts --selftest        # offline checks (mapping, CSV, REST path, cron)
  *
  * --demo creates/updates a throwaway source ("Dev LDAP (forumsys)") pointing at
- * the public ldap.forumsys.com server and runs it end-to-end. Needs a valid
- * SETTINGS_ENCRYPTION_KEY (the bind password is stored encrypted, like the UI).
+ * the public ldap.forumsys.com server (note: that server is dead — use a real AD)
+ * and runs it end-to-end. --csvdemo imports 3 inline rows into the DB and then
+ * deletes them + the source. Runs that store a secret need SETTINGS_ENCRYPTION_KEY.
  */
 import { db } from "@/lib/db";
 import { getConnector } from "@/lib/connectors";
-import { mapEntry, ldapPreset } from "@/lib/connectors/ldap";
+import { mapEntry } from "@/lib/connectors/ldap";
+import { parseCsv } from "@/lib/connectors/csv";
+import { getByPath } from "@/lib/connectors/rest";
 import { isSyncDue } from "@/lib/scheduler";
 import { encryptionAvailable, encryptSecret } from "@/lib/crypto";
 import type { SyncSource } from "@prisma/client";
@@ -47,14 +51,12 @@ async function ensureDemoSource(): Promise<SyncSource> {
     pageSize: 200,
     tlsRejectUnauthorized: true,
     deactivateMissing: false,
-    attr: {
-      externalId: "uid",
-      email: "mail",
-      name: "cn",
-      jobTitle: "",
-      phone: "telephoneNumber",
-      department: "",
-    },
+    externalId: "uid",
+    email: "mail",
+    name: "cn",
+    jobTitle: "",
+    phone: "telephoneNumber",
+    department: "",
   };
   const name = "Dev LDAP (forumsys)";
   return db.syncSource.upsert({
@@ -64,9 +66,16 @@ async function ensureDemoSource(): Promise<SyncSource> {
   });
 }
 
-/** Deterministic, offline check of the entry → user mapping. */
+/** Deterministic, offline checks across the connector pipeline. */
 function selftest(): void {
-  const attr = ldapPreset("ACTIVE_DIRECTORY").attr;
+  const map = {
+    externalId: "objectGUID",
+    email: "mail",
+    name: "displayName",
+    jobTitle: "title",
+    phone: "telephoneNumber",
+    department: "department",
+  };
   let pass = 0;
   let fail = 0;
   const check = (name: string, cond: boolean) => {
@@ -77,7 +86,7 @@ function selftest(): void {
     }
   };
 
-  // AD entry: binary objectGUID (Buffer) → hex; array-valued mail → first.
+  // LDAP: binary objectGUID (Buffer) → hex; array-valued mail → first.
   const guid = Buffer.from([0x10, 0x20, 0x30, 0x40]);
   const ad = mapEntry(
     {
@@ -88,24 +97,28 @@ function selftest(): void {
       title: "Engineer",
       telephoneNumber: "",
     } as never,
-    attr,
+    map,
   );
   check("AD entry maps", !("error" in ad));
   if (!("error" in ad)) {
     check("objectGUID → hex", ad.externalId === guid.toString("hex"));
     check("array mail → first, lowercased", ad.email === "alice@corp.local");
-    check("displayName → name", ad.profile.name === "Alice Doe");
-    check("title → jobTitle", ad.profile.jobTitle === "Engineer");
-    check("mapped-but-empty phone → null", ad.profile.phone === null);
+    check("displayName → name", ad.name === "Alice Doe");
+    check("title → jobTitle", ad.jobTitle === "Engineer");
+    check("mapped-but-empty phone → null", ad.phone === null);
   }
+  check("missing email → error", "error" in mapEntry({ dn: "CN=Bob", objectGUID: "abc" } as never, map));
+  check("missing external id → error", "error" in mapEntry({ dn: "CN=Carol", mail: "c@x.com" } as never, map));
 
-  // Missing email → error.
-  const noMail = mapEntry({ dn: "CN=Bob", objectGUID: "abc" } as never, attr);
-  check("missing email → error", "error" in noMail);
+  // CSV: quoted field containing the delimiter + escaped quotes.
+  const rows = parseCsv('id,email,name\r\n1,a@x.com,"Doe, Alice"\n2,b@x.com,"Bob ""B"""', ",");
+  check("csv row count", rows.length === 3);
+  check("csv quoted comma", rows[1]?.[2] === "Doe, Alice");
+  check("csv escaped quote", rows[2]?.[2] === 'Bob "B"');
 
-  // Missing external id → error.
-  const noId = mapEntry({ dn: "CN=Carol", mail: "carol@corp.local" } as never, attr);
-  check("missing external id → error", "error" in noId);
+  // REST: dot-path extraction.
+  check("getByPath nested", getByPath({ a: { b: { c: 7 } } }, "a.b.c") === 7);
+  check("getByPath missing → undefined", getByPath({ a: {} }, "a.b.c") === undefined);
 
   // Cron scheduling: isSyncDue.
   const now = new Date("2026-08-11T12:30:00Z");
@@ -125,9 +138,53 @@ function selftest(): void {
   if (fail) process.exitCode = 1;
 }
 
+/** Real end-to-end run of the CSV connector against the DB, then clean up. */
+async function csvDemo(): Promise<void> {
+  const name = "Dev CSV (inline)";
+  const config = {
+    mode: "inline",
+    data: "id,email,name,dept\ncsv-1,alice@dev.local,Alice Demo,IT\ncsv-2,,Bob NoEmail,IT\ncsv-3,carol@dev.local,Carol Demo,HR",
+    delimiter: ",",
+    hasHeader: true,
+    deactivateMissing: false,
+    externalId: "id",
+    email: "email",
+    name: "name",
+    jobTitle: "",
+    phone: "",
+    department: "dept",
+  };
+  const source = await db.syncSource.upsert({
+    where: { name },
+    create: { name, type: "CSV", direction: "IMPORT", scope: "USERS", config: JSON.stringify(config) },
+    update: { config: JSON.stringify(config) },
+  });
+  try {
+    const connector = getConnector("CSV")!;
+    const result = await connector.run(source, { trigger: "MANUAL" });
+    console.log(result.log);
+    console.log(`status=${result.status} created=${result.created} updated=${result.updated} failed=${result.failed}`);
+    const imported = await db.user.findMany({
+      where: { syncSourceId: source.id },
+      select: { email: true, name: true, department: true },
+    });
+    console.log("imported users:", JSON.stringify(imported));
+  } finally {
+    // Clean up so the dev DB keeps no residue.
+    const del = await db.user.deleteMany({ where: { syncSourceId: source.id } });
+    await db.syncSource.delete({ where: { id: source.id } });
+    console.log(`cleaned up ${del.count} user(s) + source`);
+  }
+}
+
 async function main() {
   if (has("selftest")) {
     selftest();
+    return;
+  }
+
+  if (has("csvdemo")) {
+    await csvDemo();
     return;
   }
 

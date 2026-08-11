@@ -5,7 +5,7 @@ import { requireRole } from "@/lib/session";
 import { db } from "@/lib/db";
 import { PageHeader, PageBody } from "@/components/page-header";
 import { SyncSourceForm } from "@/components/syncs/source-form";
-import { parseConfigForForm } from "@/lib/connectors/ldap";
+import { configToFormValues } from "@/lib/connectors/spec";
 
 export const metadata: Metadata = { title: "Edit sync source" };
 export const dynamic = "force-dynamic";
@@ -21,7 +21,7 @@ export default async function EditSyncSourcePage({
   const source = await db.syncSource.findUnique({ where: { id } });
   if (!source) notFound();
 
-  const { values, passwordSet } = parseConfigForForm(source.config, source.type);
+  const { values, passwordSet } = configToFormValues(source.type, source.config);
 
   return (
     <>

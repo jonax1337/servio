@@ -4,14 +4,40 @@ import { getConnector } from "@/lib/connectors";
 import type { SyncSource } from "@prisma/client";
 import type { SyncResult } from "@/lib/connectors/types";
 
+// Per-source in-process lock so a manual run and a scheduled tick (or two ticks)
+// can't run the same source concurrently. Survives HMR via globalThis.
+const g = globalThis as unknown as { __servioSyncRunning?: Set<string> };
+const running: Set<string> = (g.__servioSyncRunning ??= new Set<string>());
+
 /**
  * Execute one sync run and persist the outcome. Session-less on purpose so both
  * the `runSync` server action (MANUAL, with the acting user) and the scheduler
  * (SCHEDULE, actorId=null) can call it. Never throws — a connector error is
- * recorded as a FAILED run. Does NOT revalidate paths; the action wrapper does
- * that (revalidatePath is request-scoped and unavailable in the scheduler).
+ * recorded as a FAILED run. Skips (no run row) if the source is already running.
+ * Does NOT revalidate paths; the action wrapper does that (revalidatePath is
+ * request-scoped and unavailable in the scheduler).
  */
 export async function executeSyncRun(
+  source: SyncSource,
+  opts: { trigger: "MANUAL" | "SCHEDULE" | "API"; actorId?: string | null },
+): Promise<SyncResult> {
+  if (running.has(source.id))
+    return {
+      status: "PARTIAL",
+      created: 0,
+      updated: 0,
+      failed: 0,
+      log: "Skipped: a run for this source is already in progress.",
+    };
+  running.add(source.id);
+  try {
+    return await runOnce(source, opts);
+  } finally {
+    running.delete(source.id);
+  }
+}
+
+async function runOnce(
   source: SyncSource,
   opts: { trigger: "MANUAL" | "SCHEDULE" | "API"; actorId?: string | null },
 ): Promise<SyncResult> {
