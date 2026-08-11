@@ -437,6 +437,17 @@ export function ticketRef(id: number, prefixOrType = "INC") {
         : prefixOrType || "INC";
   return `${prefix}-${String(id).padStart(4, "0")}`;
 }
+/**
+ * Reverse of {@link ticketRef}: pull a ticket ref out of arbitrary text (e.g. an
+ * email subject `Re: [INC-0042] …`). Tolerates leading zeros and any case.
+ * Returns the numeric id + prefix, or null if none is present.
+ */
+export function parseTicketRef(input: string): { id: number; prefix: string } | null {
+  const m = (input ?? "").match(/\b(INC|REQ)-0*(\d+)\b/i);
+  if (!m) return null;
+  return { prefix: m[1].toUpperCase(), id: Number(m[2]) };
+}
+
 export function problemRef(id: number) {
   return `PRB-${String(id).padStart(4, "0")}`;
 }

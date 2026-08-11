@@ -14,9 +14,12 @@ async function requireAgent() {
   return me;
 }
 import {
-  sendMail, tplTicketReceived, tplTicketAssigned, tplTicketReply, tplTicketResolved, tplTicketParticipant,
+  sendMail, ticketThreadHeaders, mailBrand,
+  tplTicketReceived, tplTicketAssigned, tplTicketReply, tplTicketResolved, tplTicketParticipant,
+  quoteHtml, textToHtmlParagraphs, signatureHtml, renderEmailHtml, renderThreadHistory,
 } from "@/lib/mail";
 import { sanitizeCommentHtml, htmlToText, parseMentionIds } from "@/lib/markdown";
+import { format } from "date-fns";
 import { runAutomations } from "@/lib/automations";
 import { autoAssignTicket } from "@/lib/assignment";
 import {
@@ -89,14 +92,17 @@ export async function createTicketCore(
   }
 
   // Confirmation to the requester
+  const brand = await mailBrand();
   if (ticket.requester?.email) {
-    await sendMail({ to: ticket.requester.email, toName: ticket.requester.name, entity: "Ticket", entityId: ticket.id, ...tplTicketReceived(ticket) });
+    // This confirmation is the ROOT of the ticket's mail thread — its Message-ID
+    // is what inbound replies reference back to. Hence ticketId is set.
+    await sendMail({ to: ticket.requester.email, toName: ticket.requester.name, entity: "Ticket", entityId: ticket.id, ticketId: ticket.id, ...(await tplTicketReceived(ticket, brand, { requesterName: ticket.requester.name ?? "", messageHtml: ticket.description ? quoteHtml(textToHtmlParagraphs(ticket.description)) : "" })) });
   }
   // Assignment notice
   if (ticket.assignee && ticket.assigneeId !== actorId) {
     await notify(ticket.assigneeId!, { type: "ASSIGNED", title: "Ticket assigned to you", body: ticket.title, entity: "Ticket", entityId: String(ticket.id) });
     if (ticket.assignee.email) {
-      await sendMail({ to: ticket.assignee.email, toName: ticket.assignee.name, entity: "Ticket", entityId: ticket.id, ...tplTicketAssigned(ticket, ticket.assignee.name ?? "there") });
+      await sendMail({ to: ticket.assignee.email, toName: ticket.assignee.name, entity: "Ticket", entityId: ticket.id, ticketId: ticket.id, ...(await tplTicketAssigned(ticket, ticket.assignee.name ?? "there", brand)) });
     }
   }
 
@@ -183,11 +189,13 @@ export async function updateTicketField(formData: FormData) {
   await writeAudit({ userId: me.id, action: "UPDATE", entity: "Ticket", entityId: id, summary: `Updated ${field}` });
 
   if (field === "status" && value === "RESOLVED" && ticket.requester?.email) {
-    await sendMail({ to: ticket.requester.email, toName: ticket.requester.name, entity: "Ticket", entityId: ticket.id, ...tplTicketResolved(ticket) });
+    const cc = await ticketCcEmails(ticket.id, [ticket.requester.email, me.email]);
+    const threadHeaders = await ticketThreadHeaders(ticket.id);
+    await sendMail({ to: ticket.requester.email, toName: ticket.requester.name, cc, entity: "Ticket", entityId: ticket.id, ticketId: ticket.id, ...threadHeaders, ...(await tplTicketResolved(ticket, await mailBrand(), { requesterName: ticket.requester.name ?? "" })) });
   }
   if (field === "assigneeId" && ticket.assignee?.email && ticket.assigneeId !== me.id) {
     await notify(ticket.assigneeId!, { type: "ASSIGNED", title: "Ticket assigned to you", body: ticket.title, entity: "Ticket", entityId: String(ticket.id) });
-    await sendMail({ to: ticket.assignee.email, toName: ticket.assignee.name, entity: "Ticket", entityId: ticket.id, ...tplTicketAssigned(ticket, ticket.assignee.name ?? "there") });
+    await sendMail({ to: ticket.assignee.email, toName: ticket.assignee.name, entity: "Ticket", entityId: ticket.id, ticketId: ticket.id, ...(await tplTicketAssigned(ticket, ticket.assignee.name ?? "there", await mailBrand())) });
   }
 
   await runAutomations("TICKET_UPDATED", id);
@@ -295,31 +303,54 @@ export async function addTicketComment(formData: FormData) {
   // Notify watchers of the new activity
   await notifyWatchers(id, me.id, { type: "COMMENT", title: `New comment on ${ticketRef(ticket.id, ticket.type)}`, body: snippet, entity: "Ticket", entityId: String(id) });
 
-  // Notify the requester when an agent posts a public reply — with this comment's
-  // attachments so the emailed reply actually carries the files.
-  if (!isInternal && me.role !== "USER" && ticket.requester?.email && ticket.requesterId !== me.id) {
-    const atts = attachmentIds.length
-      ? await db.attachment.findMany({ where: { commentId: comment.id }, select: { filename: true, storageKey: true } })
-      : [];
-    // Append the agent's signature to the OUTGOING email only (not the stored
-    // comment) — keeps the portal thread and AI summaries clean and avoids
-    // double-appending. Signature is sanitized HTML; flatten to text for mail.
-    const author = await db.user.findUnique({
-      where: { id: me.id },
-      select: { signature: true, signatureEnabled: true },
-    });
-    const signatureText =
-      author?.signatureEnabled && author.signature
-        ? htmlToText(author.signature)
-        : undefined;
-    await sendMail({
-      to: ticket.requester.email,
-      toName: ticket.requester.name,
-      entity: "Ticket",
-      entityId: ticket.id,
-      ...tplTicketReply(ticket, snippet, signatureText),
-      attachments: atts.flatMap((a) => (a.storageKey ? [{ filename: a.filename, storageKey: a.storageKey }] : [])),
-    });
+  const messageHtml = bodyHtml ?? textToHtmlParagraphs(body);
+
+  // Public agent reply → email it. Recipients come from the composer's visible
+  // To / Cc / Bcc fields (Freshservice-style); fall back to requester + participants
+  // when they aren't provided (non-ticket threads / JS off).
+  if (!isInternal && me.role !== "USER") {
+    const toList = parseEmails(formData.get("toRecipients"));
+    const ccList = parseEmails(formData.get("ccRecipients"));
+    const bccList = parseEmails(formData.get("bccRecipients"));
+    const explicit = toList.length > 0;
+    const primaryTo = toList[0] ?? ticket.requester?.email ?? null;
+    if (primaryTo) {
+      const drop = new Set([primaryTo.toLowerCase(), me.email.toLowerCase()]);
+      const rawCc = explicit ? [...toList.slice(1), ...ccList] : await ticketCcEmails(ticket.id, [ticket.requester?.email, me.email]);
+      const cc = [...new Set(rawCc.map((e) => e.toLowerCase()))].filter((e) => !drop.has(e));
+      const bcc = [...new Set(bccList.map((e) => e.toLowerCase()))].filter((e) => !drop.has(e) && !cc.includes(e));
+
+      // Everyone on To/Cc (except the requester) becomes a portal participant so the
+      // thread is shared + the recipient list is remembered. Skips forward-only
+      // "notified" contacts to preserve their privacy.
+      await addReplyParticipants(ticket.id, [primaryTo, ...cc], me.id, ticket.requesterId);
+
+      const atts = attachmentIds.length
+        ? await db.attachment.findMany({ where: { commentId: comment.id }, select: { filename: true, storageKey: true } })
+        : [];
+      // Append the agent's signature to the OUTGOING email only.
+      const author = await db.user.findUnique({ where: { id: me.id }, select: { signature: true, signatureEnabled: true } });
+      const signatureText = author?.signatureEnabled && author.signature ? htmlToText(author.signature) : undefined;
+      const sigHtml = signatureText ? signatureHtml(textToHtmlParagraphs(signatureText)) : "";
+      const threadHeaders = await ticketThreadHeaders(ticket.id);
+      const brand = await mailBrand();
+      // Quoted conversation trail for the OUTGOING email only (mail-client style) —
+      // the stored comment stays clean since the thread is visible in the ticket.
+      const quoteHtml = await buildReplyQuote(ticket.id, String(formData.get("quoteFromCommentId") ?? ""), comment.id);
+      await sendMail({
+        to: primaryTo,
+        toName: primaryTo.toLowerCase() === (ticket.requester?.email ?? "").toLowerCase() ? ticket.requester?.name : null,
+        cc,
+        bcc,
+        entity: "Ticket",
+        entityId: ticket.id,
+        ticketId: ticket.id,
+        commentId: comment.id,
+        ...threadHeaders,
+        ...(await tplTicketReply(ticket, { requesterName: ticket.requester?.name ?? "", messageHtml, signatureHtml: sigHtml, quoteHtml, snippet }, brand)),
+        attachments: atts.flatMap((a) => (a.storageKey ? [{ filename: a.filename, storageKey: a.storageKey }] : [])),
+      });
+    }
   }
 
   revalidatePath(`/tickets/${id}`);
@@ -338,6 +369,96 @@ async function notifyWatchers(
   await Promise.all(
     watchers.filter((w) => w.userId !== exclude).map((w) => notify(w.userId, n)),
   );
+}
+
+/**
+ * PARTICIPANT emails to CC on an outbound ticket reply, so the whole conversation
+ * stays in one thread for everyone on the customer side. Participants (e.g. a
+ * CC'd manager) are portal-visible collaborators — distinct from internal watchers.
+ * Excludes the requester (they're the To recipient) and any address in `exclude`.
+ */
+async function ticketCcEmails(ticketId: number, exclude: (string | null | undefined)[] = []): Promise<string[]> {
+  const participants = await db.ticketParticipant.findMany({
+    where: { ticketId },
+    select: { user: { select: { email: true } } },
+  });
+  const skip = new Set(exclude.filter(Boolean).map((e) => e!.toLowerCase()));
+  const out = new Set<string>();
+  for (const p of participants) {
+    const e = p.user?.email;
+    if (e && !skip.has(e.toLowerCase())) out.add(e);
+  }
+  return [...out];
+}
+
+function escapeInlineText(s: string): string {
+  return (s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+/**
+ * Quoted conversation trail up to (and including) an anchor comment, appended to
+ * the OUTGOING reply email (mail-client style). Public messages only, newest
+ * first. Empty when there's no anchor or nothing to quote.
+ */
+async function buildReplyQuote(ticketId: number, anchorCommentId: string, excludeCommentId: string): Promise<string> {
+  if (!anchorCommentId) return "";
+  const anchor = await db.ticketComment.findFirst({ where: { id: anchorCommentId, ticketId }, select: { createdAt: true } });
+  if (!anchor) return "";
+  const chain = await db.ticketComment.findMany({
+    where: {
+      ticketId,
+      isInternal: false,
+      channel: { not: "FORWARD" },
+      id: { not: excludeCommentId },
+      createdAt: { lte: anchor.createdAt },
+    },
+    orderBy: { createdAt: "desc" },
+    take: 20,
+    include: { author: { select: { name: true, email: true } } },
+  });
+  if (!chain.length) return "";
+  return renderThreadHistory(
+    chain.map((m) => ({
+      author: m.author?.name ?? m.author?.email ?? m.fromEmail ?? "Unknown",
+      dateLabel: format(m.createdAt, "dd.MM.yyyy HH:mm"),
+      html: m.bodyHtml ?? textToHtmlParagraphs(m.body),
+    })),
+  );
+}
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+/** Parse a comma-separated hidden field into a list of valid, lower-cased emails. */
+function parseEmails(v: FormDataEntryValue | null): string[] {
+  return String(v ?? "")
+    .split(",")
+    .map((s) => s.trim().toLowerCase())
+    .filter((s) => EMAIL_RE.test(s));
+}
+
+/**
+ * Everyone on a public reply's To/Cc becomes a portal participant, so the whole
+ * conversation is shared and the recipient list is remembered. Unknown addresses
+ * are created as lightweight contacts. Forward-only "notified" contacts and the
+ * requester/actor are skipped.
+ */
+async function addReplyParticipants(ticketId: number, emails: string[], actorId: string, requesterId: string) {
+  for (const email of [...new Set(emails.map((e) => e.toLowerCase()))]) {
+    if (!EMAIL_RE.test(email)) continue;
+    const notified = await db.ticketNotifiedContact.findUnique({
+      where: { ticketId_email: { ticketId, email } },
+      select: { id: true },
+    });
+    if (notified) continue;
+    let user = await db.user.findUnique({ where: { email }, select: { id: true } });
+    if (!user) user = await db.user.create({ data: { email, name: email.split("@")[0], role: "USER", isActive: true }, select: { id: true } });
+    if (user.id === actorId || user.id === requesterId) continue;
+    await db.ticketParticipant.upsert({
+      where: { ticketId_userId: { ticketId, userId: user.id } },
+      create: { ticketId, userId: user.id, addedById: actorId },
+      update: {},
+    });
+  }
 }
 
 /** Find users referenced with @Name / @email in a comment body. */
@@ -554,7 +675,7 @@ export async function setTicketResolution(formData: FormData) {
   await writeAudit({ userId: me.id, action: "UPDATE", entity: "Ticket", entityId: id, summary: `${verb} ticket` });
 
   if (status === "RESOLVED" && ticket.requester?.email) {
-    await sendMail({ to: ticket.requester.email, toName: ticket.requester.name, entity: "Ticket", entityId: id, ...tplTicketResolved(ticket) });
+    await sendMail({ to: ticket.requester.email, toName: ticket.requester.name, entity: "Ticket", entityId: id, ticketId: id, ...(await tplTicketResolved(ticket, await mailBrand(), { requesterName: ticket.requester.name ?? "" })) });
   }
   await runAutomations("TICKET_UPDATED", id);
   revalidatePath(`/tickets/${id}`);
@@ -776,9 +897,11 @@ export async function addParticipant(formData: FormData) {
   const target = await db.user.findUnique({ where: { id: userId }, select: { id: true, name: true, email: true, isActive: true } });
   if (!target || !target.isActive) return;
 
-  await db.ticketWatcher.upsert({
+  // Participant = portal-visible collaborator (can see + reply in the portal),
+  // NOT an internal watcher.
+  await db.ticketParticipant.upsert({
     where: { ticketId_userId: { ticketId, userId } },
-    create: { ticketId, userId },
+    create: { ticketId, userId, addedById: me.id },
     update: {},
   });
 
@@ -790,7 +913,8 @@ export async function addParticipant(formData: FormData) {
     entityId: String(ticketId),
   });
   if (notifyByEmail && target.email) {
-    await sendMail({ to: target.email, toName: target.name, entity: "Ticket", entityId: ticketId, ...tplTicketParticipant(ticket, target.name ?? "there", me.name, note) });
+    const threadHeaders = await ticketThreadHeaders(ticketId);
+    await sendMail({ to: target.email, toName: target.name, entity: "Ticket", entityId: ticketId, ticketId, ...threadHeaders, ...(await tplTicketParticipant(ticket, target.name ?? "there", me.name, note, await mailBrand())) });
   }
   await db.ticketComment.create({
     data: { ticketId, authorId: me.id, isInternal: true, body: `Added ${target.name ?? target.email} as a participant${note ? `: ${note}` : "."}` },
@@ -799,72 +923,96 @@ export async function addParticipant(formData: FormData) {
   revalidatePath(`/tickets/${ticketId}`);
 }
 
+
 export type ForwardState = { ok?: boolean; error?: string } | undefined;
 
-const forwardSchema = z.object({
-  ticketId: z.coerce.number(),
-  email: z.string().email(),
-});
-
 /**
- * Forward the ticket to an EXTERNAL email as an INTERNAL action. Privacy invariant:
- * the requester is never emailed or notified — only an internal trail comment is
- * written (isInternal:true → invisible in the portal), and included context is
- * public-only.
+ * Forward a SINGLE message to an external party (Freshservice-style, per message).
+ * The recipient(s) are recorded as Notified contacts so their email reply routes
+ * back as an internal note. A distinct "Forwarded" entry is added to the timeline.
+ * Privacy: the requester is never a valid forward target here.
  */
-export async function forwardTicketExternal(_prev: ForwardState, formData: FormData): Promise<ForwardState> {
+export async function forwardComment(_prev: ForwardState, formData: FormData): Promise<ForwardState> {
   const me = await requireAgent();
   if (!me) return { error: "Not authorised" };
-  const parsed = forwardSchema.safeParse({ ticketId: formData.get("ticketId"), email: formData.get("email") });
-  if (!parsed.success) return { error: "Please enter a valid email address." };
-  const { ticketId, email } = parsed.data;
-  const toName = String(formData.get("toName") ?? "").trim();
+  const ticketId = Number(formData.get("ticketId"));
+  const commentId = String(formData.get("commentId") ?? "");
+  const to = String(formData.get("to") ?? "").trim().toLowerCase();
   const note = String(formData.get("note") ?? "").trim();
-  const includeComments = formData.get("includeComments") === "on";
+  const cc = String(formData.get("cc") ?? "").split(",").map((s) => s.trim().toLowerCase()).filter(Boolean);
+  if (!ticketId || !commentId) return { error: "Missing data." };
+  if (!EMAIL_RE.test(to)) return { error: "Please enter a valid email address." };
 
   const ticket = await db.ticket.findUnique({
     where: { id: ticketId },
-    include: {
-      requester: true,
-      comments: { where: { isInternal: false }, include: { author: true }, orderBy: { createdAt: "asc" } },
-    },
+    select: { id: true, type: true, title: true, requester: { select: { email: true } } },
   });
   if (!ticket) return { error: "Ticket not found." };
-
-  // Never forward to the requester via this internal path.
-  if (email.toLowerCase() === ticket.requester.email.toLowerCase()) {
+  const comment = await db.ticketComment.findFirst({
+    where: { id: commentId, ticketId },
+    include: { author: { select: { name: true, email: true } } },
+  });
+  if (!comment) return { error: "Message not found." };
+  if (to === (ticket.requester?.email ?? "").toLowerCase()) {
     return { error: "Use a public reply to contact the requester." };
   }
 
-  let bodyText = `Ticket ${ticketRef(ticket.id, ticket.type)} — "${ticket.title}"
-Status: ${ticket.status} · Priority: ${ticket.priority}
-
-${ticket.description || "(no description)"}`;
-  if (note) bodyText = `${note}
-
----
-${bodyText}`;
-  if (includeComments && ticket.comments.length > 0) {
-    const thread = ticket.comments.map((c) => `${c.author.name ?? c.author.email}: ${c.body}`).join("\n\n");
-    bodyText += `
-
---- Correspondence ---
-${thread}`;
+  const ref = ticketRef(ticket.id, ticket.type);
+  const recipients = [to, ...cc].filter((e) => EMAIL_RE.test(e));
+  // Record each recipient as a "Notified" contact → their reply routes internal.
+  for (const email of recipients) {
+    await db.ticketNotifiedContact.upsert({
+      where: { ticketId_email: { ticketId, email } },
+      create: { ticketId, email, notifiedById: me.id },
+      update: { notifiedById: me.id },
+    });
   }
 
+  // Build the forwarded email: your note + the conversation history UP TO AND
+  // INCLUDING this message (public messages only, for privacy), newest first — so
+  // the external party gets the whole thread, not just one quoted line.
+  const chain = await db.ticketComment.findMany({
+    where: { ticketId, isInternal: false, channel: { not: "FORWARD" }, createdAt: { lte: comment.createdAt } },
+    orderBy: { createdAt: "desc" },
+    take: 25,
+    include: { author: { select: { name: true, email: true } } },
+  });
+  const historyHtml = renderThreadHistory(
+    chain.map((m) => ({
+      author: m.author?.name ?? m.author?.email ?? m.fromEmail ?? "Unknown",
+      dateLabel: format(m.createdAt, "dd.MM.yyyy HH:mm"),
+      html: m.bodyHtml ?? textToHtmlParagraphs(m.body),
+    })),
+  );
+  const contentHtml = (note ? textToHtmlParagraphs(note) : "") + historyHtml;
+  const threadHeaders = await ticketThreadHeaders(ticketId);
   await sendMail({
-    to: email,
-    toName: toName || null,
+    to,
+    cc,
     entity: "Ticket",
     entityId: ticketId,
+    ticketId,
+    ...threadHeaders,
     template: "ticket_forward",
-    subject: `[${ticketRef(ticket.id, ticket.type)}] Forwarded: ${ticket.title}`,
-    body: bodyText,
+    subject: `[${ref}] Fwd: ${ticket.title}`,
+    body: htmlToText(contentHtml),
+    html: renderEmailHtml({ contentHtml }),
   });
+
+  // Distinct "Forwarded" entry in the timeline (channel FORWARD → indigo style).
+  const toLabel = recipients.join(", ");
   await db.ticketComment.create({
-    data: { ticketId, authorId: me.id, isInternal: true, body: `Forwarded to ${email}${toName ? ` (${toName})` : ""}${note ? `: ${note}` : "."}` },
+    data: {
+      ticketId,
+      authorId: me.id,
+      isInternal: true,
+      channel: "FORWARD",
+      body: `Forwarded conversation to ${toLabel}${note ? `: ${note}` : "."}`,
+      bodyHtml:
+        `<p style="margin:0"><strong>Forwarded conversation to ${escapeInlineText(toLabel)}</strong>${note ? ` — ${escapeInlineText(note)}` : ""}</p>`,
+    },
   });
-  await writeAudit({ userId: me.id, action: "UPDATE", entity: "Ticket", entityId: ticketId, summary: `Forwarded to ${email}` });
+  await writeAudit({ userId: me.id, action: "UPDATE", entity: "Ticket", entityId: ticketId, summary: `Forwarded a message to ${toLabel}` });
   revalidatePath(`/tickets/${ticketId}`);
   return { ok: true };
 }

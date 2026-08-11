@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import {
   ArrowLeft, Server, AlertTriangle, GitPullRequestArrow,
-  Flame, Link2, GitMerge, X, CheckCircle2,
+  Flame, Link2, GitMerge, X, CheckCircle2, Users,
 } from "lucide-react";
 import { db } from "@/lib/db";
 import { getFormOptions } from "@/lib/data/options";
@@ -68,6 +68,7 @@ export default async function TicketDetailPage({
         comments: { include: { author: true, attachments: { orderBy: { createdAt: "asc" } } }, orderBy: { createdAt: "asc" } },
         assets: { include: { asset: true } },
         watchers: { include: { user: true } },
+        participants: { include: { user: true }, orderBy: { createdAt: "asc" } },
         worklogs: { include: { user: true }, orderBy: { loggedAt: "desc" } },
         attachments: { orderBy: { createdAt: "desc" } },
         linksFrom: { include: { linked: true } },
@@ -121,12 +122,36 @@ export default async function TicketDetailPage({
     .filter((a) => !linkedAssetIds.has(a.id))
     .map((a) => ({ value: a.id, label: a.assetTag ? `${a.name} · ${a.assetTag}` : a.name }));
 
+  // Recipients per sent message: join outbound emails by commentId so each reply
+  // can show "An: … · Cc: …" (Freshservice-style auditability).
+  const emailByComment = new Map(
+    (
+      await db.emailMessage.findMany({
+        where: { ticketId, commentId: { not: null }, direction: "OUTBOUND" },
+        select: { commentId: true, toEmail: true, cc: true },
+      })
+    ).map((m) => [m.commentId!, { to: m.toEmail, cc: m.cc ? (JSON.parse(m.cc) as string[]) : [] }]),
+  );
+
   const comments = ticket.comments.map((c) => ({
-    id: c.id, author: c.author.name ?? c.author.email, body: c.body, bodyHtml: c.bodyHtml, isInternal: c.isInternal, createdAt: c.createdAt, attachments: c.attachments,
+    id: c.id, author: c.author.name ?? c.author.email, body: c.body, bodyHtml: c.bodyHtml, isInternal: c.isInternal, fromEmail: c.fromEmail, channel: c.channel, createdAt: c.createdAt, attachments: c.attachments,
+    recipients: emailByComment.get(c.id) ?? null,
   }));
   const activity = audits
     .filter((a) => a.summary && a.summary !== "Added a comment")
     .map((a) => ({ id: a.id, who: a.user?.name ?? "System", summary: a.summary!, createdAt: a.createdAt }));
+
+  // Candidates for the reply To/Cc/Bcc typeahead (value = email): requester +
+  // participants + agents, de-duplicated by email.
+  const replyCandidates = Array.from(
+    new Map(
+      [
+        { value: ticket.requester.email, label: ticket.requester.name ?? ticket.requester.email },
+        ...ticket.participants.map((p) => ({ value: p.user.email, label: p.user.name ?? p.user.email })),
+        ...options.agents.map((a) => ({ value: a.email, label: a.name ?? a.email })),
+      ].map((o) => [o.value.toLowerCase(), o]),
+    ).values(),
+  );
 
   return (
     <div className="grid gap-0 lg:grid-cols-[1fr_340px]">
@@ -322,6 +347,12 @@ export default async function TicketDetailPage({
               attachTarget={{ ticketId: ticket.id }}
               aiTicketId={aiVisible ? ticket.id : undefined}
               aiTeaser={aiTeaser}
+              emailReply={{
+                requesterEmail: ticket.requester.email,
+                participantEmails: ticket.participants.map((p) => p.user.email),
+                candidateUsers: replyCandidates,
+              }}
+              enableForward
             />
           </div>
         </div>
@@ -378,6 +409,29 @@ export default async function TicketDetailPage({
             </Link>
           </CardContent>
         </Card>
+
+        {/* Participants: portal-visible collaborators (e.g. a CC'd manager). */}
+        {ticket.participants.length > 0 ? (
+          <Card className="mt-4">
+            <CardHeader><CardTitle className="flex items-center gap-1.5 text-sm"><Users className="size-4 text-muted-foreground" /> Participants</CardTitle></CardHeader>
+            <CardContent className="grid gap-1.5">
+              <div className="text-xs text-muted-foreground">Can see &amp; reply in the portal</div>
+              {ticket.participants.map((p) => (
+                <Link
+                  key={p.userId}
+                  href={`/people/${p.userId}`}
+                  className="group flex items-center gap-2.5 rounded-lg border p-2 transition-colors hover:border-primary/40"
+                >
+                  <UserAvatar name={p.user.name} email={p.user.email} image={p.user.image} />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-sm font-medium group-hover:text-primary">{p.user.name ?? p.user.email}</span>
+                    <span className="block truncate text-xs text-muted-foreground">{p.user.email}</span>
+                  </span>
+                </Link>
+              ))}
+            </CardContent>
+          </Card>
+        ) : null}
 
         <WorkLog
           ticketId={ticket.id}

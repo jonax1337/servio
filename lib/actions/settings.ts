@@ -103,6 +103,30 @@ export async function saveEmailSettings(
   );
 }
 
+export async function saveInboundSettings(
+  _prev: ActionState,
+  fd: FormData,
+): Promise<ActionState> {
+  const me = await requireAdmin();
+  if (!me) return { error: "Not authorised" };
+  return persist(
+    me.id,
+    [
+      { key: "IMAP_ENABLED", value: bool(fd, "IMAP_ENABLED") },
+      { key: "IMAP_HOST", value: str(fd, "IMAP_HOST") },
+      { key: "IMAP_PORT", value: str(fd, "IMAP_PORT") },
+      { key: "IMAP_SECURE", value: bool(fd, "IMAP_SECURE") },
+      { key: "IMAP_USER", value: str(fd, "IMAP_USER") },
+      { key: "IMAP_PASS", value: str(fd, "IMAP_PASS"), encrypted: true, keepIfEmpty: true },
+      { key: "IMAP_FOLDER", value: str(fd, "IMAP_FOLDER") },
+      { key: "IMAP_POLL_SECONDS", value: str(fd, "IMAP_POLL_SECONDS") },
+      { key: "MAIL_PLUS_ADDRESSING", value: bool(fd, "MAIL_PLUS_ADDRESSING") },
+    ],
+    "Updated inbound mail settings",
+    "/settings/inbound",
+  );
+}
+
 export async function saveAiSettings(
   _prev: ActionState,
   fd: FormData,

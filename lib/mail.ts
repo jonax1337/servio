@@ -2,11 +2,17 @@ import { db } from "@/lib/db";
 import { storage } from "@/lib/storage";
 import { ticketRef } from "@/lib/constants";
 import { getSetting } from "@/lib/settings";
+import {
+  renderEmailHtml, textToHtmlParagraphs, quoteHtml, richToEmailHtml, signatureHtml, renderThreadHistory,
+  type MailBrand,
+} from "@/lib/mail-template";
+import { renderTicketEmail } from "@/lib/email-templates";
 
 /**
  * Pluggable mailer. If SMTP is configured it sends via nodemailer; otherwise it
  * runs in "outbox" mode (records the message as SENT so it can be previewed in
- * Settings › Mail). Every message is always recorded in the EmailMessage table.
+ * Settings › Mail). Every message is always recorded in the EmailMessage table,
+ * which doubles as the durable, threadable mail history for a ticket.
  */
 
 export async function smtpConfigured() {
@@ -17,31 +23,60 @@ export async function smtpConfigured() {
   return Boolean(host && port);
 }
 
+/** Domain used to mint RFC-2822 Message-IDs (derived from the From address). */
+async function mailDomain(): Promise<string> {
+  const from = (await getSetting("SMTP_FROM")) ?? "";
+  const m = from.match(/@([A-Za-z0-9.-]+)/);
+  return m?.[1] ?? "servio.local";
+}
+
 type SendInput = {
   to: string;
   toName?: string | null;
+  cc?: string[];
+  bcc?: string[];
+  replyTo?: string;
   subject: string;
-  body: string;
+  body: string; // plaintext twin
+  html?: string; // optional HTML variant (multipart/alternative)
   template?: string;
   entity?: string;
   entityId?: string | number;
+  ticketId?: number;
+  commentId?: string;
+  /** Threading headers so replies stay in one conversation in the mail client. */
+  inReplyTo?: string;
+  references?: string;
   /** Stored blobs to attach (read from storage at send time). */
   attachments?: { filename: string; storageKey: string }[];
 };
 
 export async function sendMail(input: SendInput): Promise<void> {
+  const domain = await mailDomain();
+  // Mint a Message-ID up front so it lands both in the DB row and the wire header.
   const msg = await db.emailMessage.create({
     data: {
+      direction: "OUTBOUND",
       toEmail: input.to,
       toName: input.toName ?? null,
+      cc: input.cc?.length ? JSON.stringify(input.cc) : null,
+      bcc: input.bcc?.length ? JSON.stringify(input.bcc) : null,
+      replyTo: input.replyTo ?? null,
       subject: input.subject,
       body: input.body,
+      bodyHtml: input.html ?? null,
       template: input.template ?? "generic",
+      inReplyTo: input.inReplyTo ?? null,
+      references: input.references ?? null,
       entity: input.entity,
       entityId: input.entityId != null ? String(input.entityId) : null,
+      ticketId: input.ticketId ?? null,
+      commentId: input.commentId ?? null,
       status: "QUEUED",
     },
   });
+  const messageId = `<${msg.id}@${domain}>`;
+  await db.emailMessage.update({ where: { id: msg.id }, data: { messageId } });
 
   try {
     if (await smtpConfigured()) {
@@ -66,11 +101,19 @@ export async function sendMail(input: SendInput): Promise<void> {
             input.attachments.map(async (a) => ({ filename: a.filename, content: (await storage.get(a.storageKey)).body })),
           )
         : undefined;
+      const headers: Record<string, string> = { "Message-ID": messageId };
+      if (input.inReplyTo) headers["In-Reply-To"] = input.inReplyTo;
+      if (input.references) headers["References"] = input.references;
       await transport.sendMail({
         from: from ?? "Servio <servio@localhost>",
         to: input.toName ? `${input.toName} <${input.to}>` : input.to,
+        cc: input.cc?.length ? input.cc : undefined,
+        bcc: input.bcc?.length ? input.bcc : undefined,
+        replyTo: input.replyTo || undefined,
         subject: input.subject,
         text: input.body,
+        html: input.html || undefined, // nodemailer builds multipart/alternative
+        headers,
         attachments: mailAttachments,
       });
     }
@@ -87,82 +130,137 @@ export async function sendMail(input: SendInput): Promise<void> {
   }
 }
 
-// ── Templates ────────────────────────────────────────────────────────────
-const FROM_NAME = "Servio Service Desk";
+/**
+ * Persist an INBOUND email as an EmailMessage row (the thread anchor for replies).
+ * `messageId` is @unique, so a redelivered message collides — callers dedupe on it.
+ */
+export async function recordInboundEmail(input: {
+  fromEmail: string;
+  fromName?: string | null;
+  toEmail: string;
+  cc?: string[];
+  subject: string;
+  body: string;
+  bodyHtml?: string | null;
+  messageId?: string | null;
+  inReplyTo?: string | null;
+  references?: string | null;
+  headers?: Record<string, unknown> | null;
+  ticketId?: number | null;
+  commentId?: string | null;
+}) {
+  return db.emailMessage.create({
+    data: {
+      direction: "INBOUND",
+      status: "RECEIVED",
+      fromEmail: input.fromEmail,
+      fromName: input.fromName ?? null,
+      toEmail: input.toEmail,
+      cc: input.cc?.length ? JSON.stringify(input.cc) : null,
+      subject: input.subject,
+      body: input.body,
+      bodyHtml: input.bodyHtml ?? null,
+      messageId: input.messageId ?? null,
+      inReplyTo: input.inReplyTo ?? null,
+      references: input.references ?? null,
+      headers: input.headers ? JSON.stringify(input.headers) : null,
+      ticketId: input.ticketId ?? null,
+      commentId: input.commentId ?? null,
+      sentAt: new Date(),
+    },
+  });
+}
 
+/**
+ * Build In-Reply-To / References for a reply on a ticket, so the outgoing mail
+ * threads onto the existing conversation in the recipient's client. References =
+ * the whole chain (root … last); In-Reply-To = the most recent message.
+ */
+export async function ticketThreadHeaders(
+  ticketId: number,
+): Promise<{ inReplyTo?: string; references?: string }> {
+  const rows = await db.emailMessage.findMany({
+    where: { ticketId, messageId: { not: null } },
+    orderBy: { createdAt: "asc" },
+    select: { messageId: true },
+  });
+  const ids = rows.map((r) => r.messageId!).filter(Boolean);
+  if (ids.length === 0) return {};
+  return { inReplyTo: ids[ids.length - 1], references: ids.join(" ") };
+}
+
+// ── Templates ────────────────────────────────────────────────────────────
+// Thin wrappers that assemble variables + shell config and defer wording to the
+// admin-editable template engine (lib/email-templates.ts). The shell (badges,
+// CTA, footer) stays code-controlled; subject/body are DB-editable per template.
 type TicketLike = { id: number; title: string; type: string; status: string };
 
-export function tplTicketReceived(t: TicketLike) {
-  return {
-    template: "ticket_received",
-    subject: `[${ticketRef(t.id, t.type)}] We received your request`,
-    body: `Hello,
-
-Thanks for contacting the ${FROM_NAME}. Your request has been logged as ${ticketRef(t.id, t.type)}:
-
-  "${t.title}"
-
-Our team will review it shortly. You can track its progress any time in the self-service portal.
-
-— ${FROM_NAME}`,
-  };
+/** Brand + public origin for links, read from settings (APP_NAME / APP_URL). */
+export async function mailBrand(): Promise<MailBrand> {
+  const [appName, appUrl] = await Promise.all([getSetting("APP_NAME"), getSetting("APP_URL")]);
+  return { appName: appName || "Servio", appUrl: appUrl || undefined };
 }
 
-export function tplTicketAssigned(t: TicketLike, agentName: string) {
-  return {
-    template: "ticket_assigned",
-    subject: `[${ticketRef(t.id, t.type)}] Assigned to you`,
-    body: `Hi ${agentName},
-
-Ticket ${ticketRef(t.id, t.type)} — "${t.title}" — has been assigned to you.
-
-Please review and take the next step.
-
-— ${FROM_NAME}`,
-  };
+export function tplTicketReceived(t: TicketLike, brand?: MailBrand, opts?: { requesterName?: string; messageHtml?: string }) {
+  return renderTicketEmail("ticket_received", {
+    brand,
+    vars: { appName: brand?.appName ?? "Servio", ref: ticketRef(t.id, t.type), title: t.title, requesterName: opts?.requesterName ?? "" },
+  });
 }
 
-export function tplTicketReply(t: TicketLike, snippet: string, signatureText?: string) {
-  const sig = signatureText?.trim() ? `\n\n${signatureText.trim()}` : "";
-  return {
-    template: "ticket_reply",
-    subject: `[${ticketRef(t.id, t.type)}] New update on your request`,
-    body: `Hello,
-
-There's a new update on your request ${ticketRef(t.id, t.type)} — "${t.title}":
-
-  ${snippet}${sig}
-
-Reply in the portal to continue the conversation.
-
-— ${FROM_NAME}`,
-  };
+export function tplTicketAssigned(t: TicketLike, agentName: string, brand?: MailBrand) {
+  return renderTicketEmail("ticket_assigned", {
+    brand,
+    vars: { appName: brand?.appName ?? "Servio", ref: ticketRef(t.id, t.type), title: t.title, agentName },
+  });
 }
 
-export function tplTicketParticipant(t: TicketLike, name: string, addedBy: string, note: string) {
-  return {
-    template: "ticket_participant",
-    subject: `[${ticketRef(t.id, t.type)}] You were added to a ticket`,
-    body: `Hi ${name},
-
-${addedBy} added you as a participant on ${ticketRef(t.id, t.type)} — "${t.title}".
-${note ? `\nNote: ${note}\n` : ""}
-You'll now receive updates on this ticket in Servio.
-
-— ${FROM_NAME}`,
-  };
+export function tplTicketReply(
+  t: TicketLike,
+  opts: { requesterName?: string; messageHtml: string; signatureHtml?: string; quoteHtml?: string; snippet?: string },
+  brand?: MailBrand,
+) {
+  return renderTicketEmail("ticket_reply", {
+    brand,
+    vars: {
+      appName: brand?.appName ?? "Servio",
+      ref: ticketRef(t.id, t.type),
+      title: t.title,
+      requesterName: opts.requesterName ?? "",
+      message: opts.messageHtml,
+      signature: opts.signatureHtml ?? "",
+      quote: opts.quoteHtml ?? "",
+    },
+  });
 }
 
-export function tplTicketResolved(t: TicketLike) {
-  return {
-    template: "ticket_resolved",
-    subject: `[${ticketRef(t.id, t.type)}] Your request has been resolved`,
-    body: `Hello,
+export function tplTicketParticipant(t: TicketLike, name: string, addedBy: string, note: string, brand?: MailBrand) {
+  return renderTicketEmail("ticket_participant", {
+    brand,
+    vars: {
+      appName: brand?.appName ?? "Servio",
+      ref: ticketRef(t.id, t.type),
+      title: t.title,
+      requesterName: name,
+      agentName: addedBy,
+      message: note ? quoteHtml(escapeInline(note)) : "",
+    },
+  });
+}
 
-Good news — your request ${ticketRef(t.id, t.type)} — "${t.title}" — has been marked as resolved.
+export function tplTicketResolved(t: TicketLike, brand?: MailBrand, opts?: { requesterName?: string }) {
+  return renderTicketEmail("ticket_resolved", {
+    brand,
+    vars: { appName: brand?.appName ?? "Servio", ref: ticketRef(t.id, t.type), title: t.title, requesterName: opts?.requesterName ?? "" },
+  });
+}
 
-If the issue persists, reply in the portal to re-open it.
+// Re-export so callers can build ad-hoc HTML bodies (e.g. forwards) consistently.
+export { renderEmailHtml, richToEmailHtml, textToHtmlParagraphs, quoteHtml, signatureHtml, renderThreadHistory };
 
-— ${FROM_NAME}`,
-  };
+function escapeInline(s: string): string {
+  return (s ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
 }

@@ -37,7 +37,8 @@ export default async function PortalTicketDetail({
   const { id } = await params;
 
   const ticket = await db.ticket.findFirst({
-    where: { id: Number(id), requesterId: me.id },
+    // Requester OR participant (e.g. a CC'd manager) may view the ticket.
+    where: { id: Number(id), OR: [{ requesterId: me.id }, { participants: { some: { userId: me.id } } }] },
     include: {
       assignee: true,
       service: true,

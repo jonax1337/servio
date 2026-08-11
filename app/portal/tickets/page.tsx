@@ -27,13 +27,17 @@ export default async function PortalTickets({
   const me = await requireUser();
   const filter = getParam(await searchParams, "filter") === "all" ? "all" : "open";
 
+  // A portal user sees a ticket if they are the requester OR a participant
+  // (e.g. a manager CC'd on the request).
+  const visible = { OR: [{ requesterId: me.id }, { participants: { some: { userId: me.id } } }] };
+
   const [tickets, openCount, totalCount] = await Promise.all([
     db.ticket.findMany({
-      where: { requesterId: me.id, ...(filter === "open" ? { status: { notIn: CLOSED } } : {}) },
+      where: { ...visible, ...(filter === "open" ? { status: { notIn: CLOSED } } : {}) },
       orderBy: { updatedAt: "desc" },
     }),
-    db.ticket.count({ where: { requesterId: me.id, status: { notIn: CLOSED } } }),
-    db.ticket.count({ where: { requesterId: me.id } }),
+    db.ticket.count({ where: { ...visible, status: { notIn: CLOSED } } }),
+    db.ticket.count({ where: { ...visible } }),
   ]);
 
   const tabs = [

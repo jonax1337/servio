@@ -1,7 +1,7 @@
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
 import { writeAudit, notify } from "@/lib/audit";
-import { sendMail, tplTicketReceived } from "@/lib/mail";
+import { sendMail, tplTicketReceived, mailBrand, quoteHtml, textToHtmlParagraphs } from "@/lib/mail";
 import { runAutomations } from "@/lib/automations";
 import { autoAssignTicket } from "@/lib/assignment";
 import { slaCreateData } from "@/lib/sla";
@@ -101,7 +101,7 @@ export async function createPortalTicketFor(
     summary: input.source === "VIO" ? "Created via the Vio assistant" : "Submitted via self-service portal",
   });
   if (me.email) {
-    await sendMail({ to: me.email, toName: me.name, entity: "Ticket", entityId: ticket.id, ...tplTicketReceived(ticket) });
+    await sendMail({ to: me.email, toName: me.name, entity: "Ticket", entityId: ticket.id, ticketId: ticket.id, ...(await tplTicketReceived(ticket, await mailBrand(), { requesterName: me.name ?? "", messageHtml: ticket.description ? quoteHtml(textToHtmlParagraphs(ticket.description)) : "" })) });
   }
   await runAutomations("TICKET_CREATED", ticket.id);
   await autoAssignTicket(ticket.id);
@@ -194,7 +194,7 @@ export async function createCatalogRequestFor(
   }
 
   if (me.email) {
-    await sendMail({ to: me.email, toName: me.name, entity: "Ticket", entityId: ticket.id, ...tplTicketReceived(ticket) });
+    await sendMail({ to: me.email, toName: me.name, entity: "Ticket", entityId: ticket.id, ticketId: ticket.id, ...(await tplTicketReceived(ticket, await mailBrand(), { requesterName: me.name ?? "", messageHtml: ticket.description ? quoteHtml(textToHtmlParagraphs(ticket.description)) : "" })) });
   }
   if (!needsApproval) {
     await runAutomations("TICKET_CREATED", ticket.id);
