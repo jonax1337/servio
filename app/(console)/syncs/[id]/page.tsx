@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
-import { ArrowLeft, RefreshCw, Clock, Settings2 } from "lucide-react";
+import { ArrowLeft, RefreshCw, Clock, Settings2, Pencil } from "lucide-react";
 import { db } from "@/lib/db";
 import { LinkButton } from "@/components/link-button";
 import { StatusBadge } from "@/components/status-badge";
@@ -50,13 +50,22 @@ function parseConfig(raw: string): { entries: [string, string][]; error: boolean
   try {
     const obj = JSON.parse(raw) as unknown;
     if (obj && typeof obj === "object" && !Array.isArray(obj)) {
-      const entries = Object.entries(obj as Record<string, unknown>).map(
-        ([k, v]) =>
-          [k, typeof v === "object" ? JSON.stringify(v) : String(v)] as [
-            string,
-            string,
-          ],
-      );
+      const entries: [string, string][] = [];
+      for (const [k, v] of Object.entries(obj as Record<string, unknown>)) {
+        // Never render stored secrets.
+        if (/password|secret|token/i.test(k)) {
+          entries.push([k, v ? "••••••••" : "—"]);
+          continue;
+        }
+        // Flatten the attribute map into readable rows.
+        if (k === "attr" && v && typeof v === "object" && !Array.isArray(v)) {
+          for (const [ak, av] of Object.entries(v as Record<string, unknown>)) {
+            if (av) entries.push([`map.${ak}`, String(av)]);
+          }
+          continue;
+        }
+        entries.push([k, typeof v === "object" ? JSON.stringify(v) : String(v)]);
+      }
       return { entries, error: false };
     }
     return { entries: [], error: false };
@@ -113,6 +122,10 @@ export default async function SyncDetailPage({
             />
           ) : null}
           <ToggleActive sourceId={source.id} isActive={source.isActive} />
+          <LinkButton href={`/syncs/${source.id}/edit`} variant="outline" size="sm">
+            <Pencil className="size-4" />
+            Edit
+          </LinkButton>
           <RunButton sourceId={source.id} />
         </div>
       </div>
