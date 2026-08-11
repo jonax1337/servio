@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/dialog";
 import { WidgetBody } from "@/components/dashboard/widget-card";
 import { WidgetConfigDialog, type EditorOptions } from "@/components/dashboard/widget-config-dialog";
+import { ConfirmButton } from "@/components/confirm-dialog";
 import { setDashboardLayout, updateDashboardSettings, deleteDashboard } from "@/lib/actions/dashboards";
 import { WIDGET_LABELS, type Widget, type Computed } from "@/lib/dashboard/types";
 
@@ -59,17 +60,6 @@ export function DashboardCanvas({
     startSettings(async () => {
       await updateDashboardSettings(fd);
       setSettingsOpen(false);
-      router.refresh();
-    });
-  }
-
-  function deleteDash() {
-    if (!confirm("Delete this dashboard? This can't be undone.")) return;
-    const fd = new FormData();
-    fd.set("id", dashboardId);
-    startSettings(async () => {
-      await deleteDashboard(fd);
-      router.push("/");
       router.refresh();
     });
   }
@@ -251,15 +241,22 @@ export function DashboardCanvas({
               </>
             ) : null}
             <DialogFooter>
-              <Button
-                type="button"
-                variant="ghost"
-                onClick={deleteDash}
-                disabled={savingSettings}
-                className="mr-auto text-muted-foreground hover:text-destructive"
+              <ConfirmButton
+                action={async (fd) => {
+                  await deleteDashboard(fd);
+                  router.push("/");
+                  router.refresh();
+                }}
+                fields={{ id: dashboardId }}
+                title="Delete this dashboard?"
+                description="This dashboard and its layout will be permanently deleted."
+                confirmLabel="Delete"
+                triggerVariant="ghost"
+                triggerSize="default"
+                triggerClassName="mr-auto text-muted-foreground hover:text-destructive"
               >
                 <Trash className="size-4" /> Delete
-              </Button>
+              </ConfirmButton>
               <Button type="submit" disabled={!name.trim() || savingSettings}>
                 {savingSettings ? <Loader2 className="size-4 animate-spin" /> : null} Save settings
               </Button>

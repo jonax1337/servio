@@ -35,6 +35,7 @@ import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { Combobox } from "@/components/combobox";
 import { LinkButton } from "@/components/link-button";
+import { ConfirmButton } from "@/components/confirm-dialog";
 
 type FieldValue = string | number | boolean;
 
@@ -269,7 +270,18 @@ export function SyncSourceForm({
       {mode === "edit" && source ? (
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-card p-4">
           <TestConnectionButton id={source.id} />
-          <DeleteButton id={source.id} name={source.name} />
+          <ConfirmButton
+            action={deleteSyncSource}
+            fields={{ id: source.id }}
+            title="Delete sync source?"
+            description={`"${source.name}" will be deleted. Imported users and assets are kept but unlinked from this source.`}
+            confirmLabel="Delete source"
+            triggerVariant="ghost"
+            triggerSize="sm"
+            triggerClassName="text-red-600 hover:text-red-600 dark:text-red-400"
+          >
+            <Trash2 className="size-4" /> Delete source
+          </ConfirmButton>
         </div>
       ) : null}
     </div>
@@ -314,26 +326,3 @@ function TestSubmit() {
   );
 }
 
-function DeleteButton({ id, name }: { id: string; name: string }) {
-  return (
-    <form
-      action={async (fd) => {
-        if (!confirm(`Delete sync source "${name}"? Imported users are kept but unlinked.`)) return;
-        await deleteSyncSource(fd);
-      }}
-    >
-      <input type="hidden" name="id" value={id} />
-      <DeleteSubmit />
-    </form>
-  );
-}
-
-function DeleteSubmit() {
-  const { pending } = useFormStatus();
-  return (
-    <Button type="submit" variant="ghost" size="sm" disabled={pending} className="text-red-600 hover:text-red-600 dark:text-red-400">
-      {pending ? <Loader2 className="size-4 animate-spin" /> : <Trash2 className="size-4" />}
-      Delete source
-    </Button>
-  );
-}
