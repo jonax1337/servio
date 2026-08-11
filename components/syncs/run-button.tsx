@@ -38,8 +38,9 @@ export function RunButton({
   return (
     <form
       action={async (fd) => {
-        await runSync(fd);
-        toast.success("Sync completed");
+        const res = await runSync(fd);
+        if (res.ok) toast.success(res.message);
+        else toast.error(res.message);
       }}
     >
       <input type="hidden" name="sourceId" value={sourceId} />

@@ -68,6 +68,7 @@ export async function processInboundMail(mail: ParsedInboundMail): Promise<Inbou
         urgency: "MEDIUM",
         source: "EMAIL",
         requesterId: sender.id,
+        requestedByUserId: null,
         assigneeId: null,
         groupId: null,
         categoryId: null,

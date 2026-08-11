@@ -58,6 +58,7 @@ export default async function TicketDetailPage({
       where: { id: ticketId },
       include: {
         requester: true,
+        requestedBy: true,
         assignee: true,
         service: true,
         sla: true,
@@ -407,6 +408,17 @@ export default async function TicketDetailPage({
                 View →
               </span>
             </Link>
+            {ticket.requestedBy ? (
+              <Link
+                href={`/people/${ticket.requestedByUserId}`}
+                className="mt-2 flex items-center gap-2 rounded-lg border border-dashed p-2 text-xs text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground"
+              >
+                <UserAvatar name={ticket.requestedBy.name} email={ticket.requestedBy.email} image={ticket.requestedBy.image} size="sm" />
+                <span className="min-w-0 flex-1 truncate">
+                  Raised by {ticket.requestedBy.name ?? ticket.requestedBy.email} on their behalf
+                </span>
+              </Link>
+            ) : null}
           </CardContent>
         </Card>
 

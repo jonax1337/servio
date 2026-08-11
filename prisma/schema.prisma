@@ -43,6 +43,7 @@ model User {
   sessions        Session[]
   memberships     GroupMember[]
   requestedTickets Ticket[]   @relation("TicketRequester")
+  requestedOnBehalf Ticket[]  @relation("TicketRequestedBy")
   assignedTickets  Ticket[]   @relation("TicketAssignee")
   comments        TicketComment[]
   changeComments  ChangeComment[]
@@ -350,6 +351,7 @@ model Ticket {
   mergedIntoId Int?
 
   requesterId String
+  requestedByUserId String?
   assigneeId  String?
   groupId     String?
   categoryId  String?
@@ -378,6 +380,7 @@ model Ticket {
   updatedAt      DateTime  @updatedAt
 
   requester User      @relation("TicketRequester", fields: [requesterId], references: [id])
+  requestedBy User?   @relation("TicketRequestedBy", fields: [requestedByUserId], references: [id])
   assignee  User?     @relation("TicketAssignee", fields: [assigneeId], references: [id])
   group     Group?    @relation(fields: [groupId], references: [id])
   category  Category? @relation(fields: [categoryId], references: [id])
@@ -406,6 +409,7 @@ model Ticket {
   @@index([priority])
   @@index([assigneeId])
   @@index([requesterId])
+  @@index([requestedByUserId])
 }
 
 model TicketComment {

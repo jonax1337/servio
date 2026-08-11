@@ -18,12 +18,13 @@ import type { FormOptions } from "@/lib/data/options";
 type UserOpt = { id: string; name: string | null; email: string };
 
 function Field({
-  label, error, children,
-}: { label: string; error?: string[]; children: React.ReactNode }) {
+  label, error, hint, children,
+}: { label: string; error?: string[]; hint?: string; children: React.ReactNode }) {
   return (
     <div className="grid gap-1.5">
       <Label>{label}</Label>
       {children}
+      {hint ? <p className="text-xs text-muted-foreground">{hint}</p> : null}
       {error ? <p className="text-xs text-destructive">{error[0]}</p> : null}
     </div>
   );
@@ -74,8 +75,11 @@ export function TicketForm({
       </div>
 
       <div className="grid gap-5 sm:grid-cols-2">
-        <Field label="Requester" error={fe.requesterId}>
-          <ComboField name="requesterId" defaultValue={requesters[0]?.id} options={userOpts} placeholder="Who reported it" />
+        <Field label="Requester" error={fe.requesterId} hint="Who the ticket is for.">
+          <ComboField name="requesterId" defaultValue={requesters[0]?.id} options={userOpts} placeholder="Who it's for" />
+        </Field>
+        <Field label="Requested by" hint="If someone raised this on behalf of the requester.">
+          <ComboField name="requestedByUserId" options={userOpts} includeNone noneLabel="— The requester —" placeholder="On behalf of the requester" />
         </Field>
         <Field label="Assignee">
           <ComboField name="assigneeId" defaultValue={currentUserId} options={agentOpts} includeNone noneLabel="Unassigned" />
