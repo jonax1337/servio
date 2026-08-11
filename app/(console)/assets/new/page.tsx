@@ -22,7 +22,7 @@ export default async function NewAssetPage() {
       />
       <PageBody>
         <Card className="mx-auto max-w-3xl">
-          <CardContent className="pt-6">
+          <CardContent>
             <AssetForm options={options} />
           </CardContent>
         </Card>

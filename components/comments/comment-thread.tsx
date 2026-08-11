@@ -456,8 +456,8 @@ export function CommentThread({
               ariaLabel="Reply"
               mentionUsers={mentionUsers}
               onReady={(handle) => { editorRef.current = handle; }}
+              innerActions={aiTicketId ? <AiComposerButtons ticketId={aiTicketId} editorRef={editorRef} teaser={aiTeaser} /> : null}
             />
-            {attachTarget ? <ComposerAttachments ticketId={attachTarget.ticketId} /> : null}
 
             {emailReply && mode === "reply" && quotedTrail.length > 0 ? (
               <div className="grid gap-1.5">
@@ -507,7 +507,7 @@ export function CommentThread({
                     </Label>
                   </div>
                 ) : null}
-                {aiTicketId ? <AiComposerButtons ticketId={aiTicketId} editorRef={editorRef} teaser={aiTeaser} /> : null}
+                {attachTarget ? <ComposerAttachments ticketId={attachTarget.ticketId} layout="inline" /> : null}
                 {composerExtra ? <span className="contents">{composerExtra}</span> : null}
               </div>
               <div className="flex items-center gap-2">

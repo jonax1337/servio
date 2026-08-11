@@ -68,7 +68,7 @@ export default async function AutomationsPage() {
             const actions = parseJson<AutomationAction[]>(r.actions, []);
             return (
               <Card key={r.id}>
-                <CardContent className="flex flex-col gap-3 pt-6 sm:flex-row sm:items-start sm:justify-between">
+                <CardContent className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="font-medium">{r.name}</span>

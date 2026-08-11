@@ -36,7 +36,7 @@ export default async function PortalNewPage({
         </p>
       </div>
       <Card>
-        <CardContent className="pt-6">
+        <CardContent>
           <RequestForm
             categories={categories.map((c) => ({ value: c.id, label: c.name }))}
             services={services.map((s) => ({ value: s.id, label: s.name }))}

@@ -77,9 +77,9 @@ export default async function PersonDetailPage({
   const displayName = user.name ?? user.email;
 
   return (
-    <div className="grid gap-0 lg:grid-cols-[1fr_320px]">
-      {/* Main column */}
-      <div className="min-w-0 border-b lg:border-b-0 lg:border-r">
+    <div className="grid gap-0 lg:h-[calc(100svh-3.5rem)] lg:grid-cols-[1fr_320px] lg:overflow-hidden">
+      {/* Main column — scrolls independently from the properties rail */}
+      <div className="min-w-0 border-b lg:min-h-0 lg:overflow-y-auto lg:border-b-0 lg:border-r">
         <div className="flex items-center gap-3 border-b px-4 py-3 sm:px-6">
           <LinkButton href="/people" variant="ghost" size="icon-sm">
             <ArrowLeft className="size-4" />
@@ -198,7 +198,7 @@ export default async function PersonDetailPage({
       </div>
 
       {/* Sidebar */}
-      <aside className="p-4 sm:p-6">
+      <aside className="p-4 sm:p-6 lg:min-h-0 lg:overflow-y-auto">
         <Card>
           <CardHeader>
             <CardTitle className="text-sm">Access</CardTitle>

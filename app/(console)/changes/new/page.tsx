@@ -22,7 +22,7 @@ export default async function NewChangePage() {
       />
       <PageBody>
         <Card className="mx-auto max-w-3xl">
-          <CardContent className="pt-6">
+          <CardContent>
             <ChangeForm options={options} currentUserId={me.id} />
           </CardContent>
         </Card>

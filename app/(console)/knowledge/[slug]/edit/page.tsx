@@ -34,7 +34,7 @@ export default async function EditArticlePage({
       />
       <PageBody>
         <Card className="mx-auto max-w-5xl">
-          <CardContent className="pt-6">
+          <CardContent>
             <ArticleEditor
               action={updateArticle}
               categories={categories}

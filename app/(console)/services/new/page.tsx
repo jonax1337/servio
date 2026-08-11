@@ -22,7 +22,7 @@ export default async function NewServicePage() {
       />
       <PageBody>
         <Card className="mx-auto max-w-3xl">
-          <CardContent className="pt-6">
+          <CardContent>
             <ServiceForm options={options} />
           </CardContent>
         </Card>

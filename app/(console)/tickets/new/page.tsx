@@ -30,7 +30,7 @@ export default async function NewTicketPage() {
       />
       <PageBody>
         <Card className="mx-auto max-w-3xl">
-          <CardContent className="pt-6">
+          <CardContent>
             <TicketForm options={options} requesters={requesters} currentUserId={me.id} />
           </CardContent>
         </Card>

@@ -130,7 +130,7 @@ export default async function CategoriesPage() {
           </EmptyState>
         ) : (
           <Card>
-            <CardContent className="pt-6">
+            <CardContent>
               <Tree nodes={roots} parents={parents} teams={teams} />
             </CardContent>
           </Card>

@@ -22,7 +22,7 @@ export default async function NewProblemPage() {
       />
       <PageBody>
         <Card className="mx-auto max-w-3xl">
-          <CardContent className="pt-6">
+          <CardContent>
             <ProblemForm options={options} currentUserId={me.id} />
           </CardContent>
         </Card>

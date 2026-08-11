@@ -47,6 +47,10 @@ export type RichTextEditorProps = {
   mentionUsers?: MentionUser[];
   onChangeHTML?: (html: string) => void;
   onReady?: (handle: RichTextEditorHandle) => void;
+  /** Actions rendered inside the editor field, pinned bottom-left (e.g. AI helpers).
+   *  When set, the field grows taller and reserves bottom padding so text never
+   *  flows under the buttons. */
+  innerActions?: React.ReactNode;
 };
 
 function escapeHtml(s: string) {
@@ -155,7 +159,7 @@ function Toolbar({ editor }: { editor: Editor | null }) {
 }
 
 function RichTextEditor({
-  name, defaultHTML, placeholder, required, className, ariaLabel, mentionUsers, onChangeHTML, onReady,
+  name, defaultHTML, placeholder, required, className, ariaLabel, mentionUsers, onChangeHTML, onReady, innerActions,
 }: RichTextEditorProps) {
   const hiddenRef = React.useRef<HTMLInputElement>(null);
   const onChangeRef = React.useRef(onChangeHTML);
@@ -199,7 +203,7 @@ function RichTextEditor({
         "aria-multiline": "true",
         "aria-label": ariaLabel ?? "",
         spellcheck: "true",
-        class: EDITOR_CLASS,
+        class: cn(EDITOR_CLASS, innerActions && "min-h-40 pb-12"),
       },
       transformPastedHTML: (html: string) => sanitizeCommentHtml(html),
     },
@@ -256,6 +260,9 @@ function RichTextEditor({
       <Toolbar editor={editor} />
       <div className="relative">
         <EditorContent editor={editor} />
+        {innerActions ? (
+          <div className="absolute bottom-2 left-2 flex items-center gap-1.5">{innerActions}</div>
+        ) : null}
       </div>
       {/* sr-only but validation-participating (type=hidden would make required a no-op). */}
       <input name={name} ref={hiddenRef} required={required} tabIndex={-1} aria-hidden="true" className="sr-only" />

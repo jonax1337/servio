@@ -47,7 +47,7 @@ export default async function CatalogAdminPage() {
         ) : (
           items.map((it) => (
             <Card key={it.id}>
-              <CardContent className="flex flex-col gap-3 pt-6 sm:flex-row sm:items-start sm:justify-between">
+              <CardContent className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="grid size-7 place-items-center rounded-md bg-primary/10 text-primary">

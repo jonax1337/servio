@@ -59,7 +59,7 @@ export default async function ApprovalsPage() {
               }
               return (
                 <Card key={a.id}>
-                  <CardContent className="grid gap-3 pt-6 sm:grid-cols-[1fr_auto] sm:items-start">
+                  <CardContent className="grid gap-3 sm:grid-cols-[1fr_auto] sm:items-start">
                     <div className="min-w-0">
                       <div className="flex items-center gap-2">
                         <Link href={`/tickets/${t.id}`} className="font-mono text-xs text-muted-foreground hover:text-foreground">
@@ -94,7 +94,7 @@ export default async function ApprovalsPage() {
                 </h2>
                 {pendingChanges.map((a) => (
                   <Card key={a.id}>
-                    <CardContent className="grid gap-2 pt-6">
+                    <CardContent className="grid gap-2">
                       <div className="flex flex-wrap items-center gap-2">
                         <Link href={`/changes/${a.change.id}`} className="font-mono text-xs text-muted-foreground hover:text-foreground">
                           {changeRef(a.change.id)}

@@ -155,9 +155,9 @@ export default async function TicketDetailPage({
   );
 
   return (
-    <div className="grid gap-0 lg:grid-cols-[1fr_340px]">
-      {/* Main column */}
-      <div className="min-w-0 border-b lg:border-b-0 lg:border-r">
+    <div className="grid gap-0 lg:h-[calc(100svh-3.5rem)] lg:grid-cols-[1fr_340px] lg:overflow-hidden">
+      {/* Main column — scrolls independently from the properties rail */}
+      <div className="min-w-0 border-b lg:min-h-0 lg:overflow-y-auto lg:border-b-0 lg:border-r">
         <div className="flex flex-wrap items-center gap-3 border-b px-4 py-3 sm:px-6">
           <LinkButton href="/tickets" variant="ghost" size="icon-sm">
             <ArrowLeft className="size-4" />
@@ -360,7 +360,7 @@ export default async function TicketDetailPage({
       </div>
 
       {/* Sidebar */}
-      <aside className="p-4 sm:p-6">
+      <aside className="p-4 sm:p-6 lg:min-h-0 lg:overflow-y-auto">
         {/* SLA first — the clock is the most time-sensitive thing to see */}
         <Card>
           <CardHeader><CardTitle className="text-sm">Timeline & SLA</CardTitle></CardHeader>

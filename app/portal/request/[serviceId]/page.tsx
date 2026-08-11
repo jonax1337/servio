@@ -55,7 +55,7 @@ export default async function CatalogRequestPage({
       </div>
 
       <Card>
-        <CardContent className="pt-6">
+        <CardContent>
           <ServiceRequestForm
             serviceId={item.id}
             fields={fields}

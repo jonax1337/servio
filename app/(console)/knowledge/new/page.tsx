@@ -26,7 +26,7 @@ export default async function NewArticlePage() {
       />
       <PageBody>
         <Card className="mx-auto max-w-5xl">
-          <CardContent className="pt-6">
+          <CardContent>
             <ArticleEditor action={createArticle} categories={categories} submitLabel="Create article" />
           </CardContent>
         </Card>

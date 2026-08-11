@@ -77,7 +77,7 @@ export default async function LocationsPage() {
           </EmptyState>
         ) : (
           <Card>
-            <CardContent className="pt-6">
+            <CardContent>
               <Tree nodes={roots} />
             </CardContent>
           </Card>

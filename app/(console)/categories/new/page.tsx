@@ -23,7 +23,7 @@ export default async function NewCategoryPage() {
       />
       <PageBody>
         <Card className="mx-auto max-w-3xl">
-          <CardContent className="pt-6">
+          <CardContent>
             <CategoryForm parents={parents} teams={teams} />
           </CardContent>
         </Card>

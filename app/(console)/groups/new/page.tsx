@@ -22,7 +22,7 @@ export default async function NewGroupPage() {
       />
       <PageBody>
         <Card className="mx-auto max-w-3xl">
-          <CardContent className="pt-6">
+          <CardContent>
             <GroupForm options={options} />
           </CardContent>
         </Card>
