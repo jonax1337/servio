@@ -84,7 +84,14 @@ export type ConversationSummary = {
   title: string;
   scope: AssistantScope;
   archived: boolean;
+  folderId: string | null;
   updatedAt: string; // ISO string (serialized for the client)
+};
+
+/** A folder in the left rail. */
+export type AiFolderSummary = {
+  id: string;
+  name: string;
 };
 
 /** Full conversation for the active-view (getConversation). */
@@ -199,7 +206,7 @@ export async function listConversations(): Promise<ConversationSummary[]> {
   const rows = await db.aiConversation.findMany({
     where: { userId: me.id },
     orderBy: [{ archived: "asc" }, { updatedAt: "desc" }],
-    select: { id: true, title: true, scope: true, archived: true, updatedAt: true },
+    select: { id: true, title: true, scope: true, archived: true, folderId: true, updatedAt: true },
   });
 
   return rows
@@ -209,8 +216,83 @@ export async function listConversations(): Promise<ConversationSummary[]> {
       title: r.title,
       scope: coerceScope(r.scope),
       archived: r.archived,
+      folderId: r.folderId,
       updatedAt: r.updatedAt.toISOString(),
     }));
+}
+
+/* ────────────────────────────────────────────────────────────────────────────
+ * Folders — per-user grouping of conversations (left rail).
+ * ──────────────────────────────────────────────────────────────────────────── */
+
+export async function listFolders(): Promise<AiFolderSummary[]> {
+  const me = await actingAgent();
+  if (!me) return [];
+  const rows = await db.aiFolder.findMany({
+    where: { userId: me.id },
+    orderBy: { createdAt: "asc" },
+    select: { id: true, name: true },
+  });
+  return rows;
+}
+
+export async function createFolder(
+  name?: string,
+): Promise<{ ok: true; folder: AiFolderSummary } | { ok: false; error: string }> {
+  const me = await actingAgent();
+  if (!me) return { ok: false, error: "Not authorised" };
+  const trimmed = String(name ?? "").trim().slice(0, 80) || "New folder";
+  const row = await db.aiFolder.create({
+    data: { userId: me.id, name: trimmed },
+    select: { id: true, name: true },
+  });
+  return { ok: true, folder: row };
+}
+
+export async function renameFolder(
+  id: string,
+  name: string,
+): Promise<{ ok: boolean; error?: string }> {
+  const me = await actingAgent();
+  if (!me) return { ok: false, error: "Not authorised" };
+  const row = await db.aiFolder.findUnique({ where: { id }, select: { userId: true } });
+  if (!row || row.userId !== me.id) return { ok: false, error: "Not authorised" };
+  const trimmed = String(name ?? "").trim().slice(0, 80) || "New folder";
+  await db.aiFolder.update({ where: { id }, data: { name: trimmed } });
+  return { ok: true };
+}
+
+/** Delete a folder. Its conversations are un-grouped (SetNull), never deleted. */
+export async function deleteFolder(id: string): Promise<{ ok: boolean; error?: string }> {
+  const me = await actingAgent();
+  if (!me) return { ok: false, error: "Not authorised" };
+  const row = await db.aiFolder.findUnique({ where: { id }, select: { userId: true } });
+  if (!row || row.userId !== me.id) return { ok: false, error: "Not authorised" };
+  await db.aiFolder.delete({ where: { id } });
+  return { ok: true };
+}
+
+/** Move a conversation into a folder (or out of any folder when folderId is null). */
+export async function moveConversation(
+  conversationId: string,
+  folderId: string | null,
+): Promise<{ ok: boolean; error?: string }> {
+  const me = await actingAgent();
+  if (!me) return { ok: false, error: "Not authorised" };
+
+  const conv = await db.aiConversation.findUnique({
+    where: { id: conversationId },
+    select: { userId: true },
+  });
+  if (!conv || conv.userId !== me.id) return { ok: false, error: "Not authorised" };
+
+  if (folderId) {
+    const folder = await db.aiFolder.findUnique({ where: { id: folderId }, select: { userId: true } });
+    if (!folder || folder.userId !== me.id) return { ok: false, error: "Not authorised" };
+  }
+
+  await db.aiConversation.update({ where: { id: conversationId }, data: { folderId } });
+  return { ok: true };
 }
 
 export async function createConversation(
@@ -227,7 +309,7 @@ export async function createConversation(
 
   const row = await db.aiConversation.create({
     data: { userId: me.id, scope, title: "New chat" },
-    select: { id: true, title: true, scope: true, archived: true, updatedAt: true },
+    select: { id: true, title: true, scope: true, archived: true, folderId: true, updatedAt: true },
   });
 
   return {
@@ -237,6 +319,7 @@ export async function createConversation(
       title: row.title,
       scope: coerceScope(row.scope),
       archived: row.archived,
+      folderId: row.folderId,
       updatedAt: row.updatedAt.toISOString(),
     },
   };

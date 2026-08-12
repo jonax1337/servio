@@ -5,7 +5,7 @@ import { db } from "@/lib/db";
 import { generateAiChat } from "@/lib/ai";
 import { webSearchTool, fetchUrlTool } from "@/lib/ai-tools";
 import { parseFormSchema } from "@/lib/service-forms";
-import { TICKET_TYPES, PRIORITIES, IMPACT_URGENCY, ticketRef } from "@/lib/constants";
+import { TICKET_TYPES, PRIORITIES, IMPACT_URGENCY, ticketRef, AI_ASSISTANT_NAME } from "@/lib/constants";
 
 /**
  * Vio for the Self-Service Portal — an END-USER assistant.
@@ -232,7 +232,7 @@ function buildPortalTools(userId: string) {
   };
 }
 
-const SYSTEM_PROMPT = `You are Vio, the friendly assistant in the Servio Help Center. You help employees and customers get unblocked quickly, and you can act on their behalf.
+const SYSTEM_PROMPT = `You are ${AI_ASSISTANT_NAME}, the friendly assistant in the Servio Help Center. You help employees and customers get unblocked quickly, and you can act on their behalf.
 
 Who you are talking to: a non-technical end user. Be warm, calm, and plain-spoken. No jargon. Keep answers short — usually two to four sentences or a tight bulleted list.
 

@@ -454,8 +454,8 @@ export default async function TicketDetailPage({
 
       </aside>
 
-      {/* Vio lives in the topbar launcher now (VioLauncher) — it detects this
-          ticket from the URL and opens the same assistant in a side sheet. */}
+      {/* Onyx lives in the global window (FAB / VioProvider) — it detects this
+          ticket from the URL and opens the same assistant with ticket context. */}
     </div>
   );
 }

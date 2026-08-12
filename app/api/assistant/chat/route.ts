@@ -1,0 +1,270 @@
+import {
+  streamText,
+  stepCountIs,
+  createUIMessageStream,
+  createUIMessageStreamResponse,
+  type UIMessage,
+} from "ai";
+import { db } from "@/lib/db";
+import { renderMarkdown } from "@/lib/markdown";
+import { aiConfigured, currentProvider, resolveChatModel, chatMaxOutputTokens, generateAiChat } from "@/lib/ai";
+import {
+  getActingAgent,
+  prepareAssistantTurn,
+  buildAssistantProposals,
+  sanitizeUploads,
+  type PreparedTurn,
+} from "@/lib/assistant-core";
+import { findOperation } from "@/lib/ai-operations/registry";
+import type { UploadedAttachment } from "@/lib/actions/ai-assistant";
+
+/**
+ * Streaming chat turn for the unified console Vio (the global window: min & max
+ * share this endpoint). Server-authoritative: it ignores any client-side message
+ * history and rebuilds context from the DB via `prepareAssistantTurn`, then
+ * streams the assistant reply token-by-token.
+ *
+ * - ai-sdk providers (anthropic/openai/ollama) → `streamText` → UI message stream.
+ * - claude-code (subscription CLI) → buffered `generateAiChat`, emitted as a
+ *   single UI message stream so the client stays uniform.
+ *
+ * Proposals (propose_* tool calls → approval cards) and the persisted assistant
+ * turn are computed on finish; proposals ride to the client as message metadata.
+ */
+
+export const dynamic = "force-dynamic";
+export const maxDuration = 120;
+
+const TEXT_ID = "t0";
+
+/** Message metadata sent to the client (approval cards + read-tool activity). */
+type VioMetadata = {
+  proposals?: ReturnType<typeof buildAssistantProposals>;
+  toolCalls?: { name: string; input: unknown }[];
+};
+
+/** Persist the finished assistant turn (mirrors the legacy sendMessage write). */
+async function persistAssistant(
+  convId: string,
+  text: string,
+  rawToolCalls: { name: string; input: unknown }[],
+  writeToolToOpId: Map<string, string>,
+) {
+  const answer = text.trim() || "(no answer)";
+  const html = renderMarkdown(answer);
+  const proposals = buildAssistantProposals(rawToolCalls, writeToolToOpId);
+  await db.aiMessage.create({
+    data: {
+      conversationId: convId,
+      role: "assistant",
+      content: answer,
+      html,
+      toolCalls: JSON.stringify(rawToolCalls),
+      proposals: proposals.length ? JSON.stringify(proposals) : null,
+    },
+  });
+  // Bump updatedAt so the rail re-sorts this conversation to the top.
+  await db.aiConversation.update({ where: { id: convId }, data: {} });
+}
+
+/** Concatenate the text parts of a finished UI assistant message. */
+function textOf(message: UIMessage): string {
+  return (message.parts ?? [])
+    .filter((p): p is { type: "text"; text: string } => p.type === "text")
+    .map((p) => p.text)
+    .join("");
+}
+
+/** Extract the new turn (text + attachments) from a client UI user message. */
+function extractTurn(message: UIMessage | undefined): { content: string; uploads: UploadedAttachment[] } {
+  const parts = message?.parts ?? [];
+  const content = parts
+    .filter((p): p is { type: "text"; text: string } => p.type === "text")
+    .map((p) => p.text)
+    .join("")
+    .trim();
+  const uploads = parts
+    .filter((p) => p.type === "file")
+    .map((p) => {
+      const fp = p as { mediaType?: string; filename?: string; url?: string };
+      return {
+        name: fp.filename ?? "file",
+        type: fp.mediaType ?? "",
+        size: 0,
+        dataUrl: String(fp.url ?? ""),
+      };
+    });
+  return { content, uploads };
+}
+
+export async function POST(req: Request) {
+  const me = await getActingAgent();
+  if (!me) return new Response("Not authorised", { status: 401 });
+
+  if (!(await aiConfigured())) {
+    return new Response("AI is not configured.", { status: 400 });
+  }
+
+  let body: {
+    conversationId?: string;
+    messages?: UIMessage[];
+    context?: { ticketId?: number };
+  };
+  try {
+    body = await req.json();
+  } catch {
+    return new Response("Bad request", { status: 400 });
+  }
+
+  const conversationId = String(body.conversationId ?? "");
+  if (!conversationId) return new Response("Missing conversationId", { status: 400 });
+
+  // assistant-ui / useChat posts the full messages array; the new turn is the
+  // last user message. We rebuild history server-side from the DB regardless.
+  const msgs = Array.isArray(body.messages) ? body.messages : [];
+  const lastUser = [...msgs].reverse().find((m) => m.role === "user");
+  const { content, uploads: rawUploads } = extractTurn(lastUser);
+  const uploads = sanitizeUploads(rawUploads);
+  if (!content && uploads.length === 0) {
+    return new Response("Nothing to send.", { status: 400 });
+  }
+
+  let prepared: PreparedTurn;
+  try {
+    prepared = await prepareAssistantTurn({
+      me,
+      conversationId,
+      content,
+      uploads,
+      context: body.context,
+    });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : "Could not prepare the chat.";
+    return new Response(msg, { status: msg === "Not authorised" ? 403 : 400 });
+  }
+
+  const provider = await currentProvider();
+
+  /* ── claude-code: buffered, emitted as a single uniform UI message stream ── */
+  if (provider === "claude-code") {
+    const stream = createUIMessageStream<UIMessage>({
+      execute: async ({ writer }) => {
+        let text = "(no answer)";
+        let rawToolCalls: { name: string; input: unknown }[] = [];
+        try {
+          const result = await generateAiChat({
+            system: prepared.system,
+            messages: prepared.messages,
+            tools: prepared.tools,
+            maxSteps: 10,
+          });
+          text = result.text || "(no answer)";
+          rawToolCalls = result.toolCalls ?? [];
+        } catch (e) {
+          text = e instanceof Error ? `⚠️ ${e.message}` : "⚠️ The AI request failed.";
+        }
+        // The buffered CLI path has no native tool streaming — synthesise the
+        // tool parts so assistant-ui renders read-tool activity + the
+        // approve-first proposal cards. Order = read tools → answer → proposals,
+        // so the approval cards sit BELOW the assistant's reply.
+        rawToolCalls.forEach((tc, i) => {
+          if (prepared.writeToolToOpId.has(tc.name)) return; // read tools only here
+          const toolCallId = `t${i}`;
+          writer.write({
+            type: "tool-input-available",
+            toolCallId,
+            toolName: tc.name,
+            input: (tc.input ?? {}) as unknown,
+          });
+          writer.write({ type: "tool-output-available", toolCallId, output: { ok: true } });
+        });
+
+        writer.write({ type: "text-start", id: TEXT_ID });
+        writer.write({ type: "text-delta", id: TEXT_ID, delta: text });
+        writer.write({ type: "text-end", id: TEXT_ID });
+
+        rawToolCalls.forEach((tc, i) => {
+          const operationId = prepared.writeToolToOpId.get(tc.name);
+          if (!operationId) return; // propose_* tools only → cards below the answer
+          const toolCallId = `t${i}`;
+          const op = findOperation(operationId);
+          const args = (tc.input ?? {}) as Record<string, unknown>;
+          writer.write({
+            type: "tool-input-available",
+            toolCallId,
+            toolName: tc.name,
+            input: args as unknown,
+          });
+          writer.write({
+            type: "tool-output-available",
+            toolCallId,
+            output: {
+              ok: true,
+              proposal: {
+                id: operationId,
+                operationId,
+                args,
+                label: op?.label ? op.label(args) : operationId,
+              },
+            },
+          });
+        });
+        const proposals = buildAssistantProposals(rawToolCalls, prepared.writeToolToOpId);
+        writer.write({
+          type: "message-metadata",
+          messageMetadata: { proposals, toolCalls: rawToolCalls } satisfies VioMetadata,
+        });
+        await persistAssistant(prepared.conv.id, text, rawToolCalls, prepared.writeToolToOpId);
+      },
+      onError: (e) => (e instanceof Error ? e.message : "The AI request failed."),
+    });
+    return createUIMessageStreamResponse({ stream });
+  }
+
+  /* ── ai-sdk providers: real token streaming ── */
+  const rawToolCalls: { name: string; input: unknown }[] = [];
+
+  // Local Ollama is frequently text-only; drop image/PDF parts to the text
+  // fallback so a vision payload doesn't fail the whole stream mid-flight.
+  if (prepared.hasBinaryParts && provider === "ollama" && prepared.messages.length > 0) {
+    prepared.messages[prepared.messages.length - 1] = {
+      role: "user",
+      content: prepared.built.text,
+    };
+  }
+
+  const result = streamText({
+    model: await resolveChatModel(),
+    system: prepared.system,
+    messages: prepared.messages,
+    tools: prepared.tools,
+    stopWhen: stepCountIs(10),
+    maxOutputTokens: await chatMaxOutputTokens(),
+    onStepFinish: ({ toolCalls }) => {
+      for (const tc of toolCalls) {
+        rawToolCalls.push({ name: tc.toolName, input: (tc as { input?: unknown }).input });
+      }
+    },
+  });
+
+  return result.toUIMessageStreamResponse<UIMessage<VioMetadata>>({
+    messageMetadata: ({ part }) => {
+      if (part.type === "finish") {
+        return {
+          proposals: buildAssistantProposals(rawToolCalls, prepared.writeToolToOpId),
+          toolCalls: rawToolCalls,
+        };
+      }
+      return undefined;
+    },
+    onFinish: async ({ responseMessage }) => {
+      await persistAssistant(
+        prepared.conv.id,
+        textOf(responseMessage),
+        rawToolCalls,
+        prepared.writeToolToOpId,
+      );
+    },
+    onError: (e) => (e instanceof Error ? e.message : "The AI request failed."),
+  });
+}

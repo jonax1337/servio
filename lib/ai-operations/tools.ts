@@ -53,7 +53,17 @@ export function buildOperationTools(
             return { ok: false, error: parsed.error.issues.map((i) => i.message).join("; ") };
           }
           const data = parsed.data as Record<string, unknown>;
-          return { ok: true, proposed: op.label ? op.label(data) : `${op.id} (awaiting approval)` };
+          // Return the full proposal as the tool result so the client tool-UI
+          // can render an approval card directly (no mutation happens here).
+          return {
+            ok: true,
+            proposal: {
+              id: op.id,
+              operationId: op.id,
+              args: data,
+              label: op.label ? op.label(data) : op.id,
+            },
+          };
         },
       });
     }

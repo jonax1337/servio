@@ -16,7 +16,6 @@ import {
   Zap,
   MapPin,
   ShoppingBag,
-  Sparkles,
 } from "lucide-react";
 
 export type NavItem = {
@@ -33,7 +32,6 @@ export const consoleNav: NavGroup[] = [
     label: "Overview",
     items: [
       { title: "Dashboard", href: "/", icon: LayoutDashboard },
-      { title: "Vio", href: "/assistant", icon: Sparkles, minRole: "AGENT" },
     ],
   },
   {

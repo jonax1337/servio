@@ -7,7 +7,7 @@ export function TypingDots() {
       {[0, 1, 2].map((i) => (
         <span
           key={i}
-          className="size-2 animate-bounce rounded-full bg-violet-500 motion-reduce:animate-none"
+          className="size-1.5 animate-bounce rounded-full bg-vio motion-reduce:animate-none"
           style={{ animationDelay: `${i * 0.15}s` }}
         />
       ))}

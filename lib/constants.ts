@@ -115,7 +115,7 @@ export const RESOLUTION_CODE_META: Record<string, Meta> = {
 };
 
 /** The AI assistant's name — used consistently across chat, triage, and prompts. */
-export const AI_ASSISTANT_NAME = "Vio";
+export const AI_ASSISTANT_NAME = "Sable";
 
 /** Scope of a standalone Vio conversation (String-enum strategy). */
 export const AI_SCOPES = ["GENERAL", "ADMIN"] as const;
@@ -149,7 +149,7 @@ export const TICKET_SOURCES = [
 ] as const;
 export const SOURCE_META: Record<string, Meta> = {
   PORTAL: { label: "Portal", tone: "info" },
-  VIO: { label: "Vio", tone: "purple", icon: Sparkle },
+  VIO: { label: AI_ASSISTANT_NAME, tone: "neutral", icon: Sparkle },
   EMAIL: { label: "Email", tone: "purple" },
   PHONE: { label: "Phone", tone: "indigo" },
   API: { label: "API", tone: "neutral" },

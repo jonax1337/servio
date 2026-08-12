@@ -67,15 +67,15 @@ function EditProp({
         searchPlaceholder={searchable ? `Search ${label.toLowerCase()}…` : "Filter…"}
         onChange={onChange}
         className={cn(
-          suggestion && "border-violet-500/40 ring-2 ring-violet-500/40",
+          suggestion && "border-vio/40 ring-2 ring-vio/30",
           !suggestion && dirty && "border-amber-500/40 ring-2 ring-amber-500/40",
         )}
       />
       {suggestion ? (
-        <div className="flex items-center gap-1 rounded-md border border-violet-500/25 bg-violet-500/[0.06] px-2 py-1">
-          <Sparkles className="size-3 shrink-0 text-violet-500" />
-          <span className="min-w-0 flex-1 truncate text-xs text-violet-600 dark:text-violet-300">{suggestion.label}</span>
-          <Button type="button" size="xs" className="h-5 shrink-0 px-1.5" onClick={onApply}>Apply</Button>
+        <div className="flex items-center gap-1 rounded-md border bg-vio-muted/50 px-2 py-1">
+          <Sparkles className="size-3 shrink-0 text-vio" />
+          <span className="min-w-0 flex-1 truncate text-xs text-foreground/80">{suggestion.label}</span>
+          <Button type="button" size="xs" className="h-5 shrink-0 bg-vio px-1.5 text-vio-foreground hover:bg-vio/90" onClick={onApply}>Apply</Button>
           <Button type="button" size="xs" variant="ghost" className="h-5 shrink-0 px-1.5 text-muted-foreground" onClick={onDismiss}>
             Dismiss
           </Button>

@@ -3,6 +3,7 @@ import { getSessionUser } from "@/lib/session";
 import { aiConfigured } from "@/lib/ai";
 import { runPortalAssistant, type ChatAttachment } from "@/lib/portal-assistant";
 import { renderMarkdown } from "@/lib/markdown";
+import { AI_ASSISTANT_NAME } from "@/lib/constants";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -71,7 +72,7 @@ export async function POST(req: Request) {
   } catch (err) {
     console.error("[portal-assistant]", err);
     return NextResponse.json(
-      { error: "Vio ran into a problem answering that. Please try again, or open a request." },
+      { error: `${AI_ASSISTANT_NAME} ran into a problem answering that. Please try again, or open a request.` },
       { status: 500 },
     );
   }

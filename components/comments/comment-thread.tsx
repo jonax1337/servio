@@ -163,7 +163,7 @@ function AiSummaryBox({
   onAddAsInternal: (html: string) => void;
 }) {
   return (
-    <div className="relative rounded-xl border border-violet-500/30 bg-gradient-to-br from-violet-500/[0.06] to-fuchsia-500/[0.06] p-3">
+    <div className="relative rounded-xl border border-vio/25 bg-vio-muted/40 p-3">
       {summary && !pending ? (
         <button
           type="button"
@@ -181,7 +181,7 @@ function AiSummaryBox({
       ) : summary ? (
         <>
           <div
-            className="prose prose-sm max-w-none pr-6 dark:prose-invert prose-p:my-1.5 prose-ul:my-1.5 prose-li:my-0.5 prose-a:font-medium prose-a:text-violet-600 dark:prose-a:text-violet-400"
+            className="prose prose-sm max-w-none pr-6 dark:prose-invert prose-p:my-1.5 prose-ul:my-1.5 prose-li:my-0.5 prose-a:font-medium prose-a:text-foreground prose-a:underline prose-a:underline-offset-2"
             dangerouslySetInnerHTML={{ __html: summary.html }}
           />
           <div className="mt-2.5 flex justify-end">

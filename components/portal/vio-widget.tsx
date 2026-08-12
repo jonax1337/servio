@@ -2,9 +2,22 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Sparkles, X, ArrowUp, Loader2, AlertCircle, Send, Check, ImagePlus, MessageSquare } from "lucide-react";
+import { X, ArrowUp, Loader2, AlertCircle, Send, Check, ImagePlus, MessageSquare } from "lucide-react";
 import { iconForMime, formatBytes, MAX_UPLOAD_BYTES } from "@/lib/attachments-ui";
 import { cn } from "@/lib/utils";
+import { AI_ASSISTANT_NAME } from "@/lib/constants";
+import { Button } from "@/components/ui/button";
+import { Message, MessageContent } from "@/components/chatcn/ai/message";
+import { Markdown } from "@/components/chatcn/ai/markdown";
+import { TypingDots } from "@/components/assistant/typing-dots";
+import {
+  SableFab,
+  SableHeader,
+  SABLE_PANEL_FRAME,
+  SABLE_MIN_SIZE,
+  SABLE_ENTER,
+  SABLE_EXIT,
+} from "@/components/assistant/sable-chrome";
 
 type TicketProposal = {
   kind: "ticket";
@@ -98,6 +111,7 @@ export function VioWidget({
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
+  const [closing, setClosing] = useState(false);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [proposal, setProposal] = useState<Proposal | null>(null);
@@ -107,7 +121,7 @@ export function VioWidget({
   const [messages, setMessages] = useState<Msg[]>([
     {
       role: "assistant",
-      text: `Hi ${firstName}! I'm Vio. Ask me anything, attach a screenshot of an error, and I'll find an answer, point you to the right service, or open a request for you.`,
+      text: `Hi ${firstName}! I'm ${AI_ASSISTANT_NAME}. Ask me anything, attach a screenshot of an error, and I'll find an answer, point you to the right service, or open a request for you.`,
     },
   ]);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -192,7 +206,7 @@ export function VioWidget({
           ...m,
           {
             role: "assistant",
-            text: "Vio isn't switched on yet — ask your administrator to enable the AI assistant. In the meantime, you can browse answers or open a request.",
+            text: `${AI_ASSISTANT_NAME} isn't switched on yet — ask your administrator to enable the AI assistant. In the meantime, you can browse answers or open a request.`,
           },
         ]);
       } else if (data.html) {
@@ -255,97 +269,79 @@ export function VioWidget({
     }
   }
 
+  const handleClose = () => {
+    setClosing(true);
+    window.setTimeout(() => {
+      setClosing(false);
+      setOpen(false);
+    }, 160);
+  };
+
   return (
     <>
-      {/* Launcher */}
-      <button
-        type="button"
-        onClick={() => setOpen((o) => !o)}
-        aria-label={open ? "Close Vio" : "Ask Vio"}
-        className={cn(
-          "fixed bottom-5 right-5 z-40 flex h-14 items-center gap-2 rounded-full bg-primary pl-4 pr-5 text-primary-foreground shadow-lg shadow-primary/25 transition-all hover:brightness-105 active:scale-95",
-          open && "pointer-events-none scale-90 opacity-0",
-        )}
-      >
-        <Sparkles className="size-5" />
-        <span className="text-sm font-semibold">Ask Vio</span>
-      </button>
+      {/* Launcher — icon-only, identical to the console FAB (no label). */}
+      {!open ? <SableFab onClick={() => setOpen(true)} /> : null}
 
-      {/* Panel */}
-      <div
-        role="dialog"
-        aria-label="Vio assistant"
-        aria-hidden={!open}
-        className={cn(
-          "fixed bottom-5 right-5 z-50 flex max-h-[min(72vh,580px)] w-[calc(100vw-2.5rem)] flex-col overflow-hidden rounded-3xl border bg-popover shadow-2xl transition-all sm:w-[24rem]",
-          open ? "translate-y-0 opacity-100" : "pointer-events-none translate-y-3 opacity-0",
-        )}
-      >
-        {/* Header */}
-        <div className="flex items-center gap-3 border-b bg-card/60 px-4 py-3">
-          <span className="grid size-9 place-items-center rounded-xl bg-gradient-to-br from-primary to-primary/70 text-primary-foreground">
-            <Sparkles className="size-4.5" />
-          </span>
-          <div className="min-w-0 flex-1">
-            <p className="flex items-center gap-1.5 text-sm font-semibold leading-none">
-              Vio
-              {previewOnly ? (
-                <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
-                  Preview
-                </span>
-              ) : null}
-            </p>
-            <p className="mt-1 text-xs text-muted-foreground">Help Center assistant</p>
-          </div>
-          <button
-            type="button"
-            onClick={() => setOpen(false)}
-            aria-label="Close"
-            className="grid size-8 place-items-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+      {/* Window — the same small card as the console; no maximised state here. */}
+      {open ? (
+        <div className="pointer-events-none fixed inset-0 z-50 flex items-end justify-end p-4">
+          <div
+            role="dialog"
+            aria-label={`${AI_ASSISTANT_NAME} assistant`}
+            className={cn(
+              "pointer-events-auto relative",
+              SABLE_PANEL_FRAME,
+              SABLE_MIN_SIZE,
+              closing ? SABLE_EXIT : SABLE_ENTER,
+            )}
           >
-            <X className="size-4" />
-          </button>
-        </div>
+            <SableHeader
+              subtitle="Help Center assistant"
+              extra={
+                previewOnly ? (
+                  <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+                    Preview
+                  </span>
+                ) : null
+              }
+            >
+              <Button type="button" variant="ghost" size="icon-sm" onClick={handleClose} aria-label="Close">
+                <X className="size-4" />
+              </Button>
+            </SableHeader>
 
         {/* Messages */}
         <div ref={scrollRef} className="flex-1 space-y-3 overflow-y-auto px-4 py-4">
           {messages.map((m, i) =>
             m.role === "user" ? (
-              <div key={i} className="flex flex-col items-end gap-1.5">
-                {m.images && m.images.length > 0 ? (
-                  <div className="flex flex-wrap justify-end gap-1.5">
-                    {m.images.map((src, k) => (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img key={k} src={src} alt="" className="size-20 rounded-xl border object-cover" />
-                    ))}
-                  </div>
-                ) : null}
-                <div className="max-w-[85%] rounded-2xl rounded-br-md bg-primary px-3.5 py-2 text-sm text-primary-foreground">
+              <Message key={i} variant="user">
+                <MessageContent className="bg-vio text-vio-foreground">
+                  {m.images && m.images.length > 0 ? (
+                    <div className="mb-1.5 flex flex-wrap justify-end gap-1.5">
+                      {m.images.map((src, k) => (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img key={k} src={src} alt="" className="size-20 rounded-lg border object-cover" />
+                      ))}
+                    </div>
+                  ) : null}
                   {m.text}
-                </div>
-              </div>
+                </MessageContent>
+              </Message>
             ) : (
-              <div key={i} className="flex">
-                {m.html ? (
-                  <div
-                    className="max-w-[88%] rounded-2xl rounded-bl-md bg-muted/70 px-3.5 py-2.5 text-sm leading-relaxed prose prose-sm dark:prose-invert prose-p:my-1.5 prose-a:text-primary prose-a:font-medium prose-ul:my-1.5"
-                    dangerouslySetInnerHTML={{ __html: m.html }}
-                  />
-                ) : (
-                  <p className="max-w-[88%] rounded-2xl rounded-bl-md bg-muted/70 px-3.5 py-2.5 text-sm leading-relaxed">
-                    {m.text}
-                  </p>
-                )}
-              </div>
+              <Message key={i} variant="ai">
+                <MessageContent className="bg-transparent p-0 text-foreground">
+                  <Markdown>{m.text}</Markdown>
+                </MessageContent>
+              </Message>
             ),
           )}
 
           {loading ? (
-            <div className="flex">
-              <span className="flex items-center gap-1 rounded-2xl rounded-bl-md bg-muted/70 px-3.5 py-3">
-                <Dot /> <Dot delay="150ms" /> <Dot delay="300ms" />
-              </span>
-            </div>
+            <Message variant="ai">
+              <MessageContent className="bg-transparent p-0">
+                <TypingDots />
+              </MessageContent>
+            </Message>
           ) : null}
 
           {/* Draft request confirm card */}
@@ -355,9 +351,9 @@ export function VioWidget({
                 <>
                   <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
                     {proposal.type === "INCIDENT" ? (
-                      <AlertCircle className="size-3.5 text-primary" />
+                      <AlertCircle className="size-3.5 text-vio" />
                     ) : (
-                      <Send className="size-3.5 text-primary" />
+                      <Send className="size-3.5 text-vio" />
                     )}
                     {proposal.type === "INCIDENT" ? "New issue" : "New request"} · {titleCase(proposal.priority)} priority
                     {proposal.categoryName ? ` · ${proposal.categoryName}` : ""}
@@ -375,7 +371,7 @@ export function VioWidget({
               ) : proposal.kind === "comment" ? (
                 <>
                   <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
-                    <MessageSquare className="size-3.5 text-primary" />
+                    <MessageSquare className="size-3.5 text-vio" />
                     Reply to {proposal.ref}
                   </div>
                   <p className="mt-1.5 text-sm">{proposal.body}</p>
@@ -383,7 +379,7 @@ export function VioWidget({
               ) : (
                 <>
                   <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
-                    <Send className="size-3.5 text-primary" />
+                    <Send className="size-3.5 text-vio" />
                     Catalog request{proposal.requiresApproval ? " · needs approval" : ""}
                   </div>
                   <p className="mt-1.5 text-sm font-medium">{proposal.itemName}</p>
@@ -406,7 +402,7 @@ export function VioWidget({
                   type="button"
                   onClick={createRequest}
                   disabled={creating}
-                  className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground transition-opacity disabled:opacity-50"
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-vio px-3 py-1.5 text-xs font-semibold text-vio-foreground transition-opacity hover:bg-vio/90 disabled:opacity-50"
                 >
                   {creating ? <Loader2 className="size-3.5 animate-spin" /> : <Check className="size-3.5" />}
                   {proposal.kind === "service" ? "Submit request" : proposal.kind === "comment" ? "Post reply" : "Create request"}
@@ -431,7 +427,7 @@ export function VioWidget({
                   key={s}
                   type="button"
                   onClick={() => send(s)}
-                  className="rounded-full border bg-card px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground"
+                  className="rounded-lg border bg-card px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
                 >
                   {s}
                 </button>
@@ -472,7 +468,7 @@ export function VioWidget({
           ) : null}
           {attachError ? <p className="mb-1.5 px-1 text-xs text-destructive">{attachError}</p> : null}
 
-          <div className="flex items-end gap-1.5 rounded-2xl border bg-card px-2 py-2 focus-within:border-primary/50 focus-within:ring-4 focus-within:ring-primary/10">
+          <div className="flex items-end gap-1.5 rounded-lg border bg-card px-2 py-2 focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/40">
             <button
               type="button"
               onClick={() => fileRef.current?.click()}
@@ -494,36 +490,29 @@ export function VioWidget({
                   send(input);
                 }
               }}
-              placeholder="Ask Vio, or attach a screenshot…"
+              placeholder={`Ask ${AI_ASSISTANT_NAME}, or attach a screenshot…`}
               className="max-h-28 flex-1 resize-none bg-transparent py-1 text-sm outline-none placeholder:text-muted-foreground"
             />
             <button
               type="submit"
               disabled={(!input.trim() && attachments.length === 0) || loading || attachments.some((a) => a.uploading)}
               aria-label="Send"
-              className="grid size-8 shrink-0 place-items-center rounded-lg bg-primary text-primary-foreground transition-opacity disabled:opacity-40"
+              className="grid size-8 shrink-0 place-items-center rounded-lg bg-vio text-vio-foreground transition-opacity hover:bg-vio/90 disabled:opacity-40"
             >
               {loading ? <Loader2 className="size-4 animate-spin" /> : <ArrowUp className="size-4" />}
             </button>
           </div>
           <p className="mt-1.5 px-1 text-center text-[11px] text-muted-foreground">
-            Vio can make mistakes. Check important details.
+            {AI_ASSISTANT_NAME} can make mistakes. Check important details.
           </p>
         </form>
-      </div>
+          </div>
+        </div>
+      ) : null}
     </>
   );
 }
 
 function titleCase(s: string) {
   return s.charAt(0) + s.slice(1).toLowerCase();
-}
-
-function Dot({ delay = "0ms" }: { delay?: string }) {
-  return (
-    <span
-      className="size-1.5 animate-bounce rounded-full bg-muted-foreground/60"
-      style={{ animationDelay: delay }}
-    />
-  );
 }
