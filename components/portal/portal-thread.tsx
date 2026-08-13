@@ -1,12 +1,12 @@
 "use client";
 
 import { createContext, useContext, useMemo } from "react";
-import { Sparkles } from "lucide-react";
 import { AssistantRuntimeProvider } from "@assistant-ui/react";
 import { useChatRuntime, AssistantChatTransport } from "@assistant-ui/react-ai-sdk";
 import type { UIMessage } from "@ai-sdk/react";
 import { Thread } from "@/components/thread";
 import { AI_ASSISTANT_NAME } from "@/lib/constants";
+import { SableMark } from "@/components/sable-mark";
 import { useSableChatAdapters } from "@/components/assistant/sable-adapters";
 import { PortalToolUI } from "./portal-tool-ui";
 
@@ -27,7 +27,7 @@ function PortalWelcome() {
   return (
     <div className="aui-thread-welcome-root mb-6 flex flex-col items-center gap-3 px-4 text-center">
       <span className="grid size-11 place-items-center rounded-xl bg-sable text-sable-foreground">
-        <Sparkles className="size-5" />
+        <SableMark className="size-6" />
       </span>
       <h1 className="fade-in slide-in-from-bottom-1 animate-in fill-mode-both text-xl font-semibold duration-200">
         Hi {firstName}! I&apos;m {AI_ASSISTANT_NAME}.

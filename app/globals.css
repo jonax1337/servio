@@ -196,6 +196,51 @@
     box-shadow: 0 0 0 1px color-mix(in oklch, var(--primary) 20%, transparent),
       0 8px 30px -12px color-mix(in oklch, var(--primary) 45%, transparent);
   }
+
+  /* Sable — a minimal, glossy iridescent "rainbow" accent for its controls.
+     A soft multi-hue halo for the floating launcher, and a hairline gradient
+     ring (drawn on ::after via a mask, so it works over any button background)
+     for the in-ticket AI buttons. */
+  .sable-glow {
+    box-shadow:
+      0 4px 14px -4px rgb(0 0 0 / 0.22),
+      0 0 16px -3px oklch(0.72 0.19 300 / 0.4),
+      0 10px 26px -8px oklch(0.68 0.17 255 / 0.42),
+      0 10px 26px -10px oklch(0.78 0.14 195 / 0.4),
+      0 6px 18px -8px oklch(0.75 0.17 350 / 0.4);
+  }
+  .sable-glow:hover {
+    box-shadow:
+      0 6px 18px -4px rgb(0 0 0 / 0.25),
+      0 0 22px -3px oklch(0.72 0.2 300 / 0.5),
+      0 12px 30px -8px oklch(0.68 0.18 255 / 0.52),
+      0 12px 30px -10px oklch(0.78 0.15 195 / 0.5),
+      0 8px 22px -8px oklch(0.75 0.18 350 / 0.5);
+  }
+  .sable-rainbow-border {
+    position: relative;
+  }
+  .sable-rainbow-border::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    padding: 1px;
+    background: linear-gradient(
+      120deg,
+      oklch(0.72 0.15 300),
+      oklch(0.72 0.14 250),
+      oklch(0.78 0.12 195),
+      oklch(0.77 0.15 340)
+    );
+    -webkit-mask:
+      linear-gradient(#000 0 0) content-box,
+      linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+    mask-composite: exclude;
+    pointer-events: none;
+    opacity: 0.85;
+  }
 }
 
 /* thin, tasteful scrollbars */

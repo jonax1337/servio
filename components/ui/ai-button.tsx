@@ -14,7 +14,7 @@ function AiButton({ className, ...props }: React.ComponentProps<typeof Button>) 
       variant="outline"
       size="sm"
       className={cn(
-        "border-sable/25 bg-sable-muted/50 text-foreground hover:bg-sable-muted hover:text-foreground",
+        "sable-rainbow-border border-sable/25 bg-sable-muted/50 text-foreground hover:bg-sable-muted hover:text-foreground",
         className,
       )}
       {...props}

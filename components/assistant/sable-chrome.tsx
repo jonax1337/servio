@@ -1,9 +1,9 @@
 "use client";
 
 import { type ReactNode } from "react";
-import { Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { AI_ASSISTANT_NAME } from "@/lib/constants";
+import { SableMark } from "@/components/sable-mark";
 
 /**
  * Shared Sable window chrome, so the console min-card and the self-service
@@ -51,13 +51,13 @@ export function SableFab({
       aria-label={ariaLabel ?? `Open ${AI_ASSISTANT_NAME}${beta ? " (Beta)" : ""}`}
       onClick={onClick}
       className={cn(
-        "fixed bottom-4 right-4 z-40 grid size-12 place-items-center rounded-xl",
-        "bg-sable text-sable-foreground shadow-lg",
+        "sable-glow fixed bottom-4 right-4 z-40 grid size-12 place-items-center rounded-xl",
+        "bg-sable text-sable-foreground",
         "duration-200 animate-in zoom-in-50 fade-in",
-        "transition-transform hover:scale-105 active:scale-95",
+        "transition-[transform,box-shadow] hover:scale-105 active:scale-95",
       )}
     >
-      <Sparkles className="size-5" />
+      <SableMark className="size-7" />
       {beta ? (
         <span className="bg-background text-sable border-border absolute -right-1.5 -top-1.5 rounded-full border px-1 py-px text-[8px] font-semibold uppercase leading-none tracking-wide shadow-sm">
           Beta
@@ -85,8 +85,8 @@ export function SableHeader({
 }) {
   return (
     <header className="flex items-center gap-2.5 border-b px-3 py-2.5">
-      <span className="grid size-7 shrink-0 place-items-center rounded-lg bg-sable text-sable-foreground">
-        <Sparkles className="size-4" />
+      <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-sable text-sable-foreground">
+        <SableMark className="size-5" />
       </span>
       <div className="min-w-0">
         <div className="flex items-center gap-1.5">

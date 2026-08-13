@@ -1,10 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import { X, Sparkles } from "lucide-react";
+import { X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { AI_ASSISTANT_NAME } from "@/lib/constants";
+import { SableMark } from "@/components/sable-mark";
 import {
   SableFab,
   SableHeader,
@@ -91,7 +92,7 @@ export function SableWidget({
             {previewOnly ? (
               <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 p-6 text-center">
                 <span className="grid size-12 place-items-center rounded-xl bg-sable text-sable-foreground">
-                  <Sparkles className="size-6" />
+                  <SableMark className="size-7" />
                 </span>
                 <p className="max-w-xs text-sm text-muted-foreground">
                   {AI_ASSISTANT_NAME} is a preview here — ask your administrator to enable the AI

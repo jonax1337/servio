@@ -2,7 +2,8 @@
 
 import { useRef, useState, useTransition, type ReactNode } from "react";
 import { useFormStatus } from "react-dom";
-import { Lock, Send, Loader2, MessageSquare, Activity as ActivityIcon, Sparkles, Wand2, FileText, X, Forward } from "lucide-react";
+import { Lock, Send, Loader2, MessageSquare, Activity as ActivityIcon, Wand2, FileText, X, Forward } from "lucide-react";
+import { SableMark } from "@/components/sable-mark";
 import { toast } from "sonner";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
@@ -121,7 +122,7 @@ function AiComposerButtons({
   return (
     <div className="flex items-center gap-1.5">
       <AiButton type="button" onClick={onDraft} disabled={pending}>
-        {pending && busy === "draft" ? <Loader2 className="size-4 animate-spin" /> : <Sparkles className="size-4" />}
+        {pending && busy === "draft" ? <Loader2 className="size-4 animate-spin" /> : <SableMark className="size-4" />}
         Suggest reply
       </AiButton>
       <AiButton type="button" onClick={onImprove} disabled={pending} title="Improves your whole draft, or just the selected text">
