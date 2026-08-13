@@ -88,7 +88,11 @@ export async function POST(req: Request) {
     messages[lastIdx] = { role: "user", content: buildUserParts(text, attachments) } as ModelMessage;
   }
 
-  const tools = buildPortalTools(me.id);
+  // Slim files that ride along on the propose_* tool result (ai-sdk path) so the
+  // confirm card can link them to the ticket; the claude-code branch below injects
+  // the same shape itself.
+  const slimAttachments = attachments.map((a) => ({ name: a.name, type: a.type, dataUrl: a.dataUrl }));
+  const tools = buildPortalTools(me.id, slimAttachments);
   const provider = await currentProvider();
 
   /* ── claude-code: buffered, tool parts synthesised (read tools → answer → drafts) ── */
@@ -123,13 +127,12 @@ export async function POST(req: Request) {
           const toolCallId = `t${i}`;
           // Carry the turn's attachments on the draft so the confirm card can link
           // them to the ticket it creates (the runtime is ephemeral — no staging).
-          const outAttachments = attachments.map((a) => ({ name: a.name, type: a.type, dataUrl: a.dataUrl }));
           writer.write({ type: "tool-input-available", toolCallId, toolName: tc.name, input: (tc.input ?? {}) as unknown });
           writer.write({
             type: "tool-output-available",
             toolCallId,
             output: proposal
-              ? { ok: true, proposal, attachments: outAttachments }
+              ? { ok: true, proposal, attachments: slimAttachments }
               : { ok: false, error: "Could not prepare that draft." },
           });
         }
