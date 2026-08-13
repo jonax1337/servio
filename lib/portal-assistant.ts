@@ -122,11 +122,17 @@ function proposeRequestToolFor(attachments: ProposalAttachment[]) {
       urgency: z.enum(IMPACT_URGENCY).describe("how time-sensitive: LOW = whenever, MEDIUM = soon, HIGH = blocking work now"),
       description: z.string().describe("a clear description of the problem or request in the user's words"),
       categoryId: z.string().optional().describe("best-matching category id from list_categories, if any"),
+      attachFiles: z
+        .boolean()
+        .optional()
+        .describe(
+          "Whether to attach the user's current screenshot(s)/file(s) to this request. Defaults to true. Set false ONLY if their attachment is not evidence for THIS request (e.g. it belongs to a different topic).",
+        ),
     }),
     execute: async (input) => {
       const proposal = await buildTicketProposal(input);
       return proposal
-        ? { ok: true, proposal, attachments }
+        ? { ok: true, proposal, attachments: input.attachFiles === false ? [] : attachments }
         : { ok: false, error: "I need a clear title and description first." };
     },
   });
@@ -139,11 +145,17 @@ function proposeReplyToolFor(userId: string, attachments: ProposalAttachment[]) 
     inputSchema: z.object({
       ref: z.string().describe("the ticket ref or number, e.g. 'INC-0139'"),
       body: z.string().describe("the reply text to post, in plain language"),
+      attachFiles: z
+        .boolean()
+        .optional()
+        .describe(
+          "Whether to attach the user's current screenshot(s)/file(s) to this reply. Defaults to true. Set false ONLY if their attachment is not relevant to this ticket.",
+        ),
     }),
     execute: async (input) => {
       const proposal = await buildCommentProposal(userId, input);
       return proposal
-        ? { ok: true, proposal, attachments }
+        ? { ok: true, proposal, attachments: input.attachFiles === false ? [] : attachments }
         : { ok: false, error: "I couldn't find that open ticket of yours." };
     },
   });
@@ -158,11 +170,17 @@ function proposeServiceRequestToolFor(attachments: ProposalAttachment[]) {
       answers: z
         .array(z.object({ key: z.string().describe("the field key"), value: z.string().describe("the user's answer") }))
         .describe("one entry per form field you have an answer for"),
+      attachFiles: z
+        .boolean()
+        .optional()
+        .describe(
+          "Whether to attach the user's current screenshot(s)/file(s) to this order. Defaults to true. Set false ONLY if their attachment is not relevant to this service request.",
+        ),
     }),
     execute: async (input) => {
       const proposal = await buildServiceProposal(input);
       return proposal
-        ? { ok: true, proposal, attachments }
+        ? { ok: true, proposal, attachments: input.attachFiles === false ? [] : attachments }
         : { ok: false, error: "That service isn't available or is missing required answers." };
     },
   });
@@ -291,7 +309,7 @@ What you can do, in order of preference:
 4. OPEN A REQUEST: if the issue needs a person and isn't a catalog service, gather a clear title and short description, optionally call list_categories to pick a fitting categoryId, then call propose_request. Use INCIDENT for problems, REQUEST to obtain something. Judge impact (how many people are affected: just them, a team, or many) and urgency (how time-sensitive it is) from what the user tells you, and set priority accordingly (MEDIUM by default; CRITICAL only for outages or many blocked users). If a knowledge-base article is relevant to the issue, reference it in the description (its markdown link) so the assignee has that context.
 5. REPLY TO A TICKET: if the user wants to add information or respond on an existing request of theirs (e.g. "tell them it's still happening"), find it with list_my_tickets/get_my_ticket, then call propose_reply with the ticket ref and the message. Call propose_reply directly once you have the ref and text — do not ask for permission in plain text first; the confirm button the user sees IS the confirmation. It only works on their own open tickets.
 
-Reading attachments: the user can attach screenshots or files. Read any attached image (e.g. an error dialog), quote the exact error text you see, and use it to search_knowledge / web_search for a fix. If it needs a person, propose_request and mention that their attachment will be added to the ticket.
+Reading attachments: the user can attach screenshots or files. Read any attached image (e.g. an error dialog), quote the exact error text you see, and use it to search_knowledge / web_search for a fix. If it needs a person, propose_request and mention that their attachment will be added to the ticket. When you create a request, reply, or order, the user's attached files are linked to it by default — but set attachFiles=false on that call if the attachment is NOT relevant to that particular request (e.g. they attached one screenshot but asked for something unrelated in the same message). Never attach an unrelated file just because it's there.
 
 Hard rules:
 - Only mention articles or services the tools actually returned. Never invent titles, links, ids, or facts.

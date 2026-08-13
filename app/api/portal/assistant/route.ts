@@ -127,12 +127,14 @@ export async function POST(req: Request) {
           const toolCallId = `t${i}`;
           // Carry the turn's attachments on the draft so the confirm card can link
           // them to the ticket it creates (the runtime is ephemeral — no staging).
+          // Honour the model's attachFiles opt-out for an unrelated attachment.
+          const attachFiles = (tc.input as { attachFiles?: boolean } | undefined)?.attachFiles !== false;
           writer.write({ type: "tool-input-available", toolCallId, toolName: tc.name, input: (tc.input ?? {}) as unknown });
           writer.write({
             type: "tool-output-available",
             toolCallId,
             output: proposal
-              ? { ok: true, proposal, attachments: slimAttachments }
+              ? { ok: true, proposal, attachments: attachFiles ? slimAttachments : [] }
               : { ok: false, error: "Could not prepare that draft." },
           });
         }
