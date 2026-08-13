@@ -111,6 +111,7 @@ export function SableWindow({
 
   const header = (
     <SableHeader
+      beta
       subtitle={sable.context?.ticketId ? `Helping with ticket #${sable.context.ticketId}` : undefined}
     >
       <Button type="button" variant="ghost" size="icon-sm" onClick={onNewChat} aria-label="New chat">

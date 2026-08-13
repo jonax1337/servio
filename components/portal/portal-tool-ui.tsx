@@ -7,6 +7,7 @@ import type { ToolCallMessagePartComponent } from "@assistant-ui/react";
 import { ToolFallback } from "@/components/tool-fallback";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { ToolActivityChip, hasToolActivity } from "@/components/assistant/tool-activity";
 import type { RequestProposal } from "@/lib/portal-assistant";
 
 /**
@@ -22,6 +23,15 @@ export const PortalToolUI: ToolCallMessagePartComponent = (props) => {
     if (result?.proposal)
       return <PortalConfirmCard proposal={result.proposal} attachments={result.attachments ?? []} />;
     return null; // still running / unresolved — no generic card
+  }
+  if (hasToolActivity(props.toolName) && props.status?.type !== "incomplete") {
+    return (
+      <ToolActivityChip
+        toolName={props.toolName}
+        args={props.args as Record<string, unknown> | undefined}
+        running={props.status?.type === "running"}
+      />
+    );
   }
   return <ToolFallback {...props} />;
 };

@@ -12,5 +12,5 @@ import { SableFab } from "./sable-chrome";
 export function SableLauncher() {
   const sable = useSable();
   if (sable.state !== "closed") return null;
-  return <SableFab onClick={sable.openLast} />;
+  return <SableFab beta onClick={sable.openLast} />;
 }

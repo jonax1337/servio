@@ -4,6 +4,7 @@ import { createContext, useContext, useState } from "react";
 import type { ToolCallMessagePartComponent } from "@assistant-ui/react";
 import { ToolFallback } from "@/components/tool-fallback";
 import { ProposalCard, type ProposalStatus } from "./proposal-card";
+import { ToolActivityChip, hasToolActivity } from "./tool-activity";
 import type { AssistantProposal } from "@/lib/actions/ai-assistant";
 
 /** Provides the active conversation id to proposal cards (for applyAssistantProposal). */
@@ -36,7 +37,8 @@ function writeState(key: string, v: Persisted) {
 /**
  * Tool UI for the assistant-ui thread: renders Sable's approve-first
  * `ProposalCard` for `propose_*` write tools (whose result carries the
- * proposal), and falls back to the default tool display for read tools.
+ * proposal), a compact branded activity chip for known read tools, and the
+ * default collapsible fallback for anything else (or a read tool that errored).
  */
 export const SableToolUI: ToolCallMessagePartComponent = (props) => {
   if (props.toolName.startsWith("propose_")) {
@@ -44,6 +46,15 @@ export const SableToolUI: ToolCallMessagePartComponent = (props) => {
     if (result?.proposal) return <ProposalTool proposal={result.proposal} />;
     // Still running / not yet resolved — render nothing (no ugly generic card).
     return null;
+  }
+  if (hasToolActivity(props.toolName) && props.status?.type !== "incomplete") {
+    return (
+      <ToolActivityChip
+        toolName={props.toolName}
+        args={props.args as Record<string, unknown> | undefined}
+        running={props.status?.type === "running"}
+      />
+    );
   }
   return <ToolFallback {...props} />;
 };
