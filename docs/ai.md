@@ -1,28 +1,50 @@
-# 🤖 Vio — the built-in AI agent
+# 🤖 Sable — the built-in AI agent
 
-**Vio** is Servio's built-in AI service-desk agent. Unlike a bolt-on chatbot, Vio is wired into
+**Sable** is Servio's built-in AI service-desk agent. Unlike a bolt-on chatbot, Sable is wired into
 the platform's data and its RBAC: it can read your queue, search across the app and the web, and
 **propose concrete changes that you approve with one click** before anything is written.
 
-Vio is **optional and off by default**, **self-hostable** (runs fully local against Ollama), and
+Sable is **optional and off by default**, **self-hostable** (runs fully local against Ollama), and
 **privacy-first** (a hard gate blocks any external provider unless you explicitly opt in). All AI
 runs server-side — provider keys never reach the browser.
 
-See also: [configuration.md](configuration.md#ai-service-agent-vio) for the environment/settings
+> **Naming.** The display name lives in one place — `AI_ASSISTANT_NAME` in `lib/constants.ts`
+> (currently `"Sable"`). The code identifiers, filenames and route (`vio-*`, `Vio*`,
+> `/api/assistant`, `SOURCE_META.VIO`) keep the historical `vio` handle — only the label the user
+> sees changed.
+
+See also: [configuration.md](configuration.md#ai-service-agent-sable) for the environment/settings
 reference, and [architecture.md](architecture.md) for the runtime model.
 
 ---
 
-## Where Vio lives
+## Where Sable lives
+
+There is exactly **one** Sable window in the console. It is mounted once — in
+`app/(console)/layout.tsx` via `<VioProvider>` + `<VioMount>` — so the window (and its active
+conversation and in-flight stream) survive client-side navigation.
 
 | Surface | Location | Audience |
 | --- | --- | --- |
-| Standalone assistant | `app/(console)/assistant/` → route `/assistant` (sidebar item **Vio**, `Sparkles` icon) | Agents+ |
-| Top-bar launcher | `components/assistant/vio-launcher.tsx` (mounted in `components/app-topbar.tsx`) | Agents+ |
+| Global floating window | `<VioMount>` (`components/assistant/vio-mount.tsx`) → the `<VioWindow>` overlay | Agents+ |
+| Floating action button | `SableFab` (`components/assistant/{vio-fab,sable-chrome}.tsx`), bottom-right | Agents+ |
+| Inline route | `app/(console)/assistant/` → route `/assistant` (the same window, `variant="inline"`) | Agents+ |
 
-The assistant is a dual-pane page: a left rail (conversation history + scope switcher) and the
-chat panel. Access requires the **AGENT** role (re-asserted in `app/(console)/assistant/page.tsx`
-and again server-side in every action).
+- **The window is a small state machine** (`components/assistant/vio-provider.tsx`): `closed` → nothing
+  but the FAB; `min` → a small floating chat card; `max` → a large centered window that adds the
+  conversation-history rail. `min` and `max` render the **same** conversation, so
+  expanding/minimising never loses context.
+- **The FAB is the entry point.** The old top-bar launcher is gone; the always-present `SableFab`
+  restores whatever state (min/max) Sable was last left in, with the last conversation reopened.
+- **`/assistant` renders the same window inline** (docked, full-page, no overlay) so the surface stays
+  deep-linkable while sharing the one `<VioProvider>` state. There is no separate standalone shell.
+
+Ticket context is picked up automatically: on a `/tickets/:id` page the provider passes
+`{ ticketId }` so "this ticket"/"summarise it" resolve without typing the ref (a "Sable" link can
+also set an explicit context override).
+
+Access requires the **AGENT** role — re-asserted in `app/(console)/assistant/page.tsx` and again
+server-side in every route/action.
 
 ### Scopes
 
@@ -31,51 +53,73 @@ and again server-side in every action).
 | **General** | All agents | Day-to-day service-desk work: your queue, tickets, KB, records. |
 | **Admin** | Admins only (extra tab) | System-wide stats, settings, and management operations. |
 
-Non-admins only ever get the General scope; the Admin tab is hidden **and** the Admin operations
-are refused server-side. Scope is a property of each conversation (`AiConversation.scope`).
+The scope switch sits at the top of the left rail (above **New chat**). Non-admins only ever get the
+General scope; the Admin tab is hidden **and** the Admin operations are refused server-side. Scope is
+a property of each conversation (`AiConversation.scope`).
 
 ---
 
-## Vio in the self-service portal (end users)
+## The chat engine (assistant-ui)
 
-A separate, **USER-scoped** assistant lives in the help center — a floating **Ask Vio** widget
-(`components/portal/vio-widget.tsx`) mounted in `app/portal/layout.tsx`, gated by the same
-`aiConfigured()` / `aiTeaserEnabled()` switches. It is deliberately smaller and safer than the
-console Vio and shares **none** of the agent tools.
+Sable's chat UI is built on **[assistant-ui](https://www.assistant-ui.com/)** — the packages
+`@assistant-ui/react` + `@assistant-ui/react-ai-sdk`, over AI SDK v7 (`@ai-sdk/react`).
 
-- **Backend:** `lib/portal-assistant.ts` builds a per-request tool set bound to the caller's id
-  (`buildPortalTools(userId)`). Chat runs through `app/api/portal/assistant/route.ts`; drafts are
-  confirmed via `app/api/portal/assistant/create/route.ts`.
-- **Read tools (public / own only):** `search_knowledge` (published **public** articles),
-  `search_catalog`, `list_categories`, `get_service_form`, keyless `web_search` / `fetch_url`, and
-  the caller's **own** tickets — `list_my_tickets` / `get_my_ticket` (public content only; internal
-  notes are excluded by the same `isInternal: false` filter the portal UI uses).
-- **Confirm-first writes:** every `propose_*` only drafts; the widget renders a confirm card and the
-  create route re-validates server-side before acting as the signed-in user:
-  - `propose_request` → `createPortalTicketFor` (routed ticket with type / priority / impact /
-    urgency and an optional category),
-  - `propose_service_request` → `createCatalogRequestFor` (fills a catalog item's dynamic form),
-  - `propose_reply` → `addPortalReply` (a **public** reply on one of the user's own open tickets).
+- The scaffolded base-ui thread is `components/thread.tsx`, with its supporting parts
+  `components/{markdown-text,reasoning,tool-fallback,tool-group,tooltip-icon-button,attachment,follow-up-suggestions}.tsx`.
+- `components/assistant/vio-thread.tsx` wires a `useChatRuntime(AssistantChatTransport)` to the
+  streaming route and renders the `Thread`. It **hydrates history** from the DB (`getConversation`),
+  and creates the conversation **lazily on the first send** (`createConversation`) — so an empty
+  "New chat" never hits the DB or the rail until you actually chat.
+- `components/assistant/vio-tool-ui.tsx` is the thread's `ToolFallback`: it renders read-tool
+  activity via the default `ToolFallback`, and for `propose_*` write tools it renders the
+  approve-first `ProposalCard` (the proposal arrives as the tool's **result**). Approve/dismiss is
+  persisted in `localStorage` (keyed `sable:prop:…`) so a proposal can't be re-approved after the
+  thread re-hydrates.
 
-  Portal/Vio tickets carry `source: "VIO"` (a purple "via Vio" badge, `SOURCE_META.VIO`).
-- **Attachments & vision:** the widget stages files (images / PDF / …, incl. `.eml`) and sends the
-  current turn to a vision-capable model; anything attached is linked onto the ticket Vio opens. On
-  the `claude-code` backend images are passed as real Anthropic content blocks
-  (`lib/claude-cli.ts`) instead of being flattened to text.
-
-The shared creation core (`lib/portal-tickets.ts`) routes catalog requests to the item's
-**service team → category team → Service Desk triage**, runs automations, then auto-assigns; free-form
-tickets default to Service Desk triage. Team ownership on `Service` / `Category` (`groupId`) is
-informational (surfaced to Vio) and only *pre-routes* catalog requests — it never auto-routes
-free-form tickets.
+`components/assistant/vio-window.tsx` frames the thread (header + the max-state rail) and keeps a
+single `<VioThread>` mounted across the min↔max morph so an in-flight stream is never lost.
 
 ---
 
-## What Vio can do
+## The streaming route
 
-Vio's capabilities split cleanly into **read tools** (run immediately) and **write operations**
-(propose-only — see [the approve-first flow](#the-approve-first-flow)). The section above covers the
-portal assistant; the rest of this page describes the **agent console** Vio.
+Chat runs through **`app/api/assistant/chat/route.ts`** (`POST`, AGENT+). It is
+**server-authoritative**: assistant-ui/`useChat` posts the full `messages[]` array, but the route
+ignores that history and **rebuilds context from the DB**, then streams the reply.
+
+The pre-model logic is shared, non-`"use server"` code in **`lib/assistant-core.ts`**:
+
+- `getActingAgent()` — the acting user with a **fresh** role from the DB (never the stale JWT).
+- `prepareAssistantTurn()` — authorise the conversation + scope, persist the user turn, auto-title
+  from the first message, load bounded history (last 16 turns), and assemble system + messages +
+  tools. Returns everything up to (but not including) the model call.
+- `buildUserContent()` / `sanitizeUploads()` — turn uploads into multimodal model content
+  (images → image parts, text files inlined, PDFs → file parts) with a text-only fallback.
+- `generalSystemPrompt` / `adminSystemPrompt` — the per-scope system prompts.
+- `buildAssistantProposals()` — turn `propose_*` tool calls into deduped approval cards.
+
+Streaming itself:
+
+- **ai-sdk providers (anthropic / openai / ollama)** → `streamText` → `toUIMessageStreamResponse`,
+  with real token streaming; proposals ride to the client as message metadata on `finish`, and the
+  finished turn is persisted in `onFinish`.
+- **`claude-code` (subscription CLI)** → buffered `generateAiChat`, emitted as a single uniform UI
+  message stream (read-tool parts, then the answer, then the proposal cards are **synthesised** so
+  the client stays uniform).
+
+`lib/ai.ts` exposes the helpers the route needs: `currentProvider`, `resolveChatModel`,
+`chatMaxOutputTokens` (plus the existing `generateAiChat`).
+
+> **Server actions.** `lib/actions/ai-assistant.ts` keeps the conversation/folder CRUD and
+> `applyAssistantProposal` (below). Its legacy `sendMessage` server action still exists but is
+> **retired for the console** — the streaming route is the live path.
+
+---
+
+## What Sable can do
+
+Sable's capabilities split cleanly into **read tools** (run immediately) and **write operations**
+(propose-only — see [the approve-first flow](#the-approve-first-flow)).
 
 ### Read & research tools
 
@@ -101,8 +145,9 @@ can never spoof "who am I".
 
 ### Write operations (RBAC-gated, propose-only)
 
-Every mutation Vio can suggest is defined as an `AiOperation` in `lib/ai-operations/` and surfaced
-to the model as a `propose_*` tool. Coverage by module:
+Every mutation Sable can suggest is defined as an `AiOperation` in `lib/ai-operations/` and surfaced
+to the model as a `propose_*` tool (`lib/ai-operations/tools.ts` builds these from the registry).
+Coverage by module:
 
 | Module | File | Operations (write) |
 | --- | --- | --- |
@@ -116,7 +161,7 @@ to the model as a `propose_*` tool. Coverage by module:
 | SLAs, Automations, Settings | `modules/config.ts` | SLA CRUD, automation toggle/delete, setting update (ADMIN) |
 
 Authority is **the app's real RBAC**. Each operation's `minRole` mirrors the underlying UI
-action, so Vio can do exactly what the acting user could do by hand — no more. Operations flagged
+action, so Sable can do exactly what the acting user could do by hand — no more. Operations flagged
 `adminOnly` are only offered in the Admin scope. `setting.update` refuses any key that looks
 secret (contains `KEY`/`PASS`/`SECRET`/`TOKEN`).
 
@@ -124,22 +169,24 @@ secret (contains `KEY`/`PASS`/`SECRET`/`TOKEN`).
 
 ## The approve-first flow
 
-Nothing Vio "decides" to change is applied automatically. The path is:
+Nothing Sable "decides" to change is applied automatically. The path is:
 
 1. **Propose.** The model calls a `propose_*` tool. The tool validates the arguments against the
-   operation's Zod schema and returns a *proposal* — **no mutation happens**.
-2. **Collect.** All proposals from the turn are gathered into `AssistantProposal[]` (deduped),
-   each with a human label from the operation's `label()`.
-3. **Render.** The chat shows an **approval card** per proposal
-   (`components/assistant/proposal-card.tsx`) with an **Approve** and a **Dismiss** button.
-4. **Approve.** Clicking Approve calls the `applyAssistantProposal` server action, which
+   operation's Zod schema and returns the full *proposal as the tool result* — **no mutation
+   happens**.
+2. **Render.** assistant-ui renders that tool part through Sable's tool UI
+   (`components/assistant/vio-tool-ui.tsx`), which shows an **approval card**
+   (`components/assistant/proposal-card.tsx`) with **Approve** and **Dismiss** buttons. (Proposals
+   are also collected into message metadata and persisted, so the cards survive a re-hydrate.)
+3. **Approve.** Clicking Approve calls the `applyAssistantProposal` server action, which
    **re-resolves the operation, re-checks RBAC** (fresh DB role vs. `minRole`, conversation scope
-   vs. `adminOnly`), **re-validates the args**, then runs the real mutation — reusing existing
-   server actions where possible, else a guarded Prisma write plus an audit entry (`writeAudit`).
+   vs. `adminOnly`), **re-validates the args** (via `runOperation`), then runs the real mutation —
+   reusing existing server actions where possible, else a guarded Prisma write plus an audit entry.
 
 Client-supplied args are never trusted: they are re-validated at apply time. The underlying
 mutation writes its own audit trail, so AI-driven changes are indistinguishable from — and as
-accountable as — manual ones.
+accountable as — manual ones. Approve/dismiss state is remembered per proposal in `localStorage`
+so a card can't be re-approved after the thread re-renders.
 
 ---
 
@@ -156,12 +203,13 @@ Configured via `AI_PROVIDER` (`lib/ai.ts`). Config resolves through `lib/setting
 | **Claude subscription** | `claude-code` | Local `claude` CLI | none (your login) | not gated (self-authorized) | CLI default |
 
 - **Ollama** is a local, OpenAI-compatible endpoint — no key, data stays on the machine. This is
-  the privacy-safe default and the recommended way to try Vio.
+  the privacy-safe default and the recommended way to try Sable.
 - **OpenAI-compatible** works with any compatible cloud via `OPENAI_BASE_URL` (OpenAI, OpenRouter,
   Moonshot/Kimi, Zhipu/GLM, …); the model id comes from `AI_MODEL`.
 - **Claude subscription** (`claude-code`) drives the operator's own logged-in `claude` CLI (their
-  Pro/Max plan) through the Claude Agent SDK. Selecting it *is* the consent — data does leave the
-  box (to Anthropic), which the settings UI calls out.
+  Pro/Max plan) through the Claude Agent SDK (`lib/claude-cli.ts`). Selecting it *is* the consent —
+  data does leave the box (to Anthropic), which the settings UI calls out. This path is **buffered**:
+  the streaming route synthesises the tool/answer/proposal parts so the client behaves identically.
 
 ### The privacy gate
 
@@ -184,7 +232,7 @@ a live feature.
 ## Configuration
 
 All keys are read through `lib/settings` (DB overrides `.env`); secrets are encrypted at rest
-(AES-256-GCM). Manage them under **Settings › Vio (AI assistant)** (ADMIN) or in `.env`:
+(AES-256-GCM). Manage them under **Settings › Sable (AI assistant)** (ADMIN) or in `.env`:
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
@@ -217,20 +265,88 @@ ANTHROPIC_API_KEY="sk-ant-…"  # or OPENAI_API_KEY (+ optional OPENAI_BASE_URL)
 
 ---
 
-## Conversation persistence
+## Conversation persistence & folders
 
-Chats are saved per user in two Prisma models (migration
-`20260809000000_vio_assistant_conversations`):
+Chats are saved per user (base migration
+`20260809000000_vio_assistant_conversations`, plus the folder additions in the schema):
 
 - **`AiConversation`** — `title` (auto-titled from the first user message), `scope`
-  (`GENERAL`/`ADMIN`), `archived`, timestamps, owner. Indexed by `(userId, archived, updatedAt)`
-  so the left rail sorts newest-first.
+  (`GENERAL`/`ADMIN`), `archived`, `folderId` (optional), timestamps, owner. Indexed by
+  `(userId, archived, updatedAt)` so the left rail sorts newest-first.
 - **`AiMessage`** — one turn: `role` (`user`/`assistant`), `content`, sanitized `html`,
   `toolCalls` (JSON), and `proposals` (JSON). Cascades with its conversation.
+- **`AiFolder`** — a per-user folder (`id`, `userId`, `name`, timestamps). Deleting a folder just
+  **un-groups** its chats (`AiConversation.folderId` is `onDelete: SetNull`) — it never deletes
+  conversations. `folderId` is indexed.
 
-A conversation can be renamed and archived (soft-delete). Each message accepts up to six
-attachments (images are downscaled client-side; text is inlined; PDFs are sent as file parts to
-providers that support them).
+A conversation can be renamed, archived (soft-delete), and moved between folders. Each message
+accepts up to six attachments (images are downscaled client-side; text is inlined; PDFs are sent as
+file parts to providers that support them).
+
+### The rail
+
+`components/assistant/vio-rail.tsx` is the premium left rail shown in the max window: **New chat**,
+a search box, the **General/Admin scope switch** (above New chat), user **folders**
+(create / rename / delete, with `@dnd-kit` drag to move chats in and out), and a collapsible
+**Archived** section. Its folder + conversation actions call the server actions in
+`lib/actions/ai-assistant.ts`: `listFolders` / `createFolder` / `renameFolder` / `deleteFolder` /
+`moveConversation`, plus `listConversations` / `renameConversation` / `archiveConversation`.
+
+---
+
+## Sable in the self-service portal (end users)
+
+The help center has its own **USER-scoped** Sable — a floating widget
+(`components/portal/vio-widget.tsx`, launched with the same `SableFab`) mounted in
+`app/portal/layout.tsx`, gated by the same `aiConfigured()` / `aiTeaserEnabled()` switches. It is
+deliberately smaller and safer than the console Sable and shares **none** of the agent tools.
+
+The portal is being migrated to the **same assistant-ui `Thread`** used by the console: a streaming
+portal route `app/api/portal/assistant/route.ts` with a portal tool UI for the ticket / service /
+comment confirm cards. In the end state the portal renders the identical assistant-ui surface — a
+USER-scoped, confirm-to-create variant of the console thread.
+
+- **Backend:** `lib/portal-assistant.ts` builds a per-request tool set bound to the caller's id
+  (`buildPortalTools(userId)`). Chat runs through `app/api/portal/assistant/route.ts`; drafts are
+  confirmed via `app/api/portal/assistant/create/route.ts`.
+- **Read tools (public / own only):** `search_knowledge` (published **public** articles),
+  `search_catalog`, `list_categories`, `get_service_form`, keyless `web_search` / `fetch_url`, and
+  the caller's **own** tickets — `list_my_tickets` / `get_my_ticket` (public content only; internal
+  notes are excluded by the same `isInternal: false` filter the portal UI uses).
+- **Confirm-first writes:** every `propose_*` only drafts; the widget renders a confirm card and the
+  create route re-validates server-side before acting as the signed-in user:
+  - `propose_request` → `createPortalTicketFor` (routed ticket with type / priority / impact /
+    urgency and an optional category),
+  - `propose_service_request` → `createCatalogRequestFor` (fills a catalog item's dynamic form),
+  - `propose_reply` → `addPortalReply` (a **public** reply on one of the user's own open tickets).
+
+  Portal/Sable tickets carry `source: "VIO"` — a neutral "Sable" badge (`SOURCE_META.VIO`, whose
+  label reads from `AI_ASSISTANT_NAME`).
+- **Attachments & vision:** the widget stages files (images / PDF / …, incl. `.eml`) and sends the
+  current turn to a vision-capable model; anything attached is linked onto the ticket Sable opens. On
+  the `claude-code` backend images are passed as real Anthropic content blocks
+  (`lib/claude-cli.ts`) instead of being flattened to text.
+
+The shared creation core (`lib/portal-tickets.ts`) routes catalog requests to the item's
+**service team → category team → Service Desk triage**, runs automations, then auto-assigns; free-form
+tickets default to Service Desk triage. Team ownership on `Service` / `Category` (`groupId`) is
+informational (surfaced to Sable) and only *pre-routes* catalog requests — it never auto-routes
+free-form tickets.
+
+---
+
+## Design tokens
+
+Sable — and every AI affordance in the app — uses a **monochrome** accent, not the old violet/fuchsia.
+The tokens live in `app/globals.css` (`:root` + `.dark`): `--vio`, `--vio-foreground`, `--vio-muted`,
+mapped in `@theme inline` to Tailwind's `bg-vio` / `text-vio` / `text-vio-foreground` / `bg-vio-muted`.
+Change the three `--vio*` variables to retint everything at once.
+
+These replaced the old AI accent across Sable and the app's AI affordances: `components/ui/ai-button.tsx`,
+the ticket triage per-field suggestions (`components/tickets/ticket-properties.tsx`), and the AI
+draft/summary card (`components/comments/comment-thread.tsx`) are all `vio`-tinted, as are the
+assistant-ui composer send button and caret. The Sable wordmark uses the app display font
+(Bricolage Grotesque, `font-display font-semibold`).
 
 ---
 
@@ -238,13 +354,19 @@ providers that support them).
 
 | Concern | Files |
 | --- | --- |
-| Page & UI | `app/(console)/assistant/{page,layout}.tsx`, `components/assistant/*` (`assistant-shell`, `chat-panel`, `message-list`, `conversation-list`, `proposal-card`, `vio-launcher`, `typing-dots`) |
-| Server actions | `lib/actions/ai-assistant.ts` (`listConversations`, `createConversation`, `getConversation`, `renameConversation`, `archiveConversation`, `sendMessage`, `applyAssistantProposal`; system prompts) |
-| Provider layer | `lib/ai.ts` (config, gate, `generateAiText`/`Chat`/`Object`), `lib/claude-cli.ts` (Agent SDK adapter) |
+| Window & state | `components/assistant/{vio-provider,vio-mount,vio-window,vio-fab,sable-chrome}.tsx` |
+| Chat surface | `components/assistant/{vio-thread,vio-tool-ui,proposal-card,vio-rail,typing-dots}.tsx` |
+| assistant-ui thread | `components/thread.tsx` + `components/{markdown-text,reasoning,tool-fallback,tool-group,tooltip-icon-button,attachment,follow-up-suggestions}.tsx` |
+| Inline route | `app/(console)/assistant/{page,layout}.tsx` (route `/assistant`) |
+| Streaming route | `app/api/assistant/chat/route.ts` (POST, AGENT+) |
+| Shared pre-model core | `lib/assistant-core.ts` (identity, `prepareAssistantTurn`, prompts, proposals, uploads) |
+| Server actions | `lib/actions/ai-assistant.ts` (conversation + folder CRUD, `applyAssistantProposal`; shared types) |
+| Provider layer | `lib/ai.ts` (config, gate, `currentProvider`/`resolveChatModel`/`chatMaxOutputTokens`, `generateAi*`), `lib/claude-cli.ts` (Agent SDK adapter) |
 | Read tools | `lib/assistant-tools.ts`, `lib/ai-tools.ts`, `lib/ai-admin-tools.ts`, `lib/ai-stats.ts` |
 | Write operations | `lib/ai-operations/` (`registry.ts`, `types.ts`, `tools.ts`, `modules/*`) |
+| Portal | `components/portal/vio-widget.tsx`, `lib/portal-assistant.ts`, `lib/portal-tickets.ts`, `app/api/portal/assistant/{route,create/route}.ts` |
 | Settings UI | `app/(console)/settings/ai/page.tsx` |
-| Persistence | `prisma/schema.prisma` (`AiConversation`, `AiMessage`) + the migration above |
+| Persistence | `prisma/schema.prisma` (`AiConversation`, `AiMessage`, `AiFolder`) + migration `20260809000000_vio_assistant_conversations` |
 
 ---
 
@@ -253,3 +375,5 @@ providers that support them).
 - [configuration.md](configuration.md) — the full environment-variable reference.
 - [architecture.md](architecture.md) — server-first runtime, Server Actions, RBAC.
 - [data-model.md](data-model.md) — the Prisma schema and enum strategy.
+</content>
+</invoke>

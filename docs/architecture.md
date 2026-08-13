@@ -67,10 +67,13 @@ lib/actions/
   syncs.ts        tickets.ts      tokens.ts
 ```
 
-AI mutations are a special case: **Vio never writes directly**. Its write operations live in
+AI mutations are a special case: **Sable never writes directly**. Its write operations live in
 `lib/ai-operations/*` as RBAC-gated proposals, and `applyAssistantProposal` (in `ai-assistant.ts`)
 re-checks role/scope and re-validates arguments before running the real action. All AI runs
-server-side — provider keys never reach the client. See [ai.md](./ai.md).
+server-side — provider keys never reach the client. Sable's chat turns stream through a Route
+Handler (`app/api/assistant/chat`) rather than a Server Action; see below and [ai.md](./ai.md).
+(`Sable` is the display name — set by `AI_ASSISTANT_NAME` in `lib/constants.ts` — while the code
+identifiers and filenames remain `vio-*`/`Vio*`.)
 
 A representative action guards on role, validates, mutates, audits, and revalidates:
 
@@ -103,6 +106,17 @@ The outside world talks to Servio through Route Handlers, **not** Server Actions
 | `app/api/v1/*` | Public, token-authenticated REST API (`tickets`, `assets`, `services`, `openapi`). |
 | `app/api/files/*` | Attachment upload/download. |
 | `app/api/search/route.ts` | Global search. |
+| `app/api/assistant/chat/route.ts` | Sable's streaming chat turn (POST, AGENT+). |
+| `app/api/portal/assistant/route.ts` | Portal help-center bot stream (USER-scoped). |
+
+Sable does **not** use a Server Action for chat: the console window and the
+`/assistant` route both post the `useChat` message array to
+`app/api/assistant/chat` (server-authoritative — it ignores the client history and
+rebuilds context from the DB via `lib/assistant-core.ts`), and the reply is
+streamed with the AI SDK's `streamText` → UI-message stream (the buffered
+`claude-code` CLI provider is emitted as a single uniform stream). Conversation
+CRUD, folders, and `applyAssistantProposal` remain Server Actions in
+`lib/actions/ai-assistant.ts`. See [ai.md](./ai.md).
 
 Public API routes authenticate with a **Bearer token** (not the session cookie)
 via `guard()` from [`lib/api.ts`](../lib/api.ts), which resolves an
@@ -137,7 +151,10 @@ Three layouts define the three surfaces:
   `Toaster`. No auth logic.
 - **`app/(console)/layout.tsx`** — the agent console. Calls
   `requireRole("AGENT")`; anything below `AGENT` is redirected to the portal.
-  Renders the sidebar (`AppSidebar`) + topbar shell.
+  Renders the sidebar (`AppSidebar`) + topbar shell. It also mounts **Sable** once,
+  via `<VioProvider>` + `<VioMount>` — a single global assistant window (state
+  machine: closed · min · max) opened from a floating action button, with the
+  `/assistant` route rendering the same window inline.
 - **`app/portal/layout.tsx`** — the self-service portal. Calls `requireUser()`
   (any authenticated user). Renders the help-center header; if the user is an
   agent it shows a link back to the console.

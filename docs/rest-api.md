@@ -367,5 +367,8 @@ versioned or guaranteed stable:
 | `GET /api/search?q=…` | Global spotlight search across tickets, problems, changes, assets, people, services | [`app/api/search/route.ts`](../app/api/search/route.ts) |
 | `POST /api/files/upload` | Attachment upload | [`app/api/files/upload/route.ts`](../app/api/files/upload/route.ts) |
 | `GET /api/files/{id}` | Attachment download | [`app/api/files/[id]/route.ts`](../app/api/files/[id]/route.ts) |
+| `POST /api/assistant/chat` | Console **Sable** streaming chat turn (`AGENT`+). Consumes the assistant-ui / `useChat` `messages[]` body (plus `conversationId` and optional `context`), rebuilds history server-side from the DB, and streams the reply as an AI SDK UI message stream (`toUIMessageStreamResponse`; the `claude-code` provider is buffered into one uniform stream). `propose_*` tool calls ride back as message metadata for the approve-first cards. | [`app/api/assistant/chat/route.ts`](../app/api/assistant/chat/route.ts) |
+| `POST /api/portal/assistant` | Portal self-service **Sable** turn (`USER`-scoped, ephemeral — the assistant-ui runtime holds the transcript). Consumes the assistant-ui / `useChat` `messages[]` body and streams the reply as an AI SDK UI message stream (same engine as the console); `propose_*` drafts stream as tool results the portal renders as confirm-to-create ticket/service/comment cards (confirmed via the create endpoint below). | [`app/api/portal/assistant/route.ts`](../app/api/portal/assistant/route.ts) |
+| `POST /api/portal/assistant/create` | Confirms and creates the portal assistant's proposed ticket/service/comment. | [`app/api/portal/assistant/create/route.ts`](../app/api/portal/assistant/create/route.ts) |
 
 Do not build integrations against these — use `/api/v1`.

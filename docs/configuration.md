@@ -6,7 +6,7 @@ config file. Copy [`../.env.example`](../.env.example) to `.env` and edit it.
 
 Servio is designed to run with **zero required setup for local development**:
 with a fresh checkout you only need `DATABASE_URL` and `AUTH_SECRET`. Every
-integration (SSO, SMTP, AI/Vio, non-local storage) is optional and degrades
+integration (SSO, SMTP, AI/Sable, non-local storage) is optional and degrades
 gracefully when left unconfigured.
 
 See also: [development.md](development.md) for the local dev loop, and
@@ -52,7 +52,7 @@ _(not in `.env.example`)_ are real but undocumented in the sample file.
 | `STORAGE_DRIVER` | No | `fs` | Blob storage driver. Only `fs` is implemented; `s3` and `vercel-blob` are seams in [`../lib/storage.ts`](../lib/storage.ts). An unknown value throws at startup. |
 | `UPLOAD_DIR` | No | `./.uploads` | Filesystem root for the `fs` driver. **Must stay outside `./public`** — see [File storage](#file-storage--attachments). |
 | `MAX_UPLOAD_MB` | No | `15` | Per-file upload cap in MB. [`../lib/files.ts`](../lib/files.ts) derives `MAX_UPLOAD_BYTES` from it. |
-| `AI_PROVIDER` | No | `anthropic` | Vio's AI backend: `anthropic` \| `openai` \| `ollama` \| `claude-code`. See [AI service agent (Vio)](#ai-service-agent-vio). |
+| `AI_PROVIDER` | No | `anthropic` | Sable's AI backend: `anthropic` \| `openai` \| `ollama` \| `claude-code`. See [AI service agent (Sable)](#ai-service-agent-sable). |
 | `AI_ALLOW_EXTERNAL` | No | `false` | **Privacy gate.** Must be exactly `"true"` to allow an external provider (`anthropic`/`openai`); `ollama`/`claude-code` are not gated. |
 | `AI_MODEL` | No | provider default | Explicit model id. Blank falls back to `claude-opus-4-8` / `gpt-4o` / `$OLLAMA_MODEL`. |
 | `AI_MAX_OUTPUT_TOKENS` | No | `1024` | Cap on AI output tokens per call. |
@@ -217,12 +217,12 @@ Details verified in code:
 
 ---
 
-## AI service agent (Vio)
+## AI service agent (Sable)
 
-Vio, the built-in AI agent, is **optional and off by default**. Its behaviour is defined
+Sable, the built-in AI agent, is **optional and off by default**. Its behaviour is defined
 in [`../lib/ai.ts`](../lib/ai.ts) and resolved through `lib/settings` (a DB `AppSetting`
 row overrides `process.env`), so an admin can configure it entirely from
-**Settings › Vio (AI assistant)**. This page is the environment reference; for what Vio
+**Settings › Sable (AI assistant)**. This page is the environment reference; for what Sable
 *does* (tools, the approve-first flow, the file map), see **[ai.md](ai.md)**.
 
 ### Choosing a provider
@@ -315,5 +315,5 @@ signatures, and oversized/empty/mismatched files are rejected. See
 - [development.md](development.md) — local setup, running the dev server, seeding.
 - [deployment.md](deployment.md) — production values, persistence, reverse-proxy.
 - [rest-api.md](rest-api.md) — API auth, CORS, and the upload endpoint.
-- [ai.md](ai.md) — Vio's tools, the approve-first flow, and its file map.
+- [ai.md](ai.md) — Sable's tools, the approve-first flow, and its file map.
 - [architecture.md](architecture.md) — how these modules fit together.

@@ -114,18 +114,30 @@ const proposeRequestTool = tool({
     description: z.string().describe("a clear description of the problem or request in the user's words"),
     categoryId: z.string().optional().describe("best-matching category id from list_categories, if any"),
   }),
-  execute: async ({ title }) => ({ ok: true, drafted: `Prepared a request: "${title}" for the user to confirm.` }),
+  execute: async (input) => {
+    const proposal = await buildTicketProposal(input);
+    return proposal
+      ? { ok: true, proposal }
+      : { ok: false, error: "I need a clear title and description first." };
+  },
 });
 
-const proposeReplyTool = tool({
-  description:
-    "PROPOSE posting a public reply on one of the user's OWN open tickets — e.g. to add information an agent asked for, or an update. This does NOT post anything; the user confirms it. Give the ticket ref (from list_my_tickets/get_my_ticket) and the message text in the user's words.",
-  inputSchema: z.object({
-    ref: z.string().describe("the ticket ref or number, e.g. 'INC-0139'"),
-    body: z.string().describe("the reply text to post, in plain language"),
-  }),
-  execute: async ({ ref }) => ({ ok: true, drafted: `Reply drafted for ${ref} — awaiting the user's confirmation.` }),
-});
+function proposeReplyToolFor(userId: string) {
+  return tool({
+    description:
+      "PROPOSE posting a public reply on one of the user's OWN open tickets — e.g. to add information an agent asked for, or an update. This does NOT post anything; the user confirms it. Give the ticket ref (from list_my_tickets/get_my_ticket) and the message text in the user's words.",
+    inputSchema: z.object({
+      ref: z.string().describe("the ticket ref or number, e.g. 'INC-0139'"),
+      body: z.string().describe("the reply text to post, in plain language"),
+    }),
+    execute: async (input) => {
+      const proposal = await buildCommentProposal(userId, input);
+      return proposal
+        ? { ok: true, proposal }
+        : { ok: false, error: "I couldn't find that open ticket of yours." };
+    },
+  });
+}
 
 const proposeServiceRequestTool = tool({
   description:
@@ -136,7 +148,12 @@ const proposeServiceRequestTool = tool({
       .array(z.object({ key: z.string().describe("the field key"), value: z.string().describe("the user's answer") }))
       .describe("one entry per form field you have an answer for"),
   }),
-  execute: async ({ itemId }) => ({ ok: true, drafted: `Prepared a catalog order (${itemId}) for the user to confirm.` }),
+  execute: async (input) => {
+    const proposal = await buildServiceProposal(input);
+    return proposal
+      ? { ok: true, proposal }
+      : { ok: false, error: "That service isn't available or is missing required answers." };
+  },
 });
 
 /* ── User-scoped tools: only ever the signed-in user's OWN tickets, and only
@@ -220,19 +237,32 @@ const SHARED_TOOLS = {
   fetch_url: fetchUrlTool,
   propose_request: proposeRequestTool,
   propose_service_request: proposeServiceRequestTool,
-  propose_reply: proposeReplyTool,
 };
 
 /** Full tool set for a specific signed-in user (adds their own-ticket tools). */
-function buildPortalTools(userId: string) {
+export function buildPortalTools(userId: string) {
   return {
     ...SHARED_TOOLS,
+    propose_reply: proposeReplyToolFor(userId),
     list_my_tickets: myTicketsTool(userId),
     get_my_ticket: myTicketTool(userId),
   };
 }
 
-const SYSTEM_PROMPT = `You are ${AI_ASSISTANT_NAME}, the friendly assistant in the Servio Help Center. You help employees and customers get unblocked quickly, and you can act on their behalf.
+/** Reconstruct a portal proposal from a propose_* tool call (for the buffered
+ *  claude-code path, which doesn't surface tool outputs). */
+export async function portalProposalForTool(
+  userId: string,
+  toolName: string,
+  input: unknown,
+): Promise<RequestProposal | null> {
+  if (toolName === "propose_request") return buildTicketProposal(input);
+  if (toolName === "propose_service_request") return buildServiceProposal(input);
+  if (toolName === "propose_reply") return buildCommentProposal(userId, input);
+  return null;
+}
+
+export const SYSTEM_PROMPT = `You are ${AI_ASSISTANT_NAME}, the friendly assistant in the Servio Help Center. You help employees and customers get unblocked quickly, and you can act on their behalf.
 
 Who you are talking to: a non-technical end user. Be warm, calm, and plain-spoken. No jargon. Keep answers short — usually two to four sentences or a tight bulleted list.
 
@@ -352,7 +382,7 @@ type UserPart =
 const TEXT_LIKE = /\.(txt|log|csv|eml)$/i;
 
 /** Build a multimodal user message from text + attachments (images/PDF/text). */
-function buildUserParts(text: string, atts: ChatAttachment[]): UserPart[] {
+export function buildUserParts(text: string, atts: ChatAttachment[]): UserPart[] {
   const parts: UserPart[] = [];
   const blocks: string[] = [text?.trim() ? text.trim() : ""];
   const notes: string[] = [];

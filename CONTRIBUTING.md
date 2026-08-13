@@ -273,5 +273,5 @@ PR expectations:
 - [docs/architecture.md](docs/architecture.md) — how the app fits together
 - [docs/development.md](docs/development.md) — full dev environment setup
 - [docs/modules.md](docs/modules.md) — the module catalog
-- [docs/ai.md](docs/ai.md) — Vio, the built-in AI agent (providers, privacy gate, approve-first flow)
+- [docs/ai.md](docs/ai.md) — Sable, the built-in AI agent (providers, privacy gate, approve-first flow)
 - [docs/data-model.md](docs/data-model.md) · [docs/rest-api.md](docs/rest-api.md) · [docs/design-system.md](docs/design-system.md) · [docs/configuration.md](docs/configuration.md) · [docs/deployment.md](docs/deployment.md)

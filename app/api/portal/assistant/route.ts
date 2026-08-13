@@ -1,79 +1,148 @@
-import { NextResponse } from "next/server";
+import {
+  streamText,
+  stepCountIs,
+  createUIMessageStream,
+  createUIMessageStreamResponse,
+  type UIMessage,
+  type ModelMessage,
+} from "ai";
 import { getSessionUser } from "@/lib/session";
-import { aiConfigured } from "@/lib/ai";
-import { runPortalAssistant, type ChatAttachment } from "@/lib/portal-assistant";
-import { renderMarkdown } from "@/lib/markdown";
-import { AI_ASSISTANT_NAME } from "@/lib/constants";
+import { aiConfigured, currentProvider, resolveChatModel, chatMaxOutputTokens, generateAiChat } from "@/lib/ai";
+import {
+  buildPortalTools,
+  buildUserParts,
+  portalProposalForTool,
+  SYSTEM_PROMPT,
+  type ChatAttachment,
+} from "@/lib/portal-assistant";
+
+/**
+ * Streaming self-service (portal) assistant — the same assistant-ui Thread as
+ * the console, USER-scoped and EPHEMERAL (no persistence: the client runtime
+ * holds the transcript). propose_* tools return the draft as their result so
+ * the portal tool UI can render a confirm card; the claude-code provider is
+ * buffered and synthesises the tool parts.
+ */
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+export const maxDuration = 120;
 
-type Turn = { role: "user" | "assistant"; content: string };
+const TEXT_ID = "t0";
+const MAX_TURNS = 12;
 
-const MAX_DATAURL_LEN = 8 * 1024 * 1024; // ~6MB of binary after base64
+/** Concatenate the text parts of a UI message. */
+function textOf(m: UIMessage): string {
+  return (m.parts ?? [])
+    .filter((p): p is { type: "text"; text: string } => p.type === "text")
+    .map((p) => p.text)
+    .join("");
+}
+
+/** Attachments (data-URL file parts) on the latest user message. */
+function attachmentsOf(m: UIMessage | undefined): ChatAttachment[] {
+  return (m?.parts ?? [])
+    .filter((p) => p.type === "file")
+    .map((p) => {
+      const fp = p as { mediaType?: string; filename?: string; url?: string };
+      return {
+        name: fp.filename ?? "file",
+        type: fp.mediaType ?? "",
+        size: 0,
+        dataUrl: String(fp.url ?? ""),
+      };
+    })
+    .filter((a) => a.dataUrl.startsWith("data:"));
+}
 
 export async function POST(req: Request) {
   const me = await getSessionUser();
-  if (!me) return NextResponse.json({ error: "unauthorised" }, { status: 401 });
+  if (!me) return new Response("Not authorised", { status: 401 });
+  if (!(await aiConfigured())) return new Response("AI is not configured.", { status: 400 });
 
-  // Respect the same on/off gate as the rest of Vio. When AI is not configured
-  // the client shows a friendly "ask your admin" note instead of calling again.
-  if (!(await aiConfigured())) {
-    return NextResponse.json({ configured: false });
-  }
-
-  let body: unknown;
+  let body: { messages?: UIMessage[] };
   try {
     body = await req.json();
   } catch {
-    return NextResponse.json({ error: "invalid body" }, { status: 400 });
+    return new Response("Bad request", { status: 400 });
   }
 
-  const raw = (body as { messages?: unknown })?.messages;
-  if (!Array.isArray(raw)) return NextResponse.json({ error: "messages required" }, { status: 400 });
+  const msgs = Array.isArray(body.messages) ? body.messages : [];
+  const recent = msgs.filter((m) => m.role === "user" || m.role === "assistant").slice(-MAX_TURNS);
+  const lastUser = [...recent].reverse().find((m) => m.role === "user");
+  const attachments = attachmentsOf(lastUser);
 
-  const messages: Turn[] = raw
-    .filter(
-      (m): m is Turn =>
-        !!m &&
-        typeof (m as Turn).content === "string" &&
-        ((m as Turn).role === "user" || (m as Turn).role === "assistant"),
-    )
-    .map((m) => ({ role: m.role, content: m.content }));
-
-  if (messages.length === 0 || messages[messages.length - 1].role !== "user") {
-    return NextResponse.json({ error: "expected a user message" }, { status: 400 });
+  // History from the client transcript (ephemeral — no DB).
+  const messages: ModelMessage[] = recent
+    .map((m) => ({ role: m.role as "user" | "assistant", content: textOf(m).slice(0, 4000) }))
+    .filter((m) => m.content.trim());
+  if (!messages.length && !attachments.length) {
+    return new Response("Nothing to send.", { status: 400 });
+  }
+  // Attach the current turn's files to the last user message (multimodal).
+  const lastIdx = messages.length - 1;
+  if (attachments.length && lastIdx >= 0 && messages[lastIdx].role === "user") {
+    const text = typeof messages[lastIdx].content === "string" ? (messages[lastIdx].content as string) : "";
+    messages[lastIdx] = { role: "user", content: buildUserParts(text, attachments) } as ModelMessage;
   }
 
-  // Current-turn attachments (images/files), fed to a vision-capable model.
-  const rawAtt = (body as { attachments?: unknown })?.attachments;
-  const attachments: ChatAttachment[] = Array.isArray(rawAtt)
-    ? rawAtt
-        .filter(
-          (a): a is ChatAttachment =>
-            !!a &&
-            typeof (a as ChatAttachment).dataUrl === "string" &&
-            (a as ChatAttachment).dataUrl.startsWith("data:") &&
-            (a as ChatAttachment).dataUrl.length <= MAX_DATAURL_LEN,
-        )
-        .slice(0, 4)
-        .map((a) => ({ name: String(a.name ?? "file"), type: String(a.type ?? ""), size: Number(a.size ?? 0), dataUrl: a.dataUrl }))
-    : [];
+  const tools = buildPortalTools(me.id);
+  const provider = await currentProvider();
 
-  try {
-    const { text, proposal } = await runPortalAssistant(me.id, messages, attachments);
-    const answer = text || "I'm not sure about that one. Would you like to open a request so a person can help?";
-    return NextResponse.json({
-      configured: true,
-      html: renderMarkdown(answer, "markdown"),
-      text: answer,
-      proposal,
+  /* ── claude-code: buffered, tool parts synthesised (read tools → answer → drafts) ── */
+  if (provider === "claude-code") {
+    const stream = createUIMessageStream<UIMessage>({
+      execute: async ({ writer }) => {
+        let text = "(no answer)";
+        let rawToolCalls: { name: string; input: unknown }[] = [];
+        try {
+          const result = await generateAiChat({ system: SYSTEM_PROMPT, messages, tools, maxSteps: 6 });
+          text = result.text || "(no answer)";
+          rawToolCalls = result.toolCalls ?? [];
+        } catch (e) {
+          text = e instanceof Error ? `⚠️ ${e.message}` : "⚠️ The assistant ran into a problem.";
+        }
+
+        rawToolCalls.forEach((tc, i) => {
+          if (tc.name.startsWith("propose_")) return; // read tools above the answer
+          const toolCallId = `t${i}`;
+          writer.write({ type: "tool-input-available", toolCallId, toolName: tc.name, input: (tc.input ?? {}) as unknown });
+          writer.write({ type: "tool-output-available", toolCallId, output: { ok: true } });
+        });
+
+        writer.write({ type: "text-start", id: TEXT_ID });
+        writer.write({ type: "text-delta", id: TEXT_ID, delta: text });
+        writer.write({ type: "text-end", id: TEXT_ID });
+
+        for (let i = 0; i < rawToolCalls.length; i++) {
+          const tc = rawToolCalls[i];
+          if (!tc.name.startsWith("propose_")) continue; // drafts below the answer
+          const proposal = await portalProposalForTool(me.id, tc.name, tc.input);
+          const toolCallId = `t${i}`;
+          writer.write({ type: "tool-input-available", toolCallId, toolName: tc.name, input: (tc.input ?? {}) as unknown });
+          writer.write({
+            type: "tool-output-available",
+            toolCallId,
+            output: proposal ? { ok: true, proposal } : { ok: false, error: "Could not prepare that draft." },
+          });
+        }
+      },
+      onError: (e) => (e instanceof Error ? e.message : "The assistant ran into a problem."),
     });
-  } catch (err) {
-    console.error("[portal-assistant]", err);
-    return NextResponse.json(
-      { error: `${AI_ASSISTANT_NAME} ran into a problem answering that. Please try again, or open a request.` },
-      { status: 500 },
-    );
+    return createUIMessageStreamResponse({ stream });
   }
+
+  /* ── ai-sdk providers: real token streaming (tool results carry the drafts) ── */
+  const result = streamText({
+    model: await resolveChatModel(),
+    system: SYSTEM_PROMPT,
+    messages,
+    tools,
+    stopWhen: stepCountIs(6),
+    maxOutputTokens: await chatMaxOutputTokens(),
+  });
+
+  return result.toUIMessageStreamResponse<UIMessage>({
+    onError: (e) => (e instanceof Error ? e.message : "The assistant ran into a problem."),
+  });
 }

@@ -2,7 +2,7 @@
 
 A modern, open-source **IT Service Management** platform — a fresh alternative to GLPI.
 Built with **Next.js 16**, **React 19**, **base-ui/shadcn** (Tailwind v4), **Prisma 6**,
-**Auth.js v5** — and **Vio**, a built-in AI service-desk agent that works your queue with you.
+**Auth.js v5** — and **Sable**, a built-in AI service-desk agent that works your queue with you.
 
 Tickets · Problems · Changes · Teams/Groups · Services · Categories · Assets (CMDB) ·
 Infrastructure Syncs · Self-Service Portal · SSO · a clean public REST API ·
@@ -10,10 +10,11 @@ and an **AI assistant that can actually do the work** (with your approval).
 
 ## ✨ Features
 
-- **🤖 Vio — built-in AI service agent** — a first-class, self-hostable assistant that reads
-  your queue, searches tickets/KB/the web, and **proposes concrete changes you approve with one
-  click**. Runs fully **local** (Ollama, on-box) or via your own key (Anthropic/OpenAI) — see
-  [Vio](#-vio--the-built-in-ai-agent) below. This is the headline feature.
+- **🤖 Sable — built-in AI service agent** — a first-class, self-hostable **assistant-ui-powered
+  streaming chat** with folders and **approve-first actions**: it reads your queue,
+  searches tickets/KB/the web, and **proposes concrete changes you approve with one click**. Runs
+  fully **local** (Ollama, on-box) or via your own key (Anthropic/OpenAI) — see
+  [Sable](#-sable--the-built-in-ai-agent) below. This is the headline feature.
 - **Service desk** — incidents & requests with priorities, impact/urgency, SLAs,
   inline-editable properties (including a switchable type whose reference number stays stable),
   cross-entity linking to problems/changes/assets, and a threaded activity log with internal notes.
@@ -37,7 +38,7 @@ and an **AI assistant that can actually do the work** (with your approval).
 - **Self-Service Portal** — a redesigned end-user help center: one **live search** across the
   knowledge base, catalog and your own tickets; report an issue or request a service with
   **screenshot/file attachments** (images, PDF, Office docs, `.eml`); track and reply to tickets;
-  and an **Ask Vio** assistant (below) that answers, opens correctly-routed requests, and fills
+  and an **Ask Sable** assistant (below) that answers, opens correctly-routed requests, and fills
   catalog forms for you.
 - **SSO** — OIDC/SSO (Keycloak, Authentik, Azure AD, Okta, Google…) plus email/password.
 - **RBAC** — Admin / Manager / Agent / User, enforced in `proxy.ts` and server actions.
@@ -46,41 +47,42 @@ and an **AI assistant that can actually do the work** (with your approval).
 - **Beautiful by default** — a quiet "control-room" dark/light theme, command palette (⌘K),
   responsive layout, and designed empty/loading states.
 
-## 🤖 Vio — the built-in AI agent
+## 🤖 Sable — the built-in AI agent
 
-**Vio is Servio's standout feature: an AI teammate that lives inside the service desk and can
-do real work, not just chat.** It opens from the sidebar (**Vio**, `/assistant`) and from a
-launcher in the top bar, and it's available to every agent.
+**Sable is Servio's standout feature: an AI teammate that lives inside the service desk and can
+do real work, not just chat.** It's one **assistant-ui-powered streaming chat** window — a floating
+action button restores it anywhere, and `/assistant` opens the same window inline — available to
+every agent, with **folders** to organise conversations.
 
-What makes Vio different from a bolt-on chatbot:
+What makes Sable different from a bolt-on chatbot:
 
-- **It knows your data.** Vio can list *your* tickets and your team's backlog, open any ticket
+- **It knows your data.** Sable can list *your* tickets and your team's backlog, open any ticket
   in full (SLA due dates, breaches, comments), and free-text search tickets, problems, changes,
   and the knowledge base. It can also **search the web and read a URL** when the answer isn't
   in-house.
-- **It acts — but only with your approval.** When Vio wants to change something, it doesn't just
+- **It acts — but only with your approval.** When Sable wants to change something, it doesn't just
   do it. It surfaces an **approval card** ("Create category *Networking*", "Resolve INC-0042 as
   Fixed"). You click **Approve**, and only then does the mutation run — re-validated server-side.
   Nothing is written until you say so.
 - **It can touch the whole platform.** Across tickets, categories & tags, groups & users,
   services & the service catalog, assets & locations (CMDB), knowledge-base articles, problems &
   changes, and — for admins — SLAs, automations and settings. Every proposed action is gated by
-  **your own RBAC**: Vio can do exactly what you could do in the UI, no more.
+  **your own RBAC**: Sable can do exactly what you could do in the UI, no more.
 - **Admin scope for admins.** Admins get an extra **Admin** tab: pull live statistics
   (tickets by status/priority/team, SLA breaches, resolution counts…), review non-secret
   settings, and manage system-wide config — all through the same approve-first flow.
 - **Conversations persist.** Chats are saved per user (auto-titled, reopenable, archivable) in
   the `AiConversation`/`AiMessage` tables. You can attach images, text, and PDFs to a message.
 
-**Vio also helps end users.** The self-service portal has its own **Ask Vio** — a separate,
-deliberately smaller assistant scoped to a single requester. It answers from the **public**
-knowledge base and catalog, reads that user's **own** tickets (never internal notes), understands
-attached **screenshots** of an error, and — with the same confirm-first cards — opens a
-correctly-routed ticket, fills a catalog request form, or posts a reply on one of their own
-tickets. It shares **none** of the agent tools. See
+**Sable also helps end users.** The self-service portal has its own **Ask Sable** — a separate,
+deliberately smaller assistant (the **same assistant-ui Thread UI** as the console) scoped to a
+single requester. It answers from the **public** knowledge base and catalog, reads that user's
+**own** tickets (never internal notes), understands attached **screenshots** of an error, and —
+with the same confirm-first cards — opens a correctly-routed ticket, fills a catalog request form,
+or posts a reply on one of their own tickets. It shares **none** of the agent tools. See
 [docs/ai.md](docs/ai.md#vio-in-the-self-service-portal-end-users).
 
-**Self-hostable and privacy-first.** Vio runs against the provider *you* choose:
+**Self-hostable and privacy-first.** Sable runs against the provider *you* choose:
 
 | Provider | Where it runs | Key needed | Notes |
 | --- | --- | --- | --- |
@@ -92,7 +94,7 @@ tickets. It shares **none** of the agent tools. See
 A hard **privacy gate** (`AI_ALLOW_EXTERNAL`) blocks any external provider unless you explicitly
 opt in, so a misconfiguration can never push ticket data off-box. When AI is switched off,
 optional **teaser mode** still shows the AI buttons as a preview. Everything is configured from
-**Settings › Vio (AI assistant)** (ADMIN) — keys are encrypted at rest. Full reference:
+**Settings › Sable (AI assistant)** (ADMIN) — keys are encrypted at rest. Full reference:
 [docs/ai.md](docs/ai.md).
 
 ## 🧱 Tech stack
@@ -103,7 +105,7 @@ optional **teaser mode** still shows the AI buttons as a preview. Everything is 
 | UI         | shadcn/ui (`base-nova` on base-ui) + Tailwind v4, lucide icons, Recharts |
 | Data       | Prisma 6 — SQLite (dev) / PostgreSQL (prod) |
 | Auth       | Auth.js v5 (Credentials + OIDC), JWT sessions |
-| AI         | Vercel AI SDK 7 — Anthropic / OpenAI-compatible / Ollama (local) / Claude Agent SDK |
+| AI         | Vercel AI SDK 7 + assistant-ui — Anthropic / OpenAI-compatible / Ollama (local) / Claude Agent SDK |
 | Validation | Zod 4 (shared by server actions and the REST API) |
 
 ## 🚀 Getting started
@@ -152,9 +154,9 @@ AUTH_OIDC_NAME="Company SSO"
 
 See [docs/configuration.md](docs/configuration.md#sso--oidc-setup) for a worked example.
 
-## 🧠 Enabling Vio (AI)
+## 🧠 Enabling Sable (AI)
 
-Vio is optional and off by default. The privacy-safe way to switch it on is **local Ollama** —
+Sable is optional and off by default. The privacy-safe way to switch it on is **local Ollama** —
 no key, nothing leaves the box:
 
 ```dotenv
@@ -171,11 +173,11 @@ AI_ALLOW_EXTERNAL="true"      # required for any external provider
 ANTHROPIC_API_KEY="sk-ant-…"  # or OPENAI_API_KEY (+ optional OPENAI_BASE_URL)
 ```
 
-To let Vio **read screenshots** (e.g. an error a user attaches in the portal), point it at a
+To let Sable **read screenshots** (e.g. an error a user attaches in the portal), point it at a
 vision-capable model — Ollama `llama3.2-vision`, or Anthropic/OpenAI. Text-only models still work;
-Vio just falls back to asking for the error text.
+Sable just falls back to asking for the error text.
 
-Everything here can also be managed from **Settings › Vio (AI assistant)** (ADMIN), which
+Everything here can also be managed from **Settings › Sable (AI assistant)** (ADMIN), which
 overrides `.env` and encrypts keys at rest. Full reference: [docs/ai.md](docs/ai.md).
 
 ## 🔌 REST API
@@ -200,7 +202,7 @@ Demo token (seeded, scopes `read,write`, owned by `admin@servio.dev`):
 
 ```
 app/
-  (console)/        Agent console — dashboard, Vio, and every module (route group, mounted at /)
+  (console)/        Agent console — dashboard, Sable, and every module (route group, mounted at /)
   portal/           Self-service portal for end users
   login/            Auth pages
   api/v1/           Public REST API (token auth)
@@ -213,7 +215,7 @@ proxy.ts            Middleware / edge auth gate (Next 16 naming)
 
 - **Server Actions** (`lib/actions/*`) power the app's own mutations; **Route Handlers**
   (`app/api/*`) serve the outside world.
-- **All AI runs server-side.** Provider keys never reach the client; every Vio write goes through
+- **All AI runs server-side.** Provider keys never reach the client; every Sable write goes through
   the same RBAC-checked path as the UI (`lib/ai-operations/*`).
 - All "enum" fields are `String` columns backed by typed constants in `lib/constants.ts`
   (SQLite-friendly, Zod-validated) — flip the datasource to PostgreSQL without schema changes.
@@ -228,7 +230,7 @@ Full documentation lives in [`docs/`](docs/README.md):
 | --- | --- |
 | [development.md](docs/development.md) | Local setup, demo credentials, conventions |
 | [configuration.md](docs/configuration.md) | Environment variables, SSO, SMTP, AI, storage |
-| [ai.md](docs/ai.md) | **Vio** — providers, privacy gate, tools & the approve-first flow |
+| [ai.md](docs/ai.md) | **Sable** — providers, privacy gate, tools & the approve-first flow |
 | [architecture.md](docs/architecture.md) | Runtime model, RBAC, sync engine |
 | [data-model.md](docs/data-model.md) | Prisma schema & enum strategy |
 | [rest-api.md](docs/rest-api.md) | The `/api/v1` REST API |
