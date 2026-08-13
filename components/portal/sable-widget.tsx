@@ -29,6 +29,13 @@ export function SableWidget({
 }) {
   const [open, setOpen] = useState(false);
   const [closing, setClosing] = useState(false);
+  const [mounted, setMounted] = useState(false);
+
+  const handleOpen = () => {
+    setMounted(true);
+    setClosing(false);
+    setOpen(true);
+  };
 
   const handleClose = () => {
     setClosing(true);
@@ -38,12 +45,24 @@ export function SableWidget({
     }, 160);
   };
 
+  // The portal chat is ephemeral (in-memory only). Once opened, keep the panel
+  // MOUNTED so closing with X just hides it and the transcript survives — only a
+  // full page reload clears it. Preview mode has no thread, so keep it lazy.
+  const showPanel = open || closing;
+  const keepMounted = mounted && !previewOnly;
+
   return (
     <>
-      {!open ? <SableFab onClick={() => setOpen(true)} /> : null}
+      {!open ? <SableFab onClick={handleOpen} /> : null}
 
-      {open ? (
-        <div className="pointer-events-none fixed inset-0 z-50 flex items-end justify-end p-4">
+      {showPanel || keepMounted ? (
+        <div
+          className={cn(
+            "pointer-events-none fixed inset-0 z-50 flex items-end justify-end p-4",
+            !showPanel && "hidden",
+          )}
+          aria-hidden={!showPanel}
+        >
           <div
             role="dialog"
             aria-label={`${AI_ASSISTANT_NAME} assistant`}
