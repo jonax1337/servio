@@ -20,6 +20,7 @@ export default async function AiSettingsPage() {
     ollamaModel,
     maxTokens,
     teaser,
+    ticketTriage,
     anthropicSet,
     openaiSet,
   ] = await Promise.all([
@@ -30,6 +31,7 @@ export default async function AiSettingsPage() {
     getSetting("OLLAMA_MODEL", "llama3.1"),
     getSetting("AI_MAX_OUTPUT_TOKENS", "1024"),
     getBoolSetting("AI_TEASER"),
+    getBoolSetting("AI_TICKET_TRIAGE", true),
     settingIsSet("ANTHROPIC_API_KEY"),
     settingIsSet("OPENAI_API_KEY"),
   ]);
@@ -101,6 +103,13 @@ export default async function AiSettingsPage() {
               label: "Teaser mode",
               defaultChecked: teaser,
               hint: "Show AI buttons as a preview even when not configured.",
+            },
+            {
+              type: "switch",
+              name: "AI_TICKET_TRIAGE",
+              label: "In-ticket triage suggestions",
+              defaultChecked: ticketTriage,
+              hint: `When on, ${AI_ASSISTANT_NAME} suggests priority, type, team and category inline when you open a ticket. Turn off to hide those suggestions — chat and request handling stay on.`,
             },
           ]}
         />

@@ -17,7 +17,6 @@ import { CommandMenu } from "@/components/command-menu";
 import { CreateMenu } from "@/components/create-menu";
 import { NotificationsMenu } from "@/components/notifications-menu";
 import { UserMenu } from "@/components/user-menu";
-import { VioLauncher } from "@/components/assistant/vio-launcher";
 
 function label(seg: string) {
   if (/^\d+$/.test(seg)) return `#${seg}`;
@@ -70,7 +69,6 @@ export function AppTopbar({
       <div className="ml-auto flex items-center gap-1.5">
         <CommandMenu role={user.role} />
         <CreateMenu />
-        <VioLauncher />
         <NotificationsMenu unreadCount={notifications} />
         <ThemeToggle />
         <UserMenu {...user} />

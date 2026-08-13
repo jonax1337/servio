@@ -7,7 +7,7 @@ import { PortalNav } from "@/components/portal/portal-nav";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { UserMenu } from "@/components/user-menu";
 import { LinkButton } from "@/components/link-button";
-import { VioWidget } from "@/components/portal/vio-widget";
+import { SableWidget } from "@/components/portal/sable-widget";
 
 export default async function PortalLayout({
   children,
@@ -16,7 +16,7 @@ export default async function PortalLayout({
 }) {
   const user = await requireUser();
   const [configured, teaser] = await Promise.all([aiConfigured(), aiTeaserEnabled()]);
-  const showVio = configured || teaser;
+  const showSable = configured || teaser;
 
   return (
     <div className="flex min-h-svh flex-col bg-muted/30">
@@ -60,8 +60,8 @@ export default async function PortalLayout({
         </div>
       </footer>
 
-      {showVio ? (
-        <VioWidget firstName={user.name?.split(" ")[0] ?? "there"} previewOnly={!configured} />
+      {showSable ? (
+        <SableWidget firstName={user.name?.split(" ")[0] ?? "there"} previewOnly={!configured} />
       ) : null}
     </div>
   );

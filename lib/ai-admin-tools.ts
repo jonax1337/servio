@@ -4,7 +4,7 @@ import { db } from "@/lib/db";
 import { getStatistics, getSettingsOverview } from "@/lib/ai-stats";
 
 /**
- * Admin-Vio READ tool set for the standalone /assistant chat (ADMIN scope only):
+ * Admin-Sable READ tool set for the standalone /assistant chat (ADMIN scope only):
  * statistics, config overview, and record lookups. All WRITE actions (create /
  * update / delete across every entity) now live in the RBAC operation registry
  * (lib/ai-operations) and are surfaced as propose_* approval cards by the caller.
@@ -107,7 +107,7 @@ export const searchServicesTool = tool({
   },
 });
 
-/** The admin READ tool set exposed to Admin-Vio (added on top of the general read tools). */
+/** The admin READ tool set exposed to Admin-Sable (added on top of the general read tools). */
 export const ASSISTANT_ADMIN_TOOLS = {
   get_statistics: getStatisticsTool,
   get_settings_overview: getSettingsOverviewTool,

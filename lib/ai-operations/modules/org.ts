@@ -69,7 +69,7 @@ export const OPERATIONS: AiOperation[] = [
         action: "CREATE",
         entity: "Group",
         entityId: row.id,
-        summary: `Created group "${name}" via Vio`,
+        summary: `Created group "${name}" via Sable`,
       });
       return ok(`Created group "${name}"`);
     },

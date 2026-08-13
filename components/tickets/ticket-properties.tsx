@@ -37,7 +37,7 @@ function initials(s: string) {
 
 type Suggestion = { value: string; label: string };
 
-/** A single property: staged combobox with dirty highlight + optional inline Vio suggestion. */
+/** A single property: staged combobox with dirty highlight + optional inline Sable suggestion. */
 function EditProp({
   label, value, options, searchable, placeholder, dirty, pending, suggestion, onChange, onApply, onDismiss,
 }: {
@@ -67,15 +67,15 @@ function EditProp({
         searchPlaceholder={searchable ? `Search ${label.toLowerCase()}…` : "Filter…"}
         onChange={onChange}
         className={cn(
-          suggestion && "border-violet-500/40 ring-2 ring-violet-500/40",
+          suggestion && "border-sable/40 ring-2 ring-sable/30",
           !suggestion && dirty && "border-amber-500/40 ring-2 ring-amber-500/40",
         )}
       />
       {suggestion ? (
-        <div className="flex items-center gap-1 rounded-md border border-violet-500/25 bg-violet-500/[0.06] px-2 py-1">
-          <Sparkles className="size-3 shrink-0 text-violet-500" />
-          <span className="min-w-0 flex-1 truncate text-xs text-violet-600 dark:text-violet-300">{suggestion.label}</span>
-          <Button type="button" size="xs" className="h-5 shrink-0 px-1.5" onClick={onApply}>Apply</Button>
+        <div className="flex items-center gap-1 rounded-md border bg-sable-muted/50 px-2 py-1">
+          <Sparkles className="size-3 shrink-0 text-sable" />
+          <span className="min-w-0 flex-1 truncate text-xs text-foreground/80">{suggestion.label}</span>
+          <Button type="button" size="xs" className="h-5 shrink-0 bg-sable px-1.5 text-sable-foreground hover:bg-sable/90" onClick={onApply}>Apply</Button>
           <Button type="button" size="xs" variant="ghost" className="h-5 shrink-0 px-1.5 text-muted-foreground" onClick={onDismiss}>
             Dismiss
           </Button>
@@ -90,6 +90,7 @@ export function TicketProperties({
   options,
   aiEnabled = false,
   aiTeaser = false,
+  triageEnabled = false,
 }: {
   ticket: {
     id: number;
@@ -107,6 +108,7 @@ export function TicketProperties({
   options: FormOptions;
   aiEnabled?: boolean;
   aiTeaser?: boolean;
+  triageEnabled?: boolean;
 }) {
   // ── Options ──
   const statusOpts: ComboOption[] = TICKET_STATUSES.map((s) => ({
@@ -238,19 +240,19 @@ export function TicketProperties({
     setStatusPayload(null);
   };
 
-  // ── Vio triage suggestions (inline, per field) ──
+  // ── Sable triage suggestions (inline, per field) ──
   const [sugg, setSugg] = useState<Extract<TriageState, { ok: true }> | null>(null);
   const [dismissed, setDismissed] = useState<Set<string>>(new Set());
   const triageStarted = useRef(false);
   useEffect(() => {
-    if (!aiEnabled || aiTeaser || triageStarted.current) return;
+    if (!aiEnabled || aiTeaser || !triageEnabled || triageStarted.current) return;
     triageStarted.current = true;
     // Fetch (not a server action) so it never blocks Save changes.
     fetch(`/api/ai/triage?ticketId=${ticket.id}`)
       .then((r) => r.json())
       .then((res: TriageState) => { if (res?.ok) setSugg(res); })
       .catch(() => {});
-  }, [aiEnabled, aiTeaser, ticket.id]);
+  }, [aiEnabled, aiTeaser, triageEnabled, ticket.id]);
 
   function suggestionFor(k: DraftKey): Suggestion | null {
     if (!sugg || dismissed.has(k)) return null;

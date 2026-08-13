@@ -56,7 +56,7 @@ export type AssistantMessage = {
 };
 
 /**
- * A change Vio proposes via an operation from the RBAC registry
+ * A change Sable proposes via an operation from the RBAC registry
  * (`lib/ai-operations`). Nothing mutates until the human approves the card and
  * applyAssistantProposal re-checks the operation's role + chat scope, re-validates
  * the args against the operation's schema, and runs the real mutation.
@@ -84,7 +84,14 @@ export type ConversationSummary = {
   title: string;
   scope: AssistantScope;
   archived: boolean;
+  folderId: string | null;
   updatedAt: string; // ISO string (serialized for the client)
+};
+
+/** A folder in the left rail. */
+export type AiFolderSummary = {
+  id: string;
+  name: string;
 };
 
 /** Full conversation for the active-view (getConversation). */
@@ -158,7 +165,7 @@ function toAssistantMessage(row: {
 }
 
 /**
- * Turn Vio's propose_* tool calls into approval cards. Each write tool maps (via
+ * Turn Sable's propose_* tool calls into approval cards. Each write tool maps (via
  * writeToolToOpId, built alongside the tools) to a registry operation id; we look
  * up the op to compute the card label. Deduped by operation + args.
  */
@@ -199,7 +206,7 @@ export async function listConversations(): Promise<ConversationSummary[]> {
   const rows = await db.aiConversation.findMany({
     where: { userId: me.id },
     orderBy: [{ archived: "asc" }, { updatedAt: "desc" }],
-    select: { id: true, title: true, scope: true, archived: true, updatedAt: true },
+    select: { id: true, title: true, scope: true, archived: true, folderId: true, updatedAt: true },
   });
 
   return rows
@@ -209,8 +216,83 @@ export async function listConversations(): Promise<ConversationSummary[]> {
       title: r.title,
       scope: coerceScope(r.scope),
       archived: r.archived,
+      folderId: r.folderId,
       updatedAt: r.updatedAt.toISOString(),
     }));
+}
+
+/* ────────────────────────────────────────────────────────────────────────────
+ * Folders — per-user grouping of conversations (left rail).
+ * ──────────────────────────────────────────────────────────────────────────── */
+
+export async function listFolders(): Promise<AiFolderSummary[]> {
+  const me = await actingAgent();
+  if (!me) return [];
+  const rows = await db.aiFolder.findMany({
+    where: { userId: me.id },
+    orderBy: { createdAt: "asc" },
+    select: { id: true, name: true },
+  });
+  return rows;
+}
+
+export async function createFolder(
+  name?: string,
+): Promise<{ ok: true; folder: AiFolderSummary } | { ok: false; error: string }> {
+  const me = await actingAgent();
+  if (!me) return { ok: false, error: "Not authorised" };
+  const trimmed = String(name ?? "").trim().slice(0, 80) || "New folder";
+  const row = await db.aiFolder.create({
+    data: { userId: me.id, name: trimmed },
+    select: { id: true, name: true },
+  });
+  return { ok: true, folder: row };
+}
+
+export async function renameFolder(
+  id: string,
+  name: string,
+): Promise<{ ok: boolean; error?: string }> {
+  const me = await actingAgent();
+  if (!me) return { ok: false, error: "Not authorised" };
+  const row = await db.aiFolder.findUnique({ where: { id }, select: { userId: true } });
+  if (!row || row.userId !== me.id) return { ok: false, error: "Not authorised" };
+  const trimmed = String(name ?? "").trim().slice(0, 80) || "New folder";
+  await db.aiFolder.update({ where: { id }, data: { name: trimmed } });
+  return { ok: true };
+}
+
+/** Delete a folder. Its conversations are un-grouped (SetNull), never deleted. */
+export async function deleteFolder(id: string): Promise<{ ok: boolean; error?: string }> {
+  const me = await actingAgent();
+  if (!me) return { ok: false, error: "Not authorised" };
+  const row = await db.aiFolder.findUnique({ where: { id }, select: { userId: true } });
+  if (!row || row.userId !== me.id) return { ok: false, error: "Not authorised" };
+  await db.aiFolder.delete({ where: { id } });
+  return { ok: true };
+}
+
+/** Move a conversation into a folder (or out of any folder when folderId is null). */
+export async function moveConversation(
+  conversationId: string,
+  folderId: string | null,
+): Promise<{ ok: boolean; error?: string }> {
+  const me = await actingAgent();
+  if (!me) return { ok: false, error: "Not authorised" };
+
+  const conv = await db.aiConversation.findUnique({
+    where: { id: conversationId },
+    select: { userId: true },
+  });
+  if (!conv || conv.userId !== me.id) return { ok: false, error: "Not authorised" };
+
+  if (folderId) {
+    const folder = await db.aiFolder.findUnique({ where: { id: folderId }, select: { userId: true } });
+    if (!folder || folder.userId !== me.id) return { ok: false, error: "Not authorised" };
+  }
+
+  await db.aiConversation.update({ where: { id: conversationId }, data: { folderId } });
+  return { ok: true };
 }
 
 export async function createConversation(
@@ -227,7 +309,7 @@ export async function createConversation(
 
   const row = await db.aiConversation.create({
     data: { userId: me.id, scope, title: "New chat" },
-    select: { id: true, title: true, scope: true, archived: true, updatedAt: true },
+    select: { id: true, title: true, scope: true, archived: true, folderId: true, updatedAt: true },
   });
 
   return {
@@ -237,6 +319,7 @@ export async function createConversation(
       title: row.title,
       scope: coerceScope(row.scope),
       archived: row.archived,
+      folderId: row.folderId,
       updatedAt: row.updatedAt.toISOString(),
     },
   };
@@ -540,7 +623,7 @@ export async function sendMessage(input: {
   conversationId: string;
   content: string;
   attachments?: UploadedAttachment[];
-  /** In-context surface, e.g. the ticket the user is viewing (from the Vio launcher). */
+  /** In-context surface, e.g. the ticket the user is viewing (from the Sable launcher). */
   context?: { ticketId?: number };
 }): Promise<SendMessageResult> {
   const me = await actingAgent();
@@ -655,9 +738,9 @@ export async function sendMessage(input: {
       ? adminSystemPrompt({ orgName, orgDirectory, meName: me.name, meRole: me.role })
       : generalSystemPrompt({ orgName, orgDirectory, meName: me.name, meRole: me.role });
 
-  // In-context surface: if the user opened Vio on a ticket, inject that ticket so
+  // In-context surface: if the user opened Sable on a ticket, inject that ticket so
   // "this ticket", "summarise it", "draft a KB article from it", "tag/resolve it"
-  // work without them typing the ref (Vio uses the ref shown below for tools).
+  // work without them typing the ref (Sable uses the ref shown below for tools).
   const ctxTicketId = Number(input.context?.ticketId);
   if (Number.isInteger(ctxTicketId) && ctxTicketId > 0) {
     const ticketContext = await getTicketAiContext(ctxTicketId);

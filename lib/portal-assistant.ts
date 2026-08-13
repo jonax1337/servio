@@ -5,12 +5,12 @@ import { db } from "@/lib/db";
 import { generateAiChat } from "@/lib/ai";
 import { webSearchTool, fetchUrlTool } from "@/lib/ai-tools";
 import { parseFormSchema } from "@/lib/service-forms";
-import { TICKET_TYPES, PRIORITIES, IMPACT_URGENCY, ticketRef } from "@/lib/constants";
+import { TICKET_TYPES, PRIORITIES, IMPACT_URGENCY, ticketRef, AI_ASSISTANT_NAME } from "@/lib/constants";
 
 /**
- * Vio for the Self-Service Portal — an END-USER assistant.
+ * Sable for the Self-Service Portal — an END-USER assistant.
  *
- * Safer and smaller than the agent-console Vio (lib/ai-tools.ts): the read tools
+ * Safer and smaller than the agent-console Sable (lib/ai-tools.ts): the read tools
  * only touch PUBLIC, PUBLISHED content plus the keyless, SSRF-guarded web tools.
  * The two "write" paths (propose_request / propose_service_request) never mutate
  * on their own — they return a draft the user confirms with one click in the
@@ -102,42 +102,89 @@ const getServiceFormTool = tool({
   },
 });
 
-const proposeRequestTool = tool({
-  description:
-    "PROPOSE creating a free-form request/ticket (an issue to fix or a simple ask) so it gets logged and routed. This does NOT create anything yet — it drafts a request the user confirms with one click. Only call once you have a clear title AND a helpful description. Set a fitting categoryId from list_categories when you can.",
-  inputSchema: z.object({
-    title: z.string().describe("short one-line summary (min 3 chars)"),
-    type: z.enum(TICKET_TYPES).describe("INCIDENT for a problem, REQUEST to obtain something"),
-    priority: z.enum(PRIORITIES).describe("LOW, MEDIUM, HIGH or CRITICAL — default MEDIUM"),
-    impact: z.enum(IMPACT_URGENCY).describe("how widely this affects people: LOW = just this user, MEDIUM = a team, HIGH = many/all"),
-    urgency: z.enum(IMPACT_URGENCY).describe("how time-sensitive: LOW = whenever, MEDIUM = soon, HIGH = blocking work now"),
-    description: z.string().describe("a clear description of the problem or request in the user's words"),
-    categoryId: z.string().optional().describe("best-matching category id from list_categories, if any"),
-  }),
-  execute: async ({ title }) => ({ ok: true, drafted: `Prepared a request: "${title}" for the user to confirm.` }),
-});
+/**
+ * The current turn's attachments, slimmed for the wire. They ride along on the
+ * propose_* tool RESULT so the confirm card can link them to the ticket it
+ * creates (assistant-ui inlines attachments for vision but never stages an
+ * upload, so there's no id to link — the files travel with the draft instead).
+ */
+export type ProposalAttachment = { name: string; type: string; dataUrl: string };
 
-const proposeReplyTool = tool({
-  description:
-    "PROPOSE posting a public reply on one of the user's OWN open tickets — e.g. to add information an agent asked for, or an update. This does NOT post anything; the user confirms it. Give the ticket ref (from list_my_tickets/get_my_ticket) and the message text in the user's words.",
-  inputSchema: z.object({
-    ref: z.string().describe("the ticket ref or number, e.g. 'INC-0139'"),
-    body: z.string().describe("the reply text to post, in plain language"),
-  }),
-  execute: async ({ ref }) => ({ ok: true, drafted: `Reply drafted for ${ref} — awaiting the user's confirmation.` }),
-});
+function proposeRequestToolFor(attachments: ProposalAttachment[]) {
+  return tool({
+    description:
+      "PROPOSE creating a free-form request/ticket (an issue to fix or a simple ask) so it gets logged and routed. This does NOT create anything yet — it drafts a request the user confirms with one click. Only call once you have a clear title AND a helpful description. Set a fitting categoryId from list_categories when you can.",
+    inputSchema: z.object({
+      title: z.string().describe("short one-line summary (min 3 chars)"),
+      type: z.enum(TICKET_TYPES).describe("INCIDENT for a problem, REQUEST to obtain something"),
+      priority: z.enum(PRIORITIES).describe("LOW, MEDIUM, HIGH or CRITICAL — default MEDIUM"),
+      impact: z.enum(IMPACT_URGENCY).describe("how widely this affects people: LOW = just this user, MEDIUM = a team, HIGH = many/all"),
+      urgency: z.enum(IMPACT_URGENCY).describe("how time-sensitive: LOW = whenever, MEDIUM = soon, HIGH = blocking work now"),
+      description: z.string().describe("a clear description of the problem or request in the user's words"),
+      categoryId: z.string().optional().describe("best-matching category id from list_categories, if any"),
+      attachFiles: z
+        .boolean()
+        .optional()
+        .describe(
+          "Whether to attach the user's current screenshot(s)/file(s) to this request. Defaults to true. Set false ONLY if their attachment is not evidence for THIS request (e.g. it belongs to a different topic).",
+        ),
+    }),
+    execute: async (input) => {
+      const proposal = await buildTicketProposal(input);
+      return proposal
+        ? { ok: true, proposal, attachments: input.attachFiles === false ? [] : attachments }
+        : { ok: false, error: "I need a clear title and description first." };
+    },
+  });
+}
 
-const proposeServiceRequestTool = tool({
-  description:
-    "PROPOSE ordering a catalog service on the user's behalf, with its request form filled in. Use for catalog items that have a form (hasForm=true). Fill answers using the fields from get_service_form. This does NOT submit anything — it drafts the order for the user to confirm. Make sure every required field has an answer.",
-  inputSchema: z.object({
-    itemId: z.string().describe("the catalog item id from search_catalog"),
-    answers: z
-      .array(z.object({ key: z.string().describe("the field key"), value: z.string().describe("the user's answer") }))
-      .describe("one entry per form field you have an answer for"),
-  }),
-  execute: async ({ itemId }) => ({ ok: true, drafted: `Prepared a catalog order (${itemId}) for the user to confirm.` }),
-});
+function proposeReplyToolFor(userId: string, attachments: ProposalAttachment[]) {
+  return tool({
+    description:
+      "PROPOSE posting a public reply on one of the user's OWN open tickets — e.g. to add information an agent asked for, or an update. This does NOT post anything; the user confirms it. Give the ticket ref (from list_my_tickets/get_my_ticket) and the message text in the user's words.",
+    inputSchema: z.object({
+      ref: z.string().describe("the ticket ref or number, e.g. 'INC-0139'"),
+      body: z.string().describe("the reply text to post, in plain language"),
+      attachFiles: z
+        .boolean()
+        .optional()
+        .describe(
+          "Whether to attach the user's current screenshot(s)/file(s) to this reply. Defaults to true. Set false ONLY if their attachment is not relevant to this ticket.",
+        ),
+    }),
+    execute: async (input) => {
+      const proposal = await buildCommentProposal(userId, input);
+      return proposal
+        ? { ok: true, proposal, attachments: input.attachFiles === false ? [] : attachments }
+        : { ok: false, error: "I couldn't find that open ticket of yours." };
+    },
+  });
+}
+
+function proposeServiceRequestToolFor(attachments: ProposalAttachment[]) {
+  return tool({
+    description:
+      "PROPOSE ordering a catalog service on the user's behalf, with its request form filled in. Use for catalog items that have a form (hasForm=true). Fill answers using the fields from get_service_form. This does NOT submit anything — it drafts the order for the user to confirm. Make sure every required field has an answer.",
+    inputSchema: z.object({
+      itemId: z.string().describe("the catalog item id from search_catalog"),
+      answers: z
+        .array(z.object({ key: z.string().describe("the field key"), value: z.string().describe("the user's answer") }))
+        .describe("one entry per form field you have an answer for"),
+      attachFiles: z
+        .boolean()
+        .optional()
+        .describe(
+          "Whether to attach the user's current screenshot(s)/file(s) to this order. Defaults to true. Set false ONLY if their attachment is not relevant to this service request.",
+        ),
+    }),
+    execute: async (input) => {
+      const proposal = await buildServiceProposal(input);
+      return proposal
+        ? { ok: true, proposal, attachments: input.attachFiles === false ? [] : attachments }
+        : { ok: false, error: "That service isn't available or is missing required answers." };
+    },
+  });
+}
 
 /* ── User-scoped tools: only ever the signed-in user's OWN tickets, and only
       the content they can already see in the portal (never internal notes). ── */
@@ -210,29 +257,47 @@ function myTicketTool(userId: string) {
   });
 }
 
-/** Tools that don't depend on the caller's identity. */
-const SHARED_TOOLS = {
+/** Read tools that depend on neither the caller nor the turn's attachments. */
+const SHARED_READ_TOOLS = {
   search_knowledge: portalKnowledgeTool,
   search_catalog: portalCatalogTool,
   list_categories: listCategoriesTool,
   get_service_form: getServiceFormTool,
   web_search: webSearchTool,
   fetch_url: fetchUrlTool,
-  propose_request: proposeRequestTool,
-  propose_service_request: proposeServiceRequestTool,
-  propose_reply: proposeReplyTool,
 };
 
-/** Full tool set for a specific signed-in user (adds their own-ticket tools). */
-function buildPortalTools(userId: string) {
+/**
+ * Full tool set for a specific signed-in user. `attachments` (the current turn's
+ * inline files) are closed into the propose_* tools so their result carries the
+ * files for the confirm card to link — works for the streaming ai-sdk providers;
+ * the buffered claude-code path injects the same attachments itself.
+ */
+export function buildPortalTools(userId: string, attachments: ProposalAttachment[] = []) {
   return {
-    ...SHARED_TOOLS,
+    ...SHARED_READ_TOOLS,
+    propose_request: proposeRequestToolFor(attachments),
+    propose_service_request: proposeServiceRequestToolFor(attachments),
+    propose_reply: proposeReplyToolFor(userId, attachments),
     list_my_tickets: myTicketsTool(userId),
     get_my_ticket: myTicketTool(userId),
   };
 }
 
-const SYSTEM_PROMPT = `You are Vio, the friendly assistant in the Servio Help Center. You help employees and customers get unblocked quickly, and you can act on their behalf.
+/** Reconstruct a portal proposal from a propose_* tool call (for the buffered
+ *  claude-code path, which doesn't surface tool outputs). */
+export async function portalProposalForTool(
+  userId: string,
+  toolName: string,
+  input: unknown,
+): Promise<RequestProposal | null> {
+  if (toolName === "propose_request") return buildTicketProposal(input);
+  if (toolName === "propose_service_request") return buildServiceProposal(input);
+  if (toolName === "propose_reply") return buildCommentProposal(userId, input);
+  return null;
+}
+
+export const SYSTEM_PROMPT = `You are ${AI_ASSISTANT_NAME}, the friendly assistant in the Servio Help Center. You help employees and customers get unblocked quickly, and you can act on their behalf.
 
 Who you are talking to: a non-technical end user. Be warm, calm, and plain-spoken. No jargon. Keep answers short — usually two to four sentences or a tight bulleted list.
 
@@ -244,7 +309,7 @@ What you can do, in order of preference:
 4. OPEN A REQUEST: if the issue needs a person and isn't a catalog service, gather a clear title and short description, optionally call list_categories to pick a fitting categoryId, then call propose_request. Use INCIDENT for problems, REQUEST to obtain something. Judge impact (how many people are affected: just them, a team, or many) and urgency (how time-sensitive it is) from what the user tells you, and set priority accordingly (MEDIUM by default; CRITICAL only for outages or many blocked users). If a knowledge-base article is relevant to the issue, reference it in the description (its markdown link) so the assignee has that context.
 5. REPLY TO A TICKET: if the user wants to add information or respond on an existing request of theirs (e.g. "tell them it's still happening"), find it with list_my_tickets/get_my_ticket, then call propose_reply with the ticket ref and the message. Call propose_reply directly once you have the ref and text — do not ask for permission in plain text first; the confirm button the user sees IS the confirmation. It only works on their own open tickets.
 
-Reading attachments: the user can attach screenshots or files. Read any attached image (e.g. an error dialog), quote the exact error text you see, and use it to search_knowledge / web_search for a fix. If it needs a person, propose_request and mention that their attachment will be added to the ticket.
+Reading attachments: the user can attach screenshots or files. Read any attached image (e.g. an error dialog), quote the exact error text you see, and use it to search_knowledge / web_search for a fix. If it needs a person, propose_request and mention that their attachment will be added to the ticket. When you create a request, reply, or order, the user's attached files are linked to it by default — but set attachFiles=false on that call if the attachment is NOT relevant to that particular request (e.g. they attached one screenshot but asked for something unrelated in the same message). Never attach an unrelated file just because it's there.
 
 Hard rules:
 - Only mention articles or services the tools actually returned. Never invent titles, links, ids, or facts.
@@ -352,7 +417,7 @@ type UserPart =
 const TEXT_LIKE = /\.(txt|log|csv|eml)$/i;
 
 /** Build a multimodal user message from text + attachments (images/PDF/text). */
-function buildUserParts(text: string, atts: ChatAttachment[]): UserPart[] {
+export function buildUserParts(text: string, atts: ChatAttachment[]): UserPart[] {
   const parts: UserPart[] = [];
   const blocks: string[] = [text?.trim() ? text.trim() : ""];
   const notes: string[] = [];

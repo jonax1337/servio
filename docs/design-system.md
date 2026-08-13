@@ -32,6 +32,7 @@ plugin:
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
+@import "tw-shimmer";
 @plugin "@tailwindcss/typography";
 
 @custom-variant dark (&:is(.dark *));
@@ -68,6 +69,18 @@ values):
 | `--ring` | `oklch(0.55 0.196 266)` | `oklch(0.66 0.18 266)` | Focus ring |
 | `--chart-1…5` | violet → magenta → blue → teal → amber | brighter variants | Charts |
 | `--sidebar*` | dedicated sidebar surface/accent/border set | — | Console sidebar |
+| `--sable` / `--sable-foreground` / `--sable-muted` | near-black solid + light muted fill | near-white solid + dark muted fill | AI ("Sable") accent |
+
+The **`--sable*`** trio is a deliberately **monochrome** AI accent — a near-black
+solid on light surfaces, near-white on dark — that **replaced the old
+violet/fuchsia AI tint** everywhere the app signals an AI affordance. They are
+mapped in `@theme inline` to `bg-sable` / `text-sable` / `text-sable-foreground` /
+`bg-sable-muted`, so retinting every AI surface is a two-variable change. Consumers
+include [`components/ui/ai-button.tsx`](../components/ui/ai-button.tsx) (an
+outline `Button` with a subtle `--sable` tint), the ticket triage per-field
+suggestions ([`ticket-properties.tsx`](../components/tickets/ticket-properties.tsx)),
+the AI draft/summary card ([`comment-thread.tsx`](../components/comments/comment-thread.tsx)),
+and the Sable chat surface (composer send button + caret).
 
 The dark theme is the **default** (`defaultTheme="dark"` in the root layout), so
 verify contrast in dark first.
@@ -120,6 +133,10 @@ ${jetbrains.variable} font-sans antialiased`. Use `font-display` for headings,
 stat values, and anything that should read as a "title"; `tabular-nums` is
 applied to numeric displays (e.g. [`stat-card.tsx`](../components/stat-card.tsx),
 [`pagination-bar.tsx`](../components/pagination-bar.tsx)).
+
+The **Sable** wordmark (the AI assistant's display name) also uses the display
+font — **Bricolage Grotesque @600**, i.e. `font-display font-semibold` — so the
+assistant reads as a first-class brand surface rather than plain UI text.
 
 The `<ThemeProvider>` (a thin wrapper over next-themes,
 [`components/theme-provider.tsx`](../components/theme-provider.tsx)) is configured
@@ -190,6 +207,18 @@ input.
 
 When documenting or debugging any base-ui-specific behaviour, verify against the
 installed version rather than memory — the API moved between betas.
+
+### The chat UI is assistant-ui (base-ui flavour)
+
+The **Sable** assistant's chat surface is not hand-rolled — it is built on
+[**assistant-ui**](https://assistant-ui.com) (`@assistant-ui/react` +
+`@assistant-ui/react-ai-sdk`), scaffolded in the **base-ui** flavour so its
+primitives match the rest of the design system. The scaffolded Thread lives in
+[`components/thread.tsx`](../components/thread.tsx) alongside its supporting parts
+(`markdown-text`, `reasoning`, `tool-fallback`, `tool-group`,
+`tooltip-icon-button`, `attachment`, `follow-up-suggestions`), and markdown
+rendering uses `react-markdown` + `remark-gfm`. The composer send button and
+caret are retinted to the `--sable` accent so the chat reads as an AI surface.
 
 ---
 

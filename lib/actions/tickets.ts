@@ -66,7 +66,7 @@ export type ActionState = { error?: string; fieldErrors?: Record<string, string[
  * SLA deadline stamping, VIP repricing, requester/assignee mail, TICKET_CREATED
  * automations and auto-assign — then returns the created ticket. `createTicket`
  * (the form action) wraps this and adds revalidate + redirect; other callers
- * (e.g. Vio's applyAssistantProposal, which must NOT redirect) call this directly
+ * (e.g. Sable's applyAssistantProposal, which must NOT redirect) call this directly
  * so their tickets are first-class (SLA clock started, routed, notified).
  */
 export async function createTicketCore(

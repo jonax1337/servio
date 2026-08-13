@@ -167,14 +167,17 @@ pauses while `PENDING`/`ON_HOLD`), `firstResponseAt`, `resolvedAt`, `closedAt`. 
 | --- | --- | --- |
 | `AutomationRule` | Condition→action rule run on ticket events | `trigger` (`TICKET_CREATED`/`TICKET_UPDATED`), `matchType` (`ALL`/`ANY`), `conditions` and `actions` (JSON arrays as TEXT), `isActive`, `order`, `runCount`, `lastRunAt` |
 
-### AI assistant (Vio)
+### AI assistant (Sable)
+
+The models keep their `Ai*` names; the assistant's display name is now **Sable** (`AI_ASSISTANT_NAME` in `lib/constants.ts`).
 
 | Model | Purpose | Key fields / relations |
 | --- | --- | --- |
-| `AiConversation` | A persisted Vio chat (the `/assistant` surface) | `title` (auto-titled from the first message), `scope` (`GENERAL`/`ADMIN`), `archived`, `userId`; indexed `(userId, archived, updatedAt)` for the newest-first left rail |
+| `AiConversation` | A persisted Sable chat (the `/assistant` surface) | `title` (auto-titled from the first message), `scope` (`GENERAL`/`ADMIN`), `archived`, `userId`, `folderId` (nullable, `SetNull` on folder delete); indexed `(userId, archived, updatedAt)` for the newest-first left rail and `(folderId)` |
+| `AiFolder` | A per-user folder to organise conversations in the left rail | `name`, `userId`; has many `AiConversation`; indexed `(userId, updatedAt)`. Deleting a folder just un-groups its chats (`SetNull`) — it never deletes conversations |
 | `AiMessage` | One turn in a conversation | `role` (`user`/`assistant`), `content`, `html` (sanitized markdown, assistant turns), `toolCalls` (JSON as TEXT), `proposals` (JSON as TEXT); indexed `(conversationId, createdAt)`, cascades with its conversation |
 
-Vio's *actions* are not stored as models — its write operations are RBAC-gated proposals defined
+Sable's *actions* are not stored as models — its write operations are RBAC-gated proposals defined
 in code (`lib/ai-operations/*`) and applied through the normal server actions, which write their
 own `AuditLog` rows. See [ai.md](./ai.md).
 

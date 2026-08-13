@@ -7,7 +7,7 @@ import type { z } from "zod";
 import { getSetting, getBoolSetting, getNumberSetting } from "@/lib/settings";
 
 /**
- * Self-hosted "AI Service Agent" (Vio) config. Config is resolved through
+ * Self-hosted "AI Service Agent" (Sable) config. Config is resolved through
  * lib/settings (DB AppSetting overrides process.env), gated on an async
  * *Configured() boolean, and secrets never leak to the client. All AI runs
  * server-side (server actions / route handlers).
@@ -244,6 +244,29 @@ export async function generateAiChat(input: {
   // reasoning-capable models (e.g. Anthropic extended thinking) expose reasoningText.
   const reasoning = (result as { reasoningText?: string }).reasoningText?.trim() || undefined;
   return { text: result.text.trim(), toolCalls, reasoning };
+}
+
+/* ────────────────────────────────────────────────────────────────────────────
+ * Streaming primitives — used by the assistant route handler
+ * (app/api/assistant/chat/route.ts) which calls `streamText` directly.
+ * ──────────────────────────────────────────────────────────────────────────── */
+
+/** The effective AI provider (settings-resolved). */
+export async function currentProvider(): Promise<AiProvider> {
+  return provider();
+}
+
+/**
+ * The privacy-checked ai-sdk model for streaming. Throws for `claude-code`
+ * (no ai-sdk model — the caller must use the buffered `generateAiChat` path).
+ */
+export async function resolveChatModel() {
+  return getModel();
+}
+
+/** The configured output-token cap (min 2048 for the multi-step chat loop). */
+export async function chatMaxOutputTokens(): Promise<number> {
+  return Math.max(await maxOutputTokens(), 2048);
 }
 
 /** Thin wrapper over generateObject. Returns the typed object. */

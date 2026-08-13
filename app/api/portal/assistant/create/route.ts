@@ -1,15 +1,16 @@
 import { NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/session";
 import { ProposalSchema } from "@/lib/portal-assistant";
-import { createPortalTicketFor, createCatalogRequestFor, linkStagedAttachments, addPortalReply } from "@/lib/portal-tickets";
+import { createPortalTicketFor, createCatalogRequestFor, linkStagedAttachments, addPortalReply, attachDataUrlsToTicket } from "@/lib/portal-tickets";
+import type { ProposalAttachment } from "@/lib/portal-tickets";
 import { ticketRef } from "@/lib/constants";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 /**
- * Confirm-to-create endpoint for the portal Vio widget. The user clicks
- * "Create request" on a draft Vio proposed; this re-validates that draft
+ * Confirm-to-create endpoint for the portal Sable widget. The user clicks
+ * "Create request" on a draft Sable proposed; this re-validates that draft
  * server-side and creates a fully-routed ticket as the signed-in user —
  * either a free-form ticket or a filled catalog order.
  */
@@ -32,19 +33,30 @@ export async function POST(req: Request) {
   const rawIds = (body as { attachmentIds?: unknown })?.attachmentIds;
   const attachmentIds = Array.isArray(rawIds) ? rawIds.map(String) : [];
 
+  // Inline `data:` attachments the assistant-ui runtime carried for vision — stored
+  // + linked to the ticket server-side (re-validated with the upload allow-list).
+  const rawAtts = (body as { attachments?: unknown })?.attachments;
+  const attachments: ProposalAttachment[] = Array.isArray(rawAtts)
+    ? rawAtts
+        .filter((a): a is ProposalAttachment => !!a && typeof (a as ProposalAttachment).dataUrl === "string")
+        .map((a) => ({ name: String(a.name ?? "attachment"), type: String(a.type ?? ""), dataUrl: a.dataUrl }))
+    : [];
+
   try {
     if (parsed.data.kind === "comment") {
       const ok = await addPortalReply(me.id, parsed.data.ticketId, parsed.data.body);
       if (!ok) return NextResponse.json({ error: "Couldn't post the reply — the ticket may be closed." }, { status: 400 });
+      await attachDataUrlsToTicket(me.id, parsed.data.ticketId, attachments);
       return NextResponse.json({ ok: true, id: parsed.data.ticketId, ref: parsed.data.ref, url: `/portal/tickets/${parsed.data.ticketId}`, posted: true });
     }
 
     if (parsed.data.kind === "service") {
       const answers: Record<string, string> = {};
       for (const a of parsed.data.answers) answers[a.key] = a.value;
-      const result = await createCatalogRequestFor(me, parsed.data.itemId, answers, "VIO");
+      const result = await createCatalogRequestFor(me, parsed.data.itemId, answers, "SABLE");
       if (!result.ok) return NextResponse.json({ error: result.error }, { status: 400 });
       await linkStagedAttachments(me.id, result.ticket.id, attachmentIds);
+      await attachDataUrlsToTicket(me.id, result.ticket.id, attachments);
       return NextResponse.json({
         ok: true,
         id: result.ticket.id,
@@ -61,9 +73,10 @@ export async function POST(req: Request) {
       urgency: parsed.data.urgency,
       description: parsed.data.description,
       categoryId: parsed.data.categoryId ?? null,
-      source: "VIO",
+      source: "SABLE",
     });
     await linkStagedAttachments(me.id, ticket.id, attachmentIds);
+    await attachDataUrlsToTicket(me.id, ticket.id, attachments);
     return NextResponse.json({
       ok: true,
       id: ticket.id,

@@ -1,0 +1,450 @@
+/**
+ * Shared, non-"use server" core for the Sable agent console assistant.
+ *
+ * This module holds the pieces the streaming route handler
+ * (`app/api/assistant/chat/route.ts`) and the legacy `sendMessage` server action
+ * both need: identity resolution, scope coercion, multimodal attachment
+ * assembly, the system prompts, proposal derivation, and `prepareAssistantTurn`
+ * (everything up to — but not including — the model call).
+ *
+ * Types live in `lib/actions/ai-assistant.ts` (imported type-only here); the
+ * runtime helpers live here so a route handler (which is NOT a "use server"
+ * module) can import them without turning them into server actions.
+ */
+
+import type { ModelMessage, ToolSet } from "ai";
+import { db } from "@/lib/db";
+import { getCurrentUser, isAgent, hasRole, type Role } from "@/lib/session";
+import { getOrgDirectory } from "@/lib/ai-context";
+import { getTicketAiContext } from "@/lib/actions/ai";
+import { getSetting } from "@/lib/settings";
+import { buildAssistantGeneralTools } from "@/lib/assistant-tools";
+import { ASSISTANT_ADMIN_TOOLS } from "@/lib/ai-admin-tools";
+import { buildOperationTools } from "@/lib/ai-operations/tools";
+import { findOperation } from "@/lib/ai-operations/registry";
+import { AI_ASSISTANT_NAME } from "@/lib/constants";
+import type {
+  AssistantScope,
+  AssistantAttachment,
+  UploadedAttachment,
+  AssistantProposal,
+} from "@/lib/actions/ai-assistant";
+
+/* ────────────────────────────────────────────────────────────────────────────
+ * Identity & scope.
+ * ──────────────────────────────────────────────────────────────────────────── */
+
+export type ActingAgent = { id: string; name: string; email: string; role: Role };
+
+/**
+ * The acting user with a FRESH role from the DB (not the possibly-stale JWT).
+ * Every RBAC decision authorises off this, never the session role. Returns null
+ * if not signed in, inactive, or below AGENT.
+ */
+export async function getActingAgent(): Promise<ActingAgent | null> {
+  const row = await getCurrentUser();
+  if (!row || !row.isActive || !isAgent(row.role as Role)) return null;
+  return {
+    id: row.id,
+    name: row.name ?? row.email ?? "User",
+    email: row.email ?? "",
+    role: row.role as Role,
+  };
+}
+
+/** Normalise a persisted scope string to the union (defence in depth). */
+export function coerceScope(raw: string): AssistantScope {
+  return raw === "ADMIN" ? "ADMIN" : "GENERAL";
+}
+
+/* ────────────────────────────────────────────────────────────────────────────
+ * Proposals — turn propose_* tool calls into approval cards.
+ * ──────────────────────────────────────────────────────────────────────────── */
+
+/**
+ * Turn Sable's propose_* tool calls into approval cards. Each write tool maps (via
+ * writeToolToOpId, built alongside the tools) to a registry operation id; we look
+ * up the op to compute the card label. Deduped by operation + args.
+ */
+export function buildAssistantProposals(
+  toolCalls: { name: string; input: unknown }[],
+  writeToolToOpId: Map<string, string>,
+): AssistantProposal[] {
+  const out: AssistantProposal[] = [];
+  const seen = new Set<string>();
+  toolCalls.forEach((tc, i) => {
+    const operationId = writeToolToOpId.get(tc.name);
+    if (!operationId) return;
+    const op = findOperation(operationId);
+    if (!op) return;
+    const args = (tc.input ?? {}) as Record<string, unknown>;
+    const sig = `${operationId}:${JSON.stringify(args)}`;
+    if (seen.has(sig)) return;
+    seen.add(sig);
+    out.push({
+      id: `pr${i}`,
+      operationId,
+      args,
+      label: op.label ? op.label(args) : operationId,
+    });
+  });
+  return out;
+}
+
+/* ────────────────────────────────────────────────────────────────────────────
+ * System prompts.
+ * ──────────────────────────────────────────────────────────────────────────── */
+
+export function generalSystemPrompt(input: {
+  orgName: string;
+  orgDirectory: string;
+  meName: string;
+  meRole: string;
+}): string {
+  const { orgName, orgDirectory, meName, meRole } = input;
+  return [
+    `You are ${AI_ASSISTANT_NAME}, the AI assistant built into ${orgName}, an IT service`,
+    "management system. You are an experienced ITSM engineer: knowledgeable, concise,",
+    "specific, a real teammate. This is a standalone chat (not tied to one ticket).",
+    "",
+    "WHO YOU ARE HELPING:",
+    `${meName || "An agent"} (role ${meRole}). Treat them as a trusted colleague. When`,
+    `they say "we" or "our team", they mean ${orgName}'s IT / support staff, not an end user.`,
+    "",
+    "CRITICAL: You and this agent ARE the IT / service desk. Never suggest \"contact IT\" or",
+    "\"escalate to IT\" — there is no external IT. Name a SPECIFIC team, service owner, or",
+    "record from the directory. Be concrete, never generic.",
+    "",
+    "TOOLS you can call (prefer internal sources over the open web, and cite what you use):",
+    "- list_my_tickets: the tickets assigned to THIS agent — their personal work queue. Use it",
+    "  whenever they ask about \"my tickets\", \"what am I working on\", \"what's assigned to me\".",
+    "- list_team_tickets: open/unassigned tickets in the agent's own team(s) — work they can pick up.",
+    "- list_tickets: structured filters (assignee me/unassigned, status, priority, team).",
+    "- get_ticket: full details of ONE ticket by ref/number (SLA due dates, requester, latest comments)",
+    "  so you can help them actually work it. Look a ticket up before advising on it.",
+    "- search_knowledge_base: the org's own how-to / troubleshooting articles. Try this first.",
+    "- search_tickets / search_problems / search_changes: free-text search of existing records (incl. comments).",
+    "- web_search / fetch_url: the public web, only for facts not documented internally.",
+    "",
+    "ACTIONS — you have many `propose_*` tools to change the system, scoped to what your role",
+    "permits: create/update tickets, add comments, resolve, escalate, link, add tasks, log work;",
+    "and create categories, services, assets, locations, and more. Refer to teams / categories",
+    "/ users by their real NAMES (the tools resolve names to records). These ONLY PROPOSE: each",
+    "surfaces an approval card the human confirms — nothing is applied on its own, so use them",
+    "freely. Propose each distinct change EXACTLY ONCE. IMPORTANT: you CANNOT apply anything",
+    "yourself. In your reply, say you have PROPOSED the change(s) for approval below. NEVER say a",
+    "change is \"done\", \"applied\", \"created\" or \"approved\".",
+    "",
+    "ATTACHMENTS: if the user attached screenshot(s)/file(s) this turn and you propose creating a",
+    "ticket or adding a comment, those files are linked to that ticket automatically on approval.",
+    "Set attachFiles=false on that call ONLY if the attachment isn't relevant to it.",
+    "",
+    "Keep answers tight; use short markdown (bold, lists, links). Reply in the user's language.",
+    "",
+    "ORGANISATION DIRECTORY (real teams, services and categories):",
+    orgDirectory,
+  ].join("\n");
+}
+
+export function adminSystemPrompt(input: {
+  orgName: string;
+  orgDirectory: string;
+  meName: string;
+  meRole: string;
+}): string {
+  const { orgName, orgDirectory, meName, meRole } = input;
+  return [
+    `You are ${AI_ASSISTANT_NAME}, the AI assistant built into ${orgName}, an IT service`,
+    "management system, now in ADMIN mode: a system-wide setup & management assistant for an",
+    `administrator. You help configure, organise and understand the whole ${orgName} instance.`,
+    "",
+    "WHO YOU ARE HELPING:",
+    `${meName || "An administrator"} (role ${meRole}) — a trusted system administrator.`,
+    "",
+    "WHAT YOU CAN DO:",
+    "- PULL STATISTICS with get_statistics. Available metrics: tickets_by_status,",
+    "  tickets_by_priority, tickets_by_team, tickets_by_category, open_tickets,",
+    "  tickets_created, tickets_resolved, sla_breaches, users_by_role, counts_overview.",
+    "  (optional groupBy, timeframeDays). Use it to answer \"how many…\", \"how is X trending\",",
+    "  \"which team has the most open tickets\", etc. Report numbers plainly (short tables/lists).",
+    "- REVIEW CONFIG with get_settings_overview (shows non-secret settings and whether secrets",
+    "  are configured). NEVER reveal or ask for secret values (API keys, passwords, encryption",
+    "  keys); you can see only whether they are set, never their contents. Never print a secret.",
+    "- LOOK UP people, groups, categories and services (search_people/groups/categories/services),",
+    "  and the general read tools (search_knowledge_base, search_tickets/problems/changes, web).",
+    "",
+    "ACTIONS — in ADMIN mode you have the FULL set of `propose_*` tools: manage tickets, categories,",
+    "groups/teams, services, catalog items, assets, locations, SLAs, knowledge articles,",
+    "problems, changes, USER ROLES, and app SETTINGS (NON-SECRET keys only — you can never read or",
+    "set secrets like API keys / passwords / encryption keys). Refer to records by their real names.",
+    "Each ONLY PROPOSES an approval card; nothing is applied on its own. Propose each distinct change",
+    "EXACTLY ONCE. IMPORTANT: you CANNOT apply anything yourself. In your reply, say you have PROPOSED",
+    "the change(s) for approval below. NEVER say a change is \"done\", \"applied\", \"created\" or \"approved\".",
+    "If the user attached file(s) this turn and you propose creating a ticket or adding a comment, those",
+    "files are linked to it automatically on approval; set attachFiles=false only if they're irrelevant.",
+    "",
+    "Be precise and factual; never invent metrics — always call get_statistics for numbers.",
+    "Use short markdown. Reply in the user's language.",
+    "",
+    "ORGANISATION DIRECTORY (real teams, services and categories):",
+    orgDirectory,
+  ].join("\n");
+}
+
+/* ────────────────────────────────────────────────────────────────────────────
+ * Attachments — turn uploaded files into multimodal model content.
+ * ──────────────────────────────────────────────────────────────────────────── */
+
+export const MAX_ATTACHMENTS = 6;
+export const MAX_ATTACHMENT_BYTES = 8 * 1024 * 1024; // 8 MB per file (post-downscale for images)
+const MAX_FILE_TEXT_CHARS = 6000; // how much of a text file we inline per file
+const MAX_IMAGE_PARTS = 4; // cap images actually sent to the model
+
+/** Text-ish files we can decode and inline verbatim for any model (no vision needed). */
+const TEXT_EXTENSIONS = new Set([
+  "txt", "md", "markdown", "csv", "tsv", "json", "log", "yml", "yaml", "xml",
+  "html", "htm", "css", "js", "jsx", "ts", "tsx", "py", "java", "sql", "sh",
+  "env", "ini", "toml", "conf", "rb", "go", "rs", "php", "c", "cpp", "h",
+]);
+
+function isImage(type: string) {
+  return type.startsWith("image/");
+}
+function isTextLike(name: string, type: string) {
+  if (type.startsWith("text/")) return true;
+  if (["application/json", "application/xml", "application/x-yaml", "application/csv"].includes(type)) return true;
+  const ext = name.split(".").pop()?.toLowerCase() ?? "";
+  return TEXT_EXTENSIONS.has(ext);
+}
+
+/** Decode the base64 payload of a data URL to a UTF-8 string (server-side). */
+function decodeDataUrlText(dataUrl: string): string {
+  const comma = dataUrl.indexOf(",");
+  const b64 = comma >= 0 ? dataUrl.slice(comma + 1) : dataUrl;
+  return Buffer.from(b64, "base64").toString("utf8");
+}
+
+function humanSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+export type BuiltContent = {
+  /** Multimodal content parts (text + image/file parts) for a vision-capable model. */
+  parts: Array<
+    | { type: "text"; text: string }
+    | { type: "image"; image: string }
+    | { type: "file"; data: string; mediaType: string }
+  >;
+  /** Plain-text-only fallback (for models that can't take images/files). */
+  text: string;
+  /** Metadata for persistence / transcript re-render. */
+  meta: AssistantAttachment[];
+  hasBinaryParts: boolean;
+};
+
+/**
+ * Turn the user's text + uploaded attachments into model content:
+ * - images  → image parts (a vision model reads them) + a note
+ * - text files → decoded and inlined (works for ANY model)
+ * - PDFs   → file parts (Anthropic/OpenAI read them) + a note
+ * - other  → a note naming the file so the model can acknowledge it
+ * Also returns a text-only fallback used if the model rejects binary parts.
+ */
+export function buildUserContent(text: string, uploads: UploadedAttachment[]): BuiltContent {
+  const parts: BuiltContent["parts"] = [];
+  const meta: AssistantAttachment[] = [];
+  const textBlocks: string[] = text ? [text] : [];
+  const notes: string[] = [];
+  let imageCount = 0;
+  let hasBinaryParts = false;
+
+  for (const a of uploads) {
+    if (isImage(a.type)) {
+      meta.push({ name: a.name, type: a.type, size: a.size, kind: "image", dataUrl: a.dataUrl });
+      notes.push(`- image: ${a.name}`);
+      if (imageCount < MAX_IMAGE_PARTS) {
+        parts.push({ type: "image", image: a.dataUrl });
+        imageCount++;
+        hasBinaryParts = true;
+      }
+    } else if (isTextLike(a.name, a.type)) {
+      meta.push({ name: a.name, type: a.type, size: a.size, kind: "file" });
+      let body = "";
+      try {
+        body = decodeDataUrlText(a.dataUrl).slice(0, MAX_FILE_TEXT_CHARS);
+      } catch {
+        body = "(could not read file)";
+      }
+      textBlocks.push(
+        `\n\n[Attached file: ${a.name} (${a.type || "text"}, ${humanSize(a.size)})]\n"""\n${body}\n"""`,
+      );
+    } else if (a.type === "application/pdf") {
+      meta.push({ name: a.name, type: a.type, size: a.size, kind: "file" });
+      notes.push(`- document: ${a.name} (PDF)`);
+      parts.push({ type: "file", data: a.dataUrl, mediaType: "application/pdf" });
+      hasBinaryParts = true;
+    } else {
+      meta.push({ name: a.name, type: a.type, size: a.size, kind: "file" });
+      notes.push(`- file: ${a.name} (${a.type || "unknown"}) — attached, not machine-readable here`);
+    }
+  }
+
+  if (notes.length) {
+    textBlocks.push(`\n\nThe user attached:\n${notes.join("\n")}`);
+  }
+
+  const combinedText = textBlocks.join("").trim() || "(no message)";
+  parts.unshift({ type: "text", text: combinedText });
+
+  return { parts, text: combinedText, meta, hasBinaryParts };
+}
+
+/** Sanitise raw client attachments (bound count + size; drop anything malformed). */
+export function sanitizeUploads(raw: unknown): UploadedAttachment[] {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .filter(
+      (a) =>
+        a &&
+        typeof a.dataUrl === "string" &&
+        a.dataUrl.startsWith("data:") &&
+        a.dataUrl.length < MAX_ATTACHMENT_BYTES * 1.4 && // base64 overhead
+        typeof a.name === "string",
+    )
+    .slice(0, MAX_ATTACHMENTS)
+    .map((a) => ({
+      name: String(a.name).slice(0, 200),
+      type: String(a.type ?? ""),
+      size: Number.isFinite(a.size) ? Number(a.size) : 0,
+      dataUrl: a.dataUrl as string,
+    }));
+}
+
+/* ────────────────────────────────────────────────────────────────────────────
+ * prepareAssistantTurn — everything up to (not including) the model call.
+ * ──────────────────────────────────────────────────────────────────────────── */
+
+export type PreparedTurn = {
+  conv: { id: string; scope: AssistantScope };
+  system: string;
+  messages: ModelMessage[];
+  tools: ToolSet;
+  writeToolToOpId: Map<string, string>;
+  built: BuiltContent;
+  title: string;
+  /** True when the last user message carries image/PDF parts (for text-only retry). */
+  hasBinaryParts: boolean;
+};
+
+/**
+ * Authorise the conversation, persist the user turn, auto-title, load bounded
+ * history, and assemble system + messages + tools. Mirrors the pre-model logic
+ * of the legacy `sendMessage` server action so the streaming route produces
+ * identical context. Throws on auth/config errors (the caller maps to an HTTP
+ * status); the assistant turn itself is persisted by the caller after streaming.
+ */
+export async function prepareAssistantTurn(input: {
+  me: ActingAgent;
+  conversationId: string;
+  content: string;
+  uploads: UploadedAttachment[];
+  context?: { ticketId?: number };
+}): Promise<PreparedTurn> {
+  const { me, uploads } = input;
+  const content = String(input.content ?? "").trim();
+
+  const conv = await db.aiConversation.findUnique({
+    where: { id: input.conversationId },
+    select: { id: true, userId: true, scope: true, title: true },
+  });
+  if (!conv || conv.userId !== me.id) throw new Error("Not authorised");
+
+  const scope = coerceScope(conv.scope);
+  if (scope === "ADMIN" && !hasRole(me.role, "ADMIN")) throw new Error("Not authorised");
+
+  const built = buildUserContent(content, uploads);
+
+  // Persist the user turn first (so the conversation survives an AI failure).
+  const displayContent =
+    content || built.meta.map((m) => m.name).join(", ") || "(attachment)";
+  await db.aiMessage.create({
+    data: { conversationId: conv.id, role: "user", content: displayContent },
+  });
+
+  // Auto-title from the first user message.
+  let title = conv.title;
+  if (title === "New chat") {
+    const seed =
+      content.replace(/\s+/g, " ").trim() ||
+      (built.meta[0]?.name ? `Re: ${built.meta[0].name}` : "");
+    title = seed.slice(0, 60) || "New chat";
+    await db.aiConversation.update({ where: { id: conv.id }, data: { title } });
+  }
+
+  // Bounded model history from the DB.
+  const rows = await db.aiMessage.findMany({
+    where: { conversationId: conv.id },
+    orderBy: { createdAt: "asc" },
+    select: { role: true, content: true },
+  });
+  const recent = rows.slice(-16);
+  const messages: ModelMessage[] = recent.map((m) =>
+    m.role === "assistant"
+      ? { role: "assistant", content: m.content }
+      : { role: "user", content: m.content },
+  );
+  // Replace the just-added final user turn with the FULL content for this turn.
+  if (messages.length > 0) {
+    messages[messages.length - 1] = built.hasBinaryParts
+      ? ({ role: "user", content: built.parts } as ModelMessage)
+      : ({ role: "user", content: built.text } as ModelMessage);
+  }
+
+  const orgName = (await getSetting("APP_NAME")) || "Servio";
+  const orgDirectory = await getOrgDirectory();
+
+  const memberships = await db.groupMember.findMany({
+    where: { userId: me.id },
+    select: { groupId: true },
+  });
+  const readTools = buildAssistantGeneralTools({
+    userId: me.id,
+    name: me.name,
+    groupIds: memberships.map((m) => m.groupId),
+  });
+  const adminReadTools = scope === "ADMIN" ? ASSISTANT_ADMIN_TOOLS : {};
+  const { tools: opTools, writeToolToOpId } = buildOperationTools(
+    { userId: me.id, role: me.role, name: me.name },
+    scope,
+  );
+  const tools = { ...readTools, ...adminReadTools, ...opTools };
+
+  let system =
+    scope === "ADMIN"
+      ? adminSystemPrompt({ orgName, orgDirectory, meName: me.name, meRole: me.role })
+      : generalSystemPrompt({ orgName, orgDirectory, meName: me.name, meRole: me.role });
+
+  const ctxTicketId = Number(input.context?.ticketId);
+  if (Number.isInteger(ctxTicketId) && ctxTicketId > 0) {
+    const ticketContext = await getTicketAiContext(ctxTicketId);
+    if (ticketContext) {
+      system +=
+        "\n\nCURRENT TICKET (the user is viewing this — treat \"this ticket\"/\"it\" as this one, and " +
+        "use its ref for ticket tools; you may draft a KB article from its problem + resolution):\n" +
+        ticketContext;
+    }
+  }
+
+  return {
+    conv: { id: conv.id, scope },
+    system,
+    messages,
+    tools,
+    writeToolToOpId,
+    built,
+    title,
+    hasBinaryParts: built.hasBinaryParts,
+  };
+}

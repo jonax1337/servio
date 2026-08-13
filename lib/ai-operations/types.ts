@@ -13,14 +13,14 @@ export type AiOpResult =
   | { ok: false; error: string };
 
 /**
- * One RBAC-gated operation that Vio can perform. WRITE ops are surfaced as
+ * One RBAC-gated operation that Sable can perform. WRITE ops are surfaced as
  * `propose_*` tools → the user approves an approval card → applyAssistantProposal
  * re-validates (role, scope, args) and calls `run`, which does the real mutation
  * (reusing existing actions where non-redirecting, else a guarded Prisma write +
  * writeAudit). READ ops execute immediately in the tool.
  *
  * Authority is the app's real RBAC: `minRole` mirrors the underlying action, so
- * Vio can do exactly what the acting user could do in the UI — no more. `adminOnly`
+ * Sable can do exactly what the acting user could do in the UI — no more. `adminOnly`
  * additionally hides an op unless the chat is in ADMIN scope (the Admin tab), so
  * system-wide config lives there.
  */

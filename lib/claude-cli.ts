@@ -8,7 +8,7 @@ import type { ZodRawShape } from "zod";
 import { getSetting } from "@/lib/settings";
 
 /**
- * OPT-IN backend that answers the standalone Vio chat via the Claude Agent SDK,
+ * OPT-IN backend that answers the standalone Sable chat via the Claude Agent SDK,
  * which drives the locally-installed, logged-in `claude` CLI. Because that CLI
  * runs under the operator's own Claude login, this uses their Pro/Max
  * SUBSCRIPTION rather than a pay-per-token API key (verified: query() succeeds

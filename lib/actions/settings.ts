@@ -143,6 +143,7 @@ export async function saveAiSettings(
       { key: "OLLAMA_MODEL", value: str(fd, "OLLAMA_MODEL") },
       { key: "AI_MAX_OUTPUT_TOKENS", value: str(fd, "AI_MAX_OUTPUT_TOKENS") },
       { key: "AI_TEASER", value: bool(fd, "AI_TEASER") },
+      { key: "AI_TICKET_TRIAGE", value: bool(fd, "AI_TICKET_TRIAGE") },
       { key: "ANTHROPIC_API_KEY", value: str(fd, "ANTHROPIC_API_KEY"), encrypted: true, keepIfEmpty: true },
       { key: "OPENAI_API_KEY", value: str(fd, "OPENAI_API_KEY"), encrypted: true, keepIfEmpty: true },
     ],
