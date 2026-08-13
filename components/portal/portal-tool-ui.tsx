@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { AlertCircle, Send, MessageSquare, Check, Loader2, ArrowUpRight } from "lucide-react";
+import { AlertCircle, Send, MessageSquare, Check, Loader2, ArrowUpRight, Paperclip } from "lucide-react";
 import type { ToolCallMessagePartComponent } from "@assistant-ui/react";
 import { ToolFallback } from "@/components/tool-fallback";
 import { Button } from "@/components/ui/button";
@@ -13,10 +13,13 @@ import type { RequestProposal } from "@/lib/portal-assistant";
  * confirm-to-create card for the portal's propose_* drafts (ticket / catalog
  * order / reply), and falls back to the default tool display for read tools.
  */
+type ProposalAttachment = { name: string; type: string; dataUrl: string };
+
 export const PortalToolUI: ToolCallMessagePartComponent = (props) => {
   if (props.toolName.startsWith("propose_")) {
-    const result = props.result as { proposal?: RequestProposal } | undefined;
-    if (result?.proposal) return <PortalConfirmCard proposal={result.proposal} />;
+    const result = props.result as { proposal?: RequestProposal; attachments?: ProposalAttachment[] } | undefined;
+    if (result?.proposal)
+      return <PortalConfirmCard proposal={result.proposal} attachments={result.attachments ?? []} />;
     return null; // still running / unresolved — no generic card
   }
   return <ToolFallback {...props} />;
@@ -26,7 +29,13 @@ function titleCase(s: string) {
   return s.charAt(0) + s.slice(1).toLowerCase();
 }
 
-function PortalConfirmCard({ proposal }: { proposal: RequestProposal }) {
+function PortalConfirmCard({
+  proposal,
+  attachments,
+}: {
+  proposal: RequestProposal;
+  attachments: ProposalAttachment[];
+}) {
   const [state, setState] = useState<"idle" | "creating" | "done" | "error" | "dismissed">("idle");
   const [error, setError] = useState<string>("");
   const [created, setCreated] = useState<{ ref: string; url: string } | null>(null);
@@ -39,7 +48,7 @@ function PortalConfirmCard({ proposal }: { proposal: RequestProposal }) {
       const res = await fetch("/api/portal/assistant/create", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ ...proposal, attachmentIds: [] }),
+        body: JSON.stringify({ ...proposal, attachmentIds: [], attachments }),
       });
       const data = await res.json();
       if (res.ok && data.ok) {
@@ -110,6 +119,13 @@ function PortalConfirmCard({ proposal }: { proposal: RequestProposal }) {
           ) : null}
         </>
       )}
+
+      {attachments.length > 0 && !done ? (
+        <p className="mt-2 flex items-center gap-1.5 text-xs text-muted-foreground">
+          <Paperclip className="size-3.5" />
+          {attachments.length} {attachments.length === 1 ? "attachment" : "attachments"} will be added
+        </p>
+      ) : null}
 
       <div className="mt-2.5 flex items-center gap-2">
         {done && created ? (

@@ -7,6 +7,9 @@ import { autoAssignTicket } from "@/lib/assignment";
 import { slaCreateData } from "@/lib/sla";
 import { parseFormSchema, validateAnswers, answersToText } from "@/lib/service-forms";
 import { prefixForType, ticketRef } from "@/lib/constants";
+import { validateUpload } from "@/lib/files";
+import { buildStorageKey, storage } from "@/lib/storage";
+import { getNumberSetting } from "@/lib/settings";
 
 /** Resolve the default triage team new self-service tickets land in. */
 async function triageGroupId(): Promise<string | null> {
@@ -26,6 +29,69 @@ export async function linkStagedAttachments(userId: string, ticketId: number, id
     where: { id: { in: clean }, uploadedById: userId, ticketId: null, commentId: null, articleId: null },
     data: { ticketId },
   });
+}
+
+export type ProposalAttachment = { name: string; type: string; dataUrl: string };
+
+/**
+ * Store the assistant's current-turn attachments (inline `data:` URLs the chat
+ * runtime uploaded for vision) as real files linked to a freshly created ticket.
+ * The portal assistant doesn't stage uploads (assistant-ui inlines them), so we
+ * decode + re-validate + persist them here with the SAME allow-list, magic-byte
+ * and size checks as `/api/files/upload`. Bad files are skipped, never fatal.
+ */
+export async function attachDataUrlsToTicket(
+  userId: string,
+  ticketId: number,
+  attachments: ProposalAttachment[],
+) {
+  const list = (attachments ?? []).filter((a) => a?.dataUrl?.startsWith("data:")).slice(0, 10);
+  if (list.length === 0) return;
+  const maxBytes = (await getNumberSetting("MAX_UPLOAD_MB", 15)) * 1024 * 1024;
+
+  for (const a of list) {
+    try {
+      const comma = a.dataUrl.indexOf(",");
+      if (comma < 0) continue;
+      const meta = a.dataUrl.slice(5, comma); // between "data:" and ","
+      const isB64 = meta.includes(";base64");
+      const declaredMime = (meta.split(";")[0] || a.type || "").trim();
+      const buf = isB64
+        ? Buffer.from(a.dataUrl.slice(comma + 1), "base64")
+        : Buffer.from(decodeURIComponent(a.dataUrl.slice(comma + 1)), "utf8");
+
+      // Pasted screenshots often arrive with an extension-less name ("image");
+      // give them one from the mime subtype so the upload ext-check can pass.
+      let name = a.name || "attachment";
+      if (!/\.[A-Za-z0-9]{1,8}$/.test(name)) {
+        const sub = declaredMime.split("/")[1]?.split("+")[0];
+        if (sub) name = `${name}.${sub === "jpeg" ? "jpg" : sub}`;
+      }
+
+      const v = validateUpload(name, declaredMime, buf, maxBytes);
+      if (!v.ok) continue;
+
+      const key = buildStorageKey(v.safeName);
+      const stored = await storage.put(key, buf);
+      try {
+        await db.attachment.create({
+          data: {
+            filename: v.safeName,
+            storageKey: key,
+            mime: v.mime,
+            size: stored.size,
+            checksum: stored.checksum,
+            uploadedById: userId,
+            ticketId,
+          },
+        });
+      } catch {
+        await storage.delete(key).catch(() => {});
+      }
+    } catch {
+      // A single bad attachment must never fail the ticket creation.
+    }
+  }
 }
 
 /**

@@ -39,20 +39,22 @@ function textOf(m: UIMessage): string {
     .join("");
 }
 
-/** Attachments (data-URL file parts) on the latest user message. */
+/**
+ * Attachments (data-URL parts) on the latest user message. assistant-ui's
+ * SimpleImageAttachmentAdapter inlines screenshots; depending on the wire shape
+ * they arrive as `file` parts (url + mediaType) or `image` parts (image field),
+ * so accept both — used for vision AND to link the files to a created ticket.
+ */
 function attachmentsOf(m: UIMessage | undefined): ChatAttachment[] {
   return (m?.parts ?? [])
-    .filter((p) => p.type === "file")
     .map((p) => {
-      const fp = p as { mediaType?: string; filename?: string; url?: string };
-      return {
-        name: fp.filename ?? "file",
-        type: fp.mediaType ?? "",
-        size: 0,
-        dataUrl: String(fp.url ?? ""),
-      };
+      const fp = p as { type: string; mediaType?: string; filename?: string; url?: string; image?: string };
+      const dataUrl = String(fp.url ?? fp.image ?? "");
+      if (!dataUrl.startsWith("data:")) return null;
+      const type = fp.mediaType ?? (fp.type === "image" ? "image/png" : "");
+      return { name: fp.filename ?? "file", type, size: 0, dataUrl };
     })
-    .filter((a) => a.dataUrl.startsWith("data:"));
+    .filter((a): a is ChatAttachment => a !== null);
 }
 
 export async function POST(req: Request) {
@@ -119,11 +121,16 @@ export async function POST(req: Request) {
           if (!tc.name.startsWith("propose_")) continue; // drafts below the answer
           const proposal = await portalProposalForTool(me.id, tc.name, tc.input);
           const toolCallId = `t${i}`;
+          // Carry the turn's attachments on the draft so the confirm card can link
+          // them to the ticket it creates (the runtime is ephemeral — no staging).
+          const outAttachments = attachments.map((a) => ({ name: a.name, type: a.type, dataUrl: a.dataUrl }));
           writer.write({ type: "tool-input-available", toolCallId, toolName: tc.name, input: (tc.input ?? {}) as unknown });
           writer.write({
             type: "tool-output-available",
             toolCallId,
-            output: proposal ? { ok: true, proposal } : { ok: false, error: "Could not prepare that draft." },
+            output: proposal
+              ? { ok: true, proposal, attachments: outAttachments }
+              : { ok: false, error: "Could not prepare that draft." },
           });
         }
       },
