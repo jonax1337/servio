@@ -34,10 +34,10 @@ import {
   ErrorPrimitive,
   groupPartByType,
   MessagePrimitive,
-  SuggestionPrimitive,
   ThreadPrimitive,
   type ToolCallMessagePartComponent,
   useAuiState,
+  unstable_useMessageStallDetection,
 } from "@assistant-ui/react";
 import {
   ArrowDownIcon,
@@ -84,9 +84,22 @@ export type ThreadComponents = {
 
 export type ThreadProps = {
   components?: ThreadComponents | undefined;
+  /** Tappable starter prompts shown (and auto-sent) on an empty chat. */
+  suggestions?: readonly string[] | undefined;
+  /**
+   * Whether the user may edit past messages, regenerate, and navigate branches.
+   * Off for the server-authoritative console thread (which rebuilds history from
+   * the DB and appends each turn, so editing/regenerating would duplicate or
+   * desync it); on for the ephemeral, client-held portal transcript.
+   * @default true
+   */
+  editable?: boolean | undefined;
 };
 
 const EMPTY_COMPONENTS: ThreadComponents = {};
+const EMPTY_SUGGESTIONS: readonly string[] = [];
+const ThreadSuggestionsContext = createContext<readonly string[]>(EMPTY_SUGGESTIONS);
+const ThreadEditableContext = createContext<boolean>(true);
 
 // Group read-tool calls into a collapsed "N tool calls" group, but keep Sable's
 // propose_* approval cards STANDALONE (never collapsed) so they stay visible.
@@ -118,12 +131,20 @@ const isNewChatView = (s: AssistantState) =>
   s.thread.messages.length === 0 &&
   (!s.thread.isLoading || s.threads.isLoading);
 
-export const Thread: FC<ThreadProps> = ({ components = EMPTY_COMPONENTS }) => {
+export const Thread: FC<ThreadProps> = ({
+  components = EMPTY_COMPONENTS,
+  suggestions = EMPTY_SUGGESTIONS,
+  editable = true,
+}) => {
   const isEmpty = useAuiState(isNewChatView);
 
   return (
     <ThreadComponentsContext.Provider value={components}>
-      <ThreadRoot isEmpty={isEmpty} />
+      <ThreadEditableContext.Provider value={editable}>
+        <ThreadSuggestionsContext.Provider value={suggestions}>
+          <ThreadRoot isEmpty={isEmpty} />
+        </ThreadSuggestionsContext.Provider>
+      </ThreadEditableContext.Provider>
     </ThreadComponentsContext.Provider>
   );
 };
@@ -214,19 +235,29 @@ const ThreadWelcome: FC = () => {
 };
 
 const ThreadSuggestions: FC = () => {
+  const suggestions = useContext(ThreadSuggestionsContext);
+  if (suggestions.length === 0) return null;
   return (
     <div className="aui-thread-welcome-suggestions flex w-full flex-wrap items-center justify-center gap-2 px-4">
-      <ThreadPrimitive.Suggestions>
-        {() => <ThreadSuggestionItem />}
-      </ThreadPrimitive.Suggestions>
-    </div>
-  );
-};
-
-const ThreadSuggestionItem: FC = () => {
-  return (
-    <div className="aui-thread-welcome-suggestion-display fade-in slide-in-from-bottom-2 animate-in fill-mode-both duration-200">
-      <SuggestionPrimitive.Trigger send render={<Button variant="ghost" className="aui-thread-welcome-suggestion text-foreground hover:bg-muted border-border/60 h-auto gap-1.5 rounded-full border px-3.5 py-1.5 text-sm font-normal whitespace-nowrap transition-colors" />}><SuggestionPrimitive.Title className="aui-thread-welcome-suggestion-text-1" /><SuggestionPrimitive.Description className="aui-thread-welcome-suggestion-text-2 empty:hidden" /></SuggestionPrimitive.Trigger>
+      {suggestions.map((prompt) => (
+        <div
+          key={prompt}
+          className="aui-thread-welcome-suggestion-display fade-in slide-in-from-bottom-2 animate-in fill-mode-both duration-200"
+        >
+          <ThreadPrimitive.Suggestion
+            prompt={prompt}
+            send
+            render={
+              <Button
+                variant="ghost"
+                className="aui-thread-welcome-suggestion text-foreground hover:bg-muted border-border/60 h-auto gap-1.5 rounded-full border px-3.5 py-1.5 text-sm font-normal whitespace-nowrap transition-colors"
+              >
+                {prompt}
+              </Button>
+            }
+          />
+        </div>
+      ))}
     </div>
   );
 };
@@ -277,6 +308,30 @@ const MessageError: FC = () => {
         <ErrorPrimitive.Message className="aui-message-error-message line-clamp-2" />
       </ErrorPrimitive.Root>
     </MessagePrimitive.Error>
+  );
+};
+
+/**
+ * The "assistant is working" indicator. Shows the typing dots, and — for the
+ * buffered claude-code provider that has no token streaming — surfaces a "Still
+ * working…" note once output has stalled for a few seconds, so long tool/model
+ * think-time doesn't read as a frozen chat.
+ */
+const WorkingIndicator: FC = () => {
+  const { stalled } = unstable_useMessageStallDetection({ thresholdMs: 3000 });
+  return (
+    <span
+      data-slot="aui_assistant-message-indicator"
+      className="inline-flex items-center gap-2 py-1"
+      aria-label="Assistant is working"
+    >
+      <TypingDots />
+      {stalled ? (
+        <span className="text-muted-foreground animate-in fade-in text-xs duration-300">
+          Still working…
+        </span>
+      ) : null}
+    </span>
   );
 };
 
@@ -344,15 +399,7 @@ const AssistantMessage: FC = () => {
               case "data":
                 return part.dataRendererUI;
               case "indicator":
-                return (
-                  <span
-                    data-slot="aui_assistant-message-indicator"
-                    className="inline-flex py-1"
-                    aria-label="Assistant is working"
-                  >
-                    <TypingDots />
-                  </span>
-                );
+                return <WorkingIndicator />;
               default:
                 return null;
             }
@@ -373,6 +420,7 @@ const AssistantMessage: FC = () => {
 };
 
 const AssistantActionBar: FC = () => {
+  const editable = useContext(ThreadEditableContext);
   return (
     <ActionBarPrimitive.Root
       hideWhenRunning
@@ -384,7 +432,9 @@ const AssistantActionBar: FC = () => {
                     </AuiIf><AuiIf condition={(s) => !s.message.isCopied}>
                       <CopyIcon className="animate-in zoom-in-75 fade-in duration-150" />
                     </AuiIf></ActionBarPrimitive.Copy>
-      <ActionBarPrimitive.Reload render={<TooltipIconButton tooltip="Refresh" />}><RefreshCwIcon /></ActionBarPrimitive.Reload>
+      {editable ? (
+        <ActionBarPrimitive.Reload render={<TooltipIconButton tooltip="Refresh" />}><RefreshCwIcon /></ActionBarPrimitive.Reload>
+      ) : null}
       <ActionBarMorePrimitive.Root>
         <ActionBarMorePrimitive.Trigger render={<TooltipIconButton tooltip="More" className="data-[state=open]:bg-accent" />}><MoreHorizontalIcon /></ActionBarMorePrimitive.Trigger>
         <ActionBarMorePrimitive.Content
@@ -428,6 +478,8 @@ const UserMessage: FC = () => {
 };
 
 const UserActionBar: FC = () => {
+  const editable = useContext(ThreadEditableContext);
+  if (!editable) return null;
   return (
     <ActionBarPrimitive.Root
       hideWhenRunning
@@ -465,6 +517,8 @@ const BranchPicker: FC<BranchPickerPrimitive.Root.Props> = ({
   className,
   ...rest
 }) => {
+  const editable = useContext(ThreadEditableContext);
+  if (!editable) return null;
   return (
     <BranchPickerPrimitive.Root
       hideWhenSingleBranch

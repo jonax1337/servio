@@ -4,16 +4,12 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Loader2 } from "lucide-react";
-import {
-  AssistantRuntimeProvider,
-  CompositeAttachmentAdapter,
-  SimpleImageAttachmentAdapter,
-  SimpleTextAttachmentAdapter,
-} from "@assistant-ui/react";
+import { AssistantRuntimeProvider } from "@assistant-ui/react";
 import { useChatRuntime, AssistantChatTransport } from "@assistant-ui/react-ai-sdk";
 import type { UIMessage } from "@ai-sdk/react";
 import { Thread } from "@/components/thread";
 import { SableToolUI, SableConversationContext } from "./sable-tool-ui";
+import { useSableChatAdapters } from "./sable-adapters";
 import {
   createConversation,
   getConversation,
@@ -22,6 +18,18 @@ import {
 } from "@/lib/actions/ai-assistant";
 
 const THREAD_COMPONENTS = { ToolFallback: SableToolUI };
+
+// Tappable starter prompts shown on an empty chat, tuned per scope.
+const GENERAL_SUGGESTIONS = [
+  "What tickets are assigned to me?",
+  "What should I pick up from my team's queue?",
+  "Summarise this ticket and suggest a next step",
+];
+const ADMIN_SUGGESTIONS = [
+  "How many tickets are open by team?",
+  "Show SLA breaches in the last 7 days",
+  "Which category has the most tickets this month?",
+];
 
 type SableMetadata = {
   proposals?: AssistantProposal[];
@@ -151,19 +159,12 @@ function ThreadRuntime({
     [prepareRequest],
   );
 
-  const attachments = useMemo(
-    () =>
-      new CompositeAttachmentAdapter([
-        new SimpleImageAttachmentAdapter(),
-        new SimpleTextAttachmentAdapter(),
-      ]),
-    [],
-  );
+  const adapters = useSableChatAdapters();
 
   const runtime = useChatRuntime<UIMessage<SableMetadata>>({
     transport,
     messages: initialMessages,
-    adapters: { attachments },
+    adapters,
     onFinish: () => onActivity?.(),
   });
 
@@ -195,7 +196,11 @@ function ThreadRuntime({
     <div ref={containerRef} className="flex min-h-0 min-w-0 flex-1 flex-col">
       <AssistantRuntimeProvider runtime={runtime}>
         <SableConversationContext.Provider value={convId ?? ""}>
-          <Thread components={THREAD_COMPONENTS} />
+          <Thread
+            components={THREAD_COMPONENTS}
+            suggestions={scope === "ADMIN" ? ADMIN_SUGGESTIONS : GENERAL_SUGGESTIONS}
+            editable={false}
+          />
         </SableConversationContext.Provider>
       </AssistantRuntimeProvider>
     </div>
