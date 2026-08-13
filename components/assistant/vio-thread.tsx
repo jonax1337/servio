@@ -4,7 +4,12 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Loader2 } from "lucide-react";
-import { AssistantRuntimeProvider } from "@assistant-ui/react";
+import {
+  AssistantRuntimeProvider,
+  CompositeAttachmentAdapter,
+  SimpleImageAttachmentAdapter,
+  SimpleTextAttachmentAdapter,
+} from "@assistant-ui/react";
 import { useChatRuntime, AssistantChatTransport } from "@assistant-ui/react-ai-sdk";
 import type { UIMessage } from "@ai-sdk/react";
 import { Thread } from "@/components/thread";
@@ -146,9 +151,19 @@ function ThreadRuntime({
     [prepareRequest],
   );
 
+  const attachments = useMemo(
+    () =>
+      new CompositeAttachmentAdapter([
+        new SimpleImageAttachmentAdapter(),
+        new SimpleTextAttachmentAdapter(),
+      ]),
+    [],
+  );
+
   const runtime = useChatRuntime<UIMessage<VioMetadata>>({
     transport,
     messages: initialMessages,
+    adapters: { attachments },
     onFinish: () => onActivity?.(),
   });
 

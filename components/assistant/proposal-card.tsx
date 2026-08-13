@@ -1,7 +1,7 @@
 "use client";
 
 import { useTransition } from "react";
-import { Wand2, Check, Loader2, AlertTriangle } from "lucide-react";
+import { Wand2, Check, Loader2, AlertTriangle, Paperclip } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -12,11 +12,20 @@ export type ProposalStatus = {
   msg?: string;
 };
 
+/** Args that are plumbing, not user-facing detail — hidden from the card body. */
+const HIDDEN_ARGS = new Set(["attachmentIds", "attachFiles"]);
+
 /** The proposed change's arguments as clean [key, value] rows. */
 function proposalEntries(p: AssistantProposal): [string, string][] {
   return Object.entries(p.args ?? {})
-    .filter(([, v]) => v !== undefined && v !== null && String(v).trim() !== "")
+    .filter(([k, v]) => !HIDDEN_ARGS.has(k) && v !== undefined && v !== null && String(v).trim() !== "")
     .map(([k, v]) => [k, typeof v === "string" ? v : JSON.stringify(v)] as [string, string]);
+}
+
+/** How many files this proposal will link to its ticket (0 if none). */
+function attachmentCount(p: AssistantProposal): number {
+  const ids = (p.args as { attachmentIds?: unknown } | undefined)?.attachmentIds;
+  return Array.isArray(ids) ? ids.length : 0;
 }
 
 /** Short entity tag derived from the operation id, e.g. "category.create" → "category". */
@@ -44,6 +53,7 @@ export function ProposalCard({
   const st = status.status;
   const msg = status.msg;
   const entries = proposalEntries(proposal);
+  const attachments = attachmentCount(proposal);
 
   function approve() {
     onStatusChange({ status: "applying" });
@@ -92,6 +102,13 @@ export function ProposalCard({
             </div>
           ))}
         </dl>
+      ) : null}
+
+      {!applied && attachments > 0 ? (
+        <p className="mt-2 flex items-center gap-1.5 text-xs text-muted-foreground">
+          <Paperclip className="size-3.5" />
+          {attachments} {attachments === 1 ? "attachment" : "attachments"} will be added
+        </p>
       ) : null}
 
       <div className="mt-2.5 flex items-center gap-2">

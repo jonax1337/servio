@@ -14,6 +14,7 @@ import {
   toggleMajorIncident,
 } from "@/lib/actions/tickets";
 import { resolveGroupId, resolveCategoryId, resolveAgentId, parseTicketId } from "@/lib/ai-tools";
+import { linkStagedAttachments } from "@/lib/portal-tickets";
 import {
   TICKET_TYPES,
   PRIORITIES,
@@ -64,6 +65,16 @@ export const OPERATIONS: AiOperation[] = [
       category: z.string().optional().describe("category name"),
       team: z.string().optional().describe("team/group name to route to"),
       requesterEmail: z.string().optional().describe("requester's email; defaults to you"),
+      attachFiles: z
+        .boolean()
+        .optional()
+        .describe(
+          "Whether to attach the file(s) the user added to THIS chat turn to the new ticket. Defaults to true. Set false only if their attachment isn't relevant to this ticket.",
+        ),
+      attachmentIds: z
+        .array(z.string())
+        .optional()
+        .describe("System-managed — leave unset; the server fills this with the turn's staged file ids."),
     }),
     label: (a) => `Create ticket “${a.title}”`,
     run: async (a, ctx) => {
@@ -108,6 +119,11 @@ export const OPERATIONS: AiOperation[] = [
         },
         ctx.userId,
       );
+      // Link any files the user attached to this chat turn (staged at turn time,
+      // ids injected into the proposal by the route) onto the new ticket.
+      if (a.attachFiles !== false && Array.isArray(a.attachmentIds) && a.attachmentIds.length) {
+        await linkStagedAttachments(ctx.userId, ticket.id, a.attachmentIds.map(String));
+      }
       return ok(`Created ${ticketRef(ticket.id, ticket.type)} — "${title}"`);
     },
   },
@@ -193,9 +209,19 @@ export const OPERATIONS: AiOperation[] = [
       ref: z.string().describe("ticket ref or number"),
       text: z.string().min(1).describe("the comment content"),
       internal: z.boolean().optional().describe("true = internal note"),
+      attachFiles: z
+        .boolean()
+        .optional()
+        .describe(
+          "Whether to attach the file(s) the user added to THIS chat turn to the ticket. Defaults to true. Set false only if their attachment isn't relevant.",
+        ),
+      attachmentIds: z
+        .array(z.string())
+        .optional()
+        .describe("System-managed — leave unset; the server fills this with the turn's staged file ids."),
     }),
     label: (a) => `Comment on ${a.ref}`,
-    run: async (a) => {
+    run: async (a, ctx) => {
       const ticket = await resolveTicket(a.ref);
       if (!ticket) return err(`Ticket not found: ${a.ref}`);
       const text = str(a.text);
@@ -204,6 +230,10 @@ export const OPERATIONS: AiOperation[] = [
       await addTicketComment(
         toFormData({ ticketId: ticket.id, bodyHtml: text, isInternal: internal }),
       );
+      // Attach the turn's staged files to the ticket (see ticket.create).
+      if (a.attachFiles !== false && Array.isArray(a.attachmentIds) && a.attachmentIds.length) {
+        await linkStagedAttachments(ctx.userId, ticket.id, a.attachmentIds.map(String));
+      }
       return ok(`Added ${internal ? "an internal note" : "a comment"} to ${ticketRef(ticket.id, ticket.type)}`);
     },
   },

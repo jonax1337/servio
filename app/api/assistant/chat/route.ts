@@ -16,7 +16,37 @@ import {
   type PreparedTurn,
 } from "@/lib/assistant-core";
 import { findOperation } from "@/lib/ai-operations/registry";
+import { stageDataUrls, deleteStagedAttachments } from "@/lib/attachment-intake";
 import type { UploadedAttachment } from "@/lib/actions/ai-assistant";
+
+/** Operations that accept the turn's attachments linked onto their ticket. */
+const ATTACHABLE_OPS = new Set(["ticket.create", "ticket.comment"]);
+
+/**
+ * Inject the turn's staged attachment ids into the args of any ticket.create /
+ * ticket.comment proposal the model made (unless it opted out with attachFiles).
+ * Mutating the raw tool inputs makes the ids flow into the streamed proposal,
+ * the message metadata AND the persisted proposal uniformly, so they survive to
+ * approval time (applyAssistantProposal re-validates the client args). Returns
+ * true if at least one proposal took the attachments.
+ */
+function injectStagedAttachments(
+  rawToolCalls: { name: string; input: unknown }[],
+  writeToolToOpId: Map<string, string>,
+  stagedIds: string[],
+): boolean {
+  if (stagedIds.length === 0) return false;
+  let used = false;
+  for (const tc of rawToolCalls) {
+    if (!ATTACHABLE_OPS.has(writeToolToOpId.get(tc.name) ?? "")) continue;
+    const input = (tc.input ?? {}) as Record<string, unknown>;
+    if (input.attachFiles === false) continue; // model deemed the file irrelevant
+    input.attachmentIds = stagedIds;
+    tc.input = input;
+    used = true;
+  }
+  return used;
+}
 
 /**
  * Streaming chat turn for the unified console Vio (the global window: min & max
@@ -83,17 +113,17 @@ function extractTurn(message: UIMessage | undefined): { content: string; uploads
     .map((p) => p.text)
     .join("")
     .trim();
+  // Attachments arrive as `file` parts (url + mediaType) or, depending on the
+  // wire shape, `image` parts (image field) — accept both.
   const uploads = parts
-    .filter((p) => p.type === "file")
     .map((p) => {
-      const fp = p as { mediaType?: string; filename?: string; url?: string };
-      return {
-        name: fp.filename ?? "file",
-        type: fp.mediaType ?? "",
-        size: 0,
-        dataUrl: String(fp.url ?? ""),
-      };
-    });
+      const fp = p as { type: string; mediaType?: string; filename?: string; url?: string; image?: string };
+      const dataUrl = String(fp.url ?? fp.image ?? "");
+      if (!dataUrl.startsWith("data:")) return null;
+      const type = fp.mediaType ?? (fp.type === "image" ? "image/png" : "");
+      return { name: fp.filename ?? "file", type, size: 0, dataUrl };
+    })
+    .filter((u): u is UploadedAttachment => u !== null);
   return { content, uploads };
 }
 
@@ -145,6 +175,11 @@ export async function POST(req: Request) {
 
   const provider = await currentProvider();
 
+  // Stage the turn's uploads as real (unparented) attachments so their ids can be
+  // injected into a ticket.create/comment proposal and survive to approval time.
+  // Anything not taken by a proposal is cleaned up once the turn resolves.
+  const stagedIds = uploads.length ? await stageDataUrls(me.id, uploads) : [];
+
   /* ── claude-code: buffered, emitted as a single uniform UI message stream ── */
   if (provider === "claude-code") {
     const stream = createUIMessageStream<UIMessage>({
@@ -163,6 +198,10 @@ export async function POST(req: Request) {
         } catch (e) {
           text = e instanceof Error ? `⚠️ ${e.message}` : "⚠️ The AI request failed.";
         }
+        // Attach the turn's staged files to any ticket create/comment proposal,
+        // then drop the staged rows if nothing took them.
+        const usedStaged = injectStagedAttachments(rawToolCalls, prepared.writeToolToOpId, stagedIds);
+        if (stagedIds.length && !usedStaged) await deleteStagedAttachments(me.id, stagedIds);
         // The buffered CLI path has no native tool streaming — synthesise the
         // tool parts so assistant-ui renders read-tool activity + the
         // approve-first proposal cards. Order = read tools → answer → proposals,
@@ -247,9 +286,14 @@ export async function POST(req: Request) {
     },
   });
 
+  // Whether a proposal took the turn's staged attachments (set on `finish`, read
+  // in onFinish for cleanup). rawToolCalls are complete by the finish part.
+  let usedStaged = false;
+
   return result.toUIMessageStreamResponse<UIMessage<VioMetadata>>({
     messageMetadata: ({ part }) => {
       if (part.type === "finish") {
+        usedStaged = injectStagedAttachments(rawToolCalls, prepared.writeToolToOpId, stagedIds);
         return {
           proposals: buildAssistantProposals(rawToolCalls, prepared.writeToolToOpId),
           toolCalls: rawToolCalls,
@@ -264,6 +308,7 @@ export async function POST(req: Request) {
         rawToolCalls,
         prepared.writeToolToOpId,
       );
+      if (stagedIds.length && !usedStaged) await deleteStagedAttachments(me.id, stagedIds);
     },
     onError: (e) => (e instanceof Error ? e.message : "The AI request failed."),
   });
