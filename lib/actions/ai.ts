@@ -267,7 +267,7 @@ export async function suggestTriage(ticketId: number): Promise<TriageState> {
     reasoning: z.string(),
   });
 
-  // Same organisation context Vio uses in chat, so triage and chat reason alike.
+  // Same organisation context Sable uses in chat, so triage and chat reason alike.
   const orgDirectory = await getOrgDirectory();
   const catLegend = categories.map((c) => `- ${c.id}: ${c.name}`).join("\n") || "(none)";
   const groupLegend = groups.map((g) => `- ${g.id}: ${g.name}`).join("\n") || "(none)";

@@ -454,7 +454,7 @@ export default async function TicketDetailPage({
 
       </aside>
 
-      {/* Onyx lives in the global window (FAB / VioProvider) — it detects this
+      {/* Onyx lives in the global window (FAB / SableProvider) — it detects this
           ticket from the URL and opens the same assistant with ticket context. */}
     </div>
   );

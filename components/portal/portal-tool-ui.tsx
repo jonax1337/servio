@@ -79,9 +79,9 @@ function PortalConfirmCard({
         <>
           <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
             {proposal.type === "INCIDENT" ? (
-              <AlertCircle className="size-3.5 text-vio" />
+              <AlertCircle className="size-3.5 text-sable" />
             ) : (
-              <Send className="size-3.5 text-vio" />
+              <Send className="size-3.5 text-sable" />
             )}
             {proposal.type === "INCIDENT" ? "New issue" : "New request"} · {titleCase(proposal.priority)} priority
             {proposal.categoryName ? ` · ${proposal.categoryName}` : ""}
@@ -94,14 +94,14 @@ function PortalConfirmCard({
       ) : proposal.kind === "comment" ? (
         <>
           <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
-            <MessageSquare className="size-3.5 text-vio" /> Reply to {proposal.ref}
+            <MessageSquare className="size-3.5 text-sable" /> Reply to {proposal.ref}
           </div>
           <p className="mt-1.5">{proposal.body}</p>
         </>
       ) : (
         <>
           <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
-            <Send className="size-3.5 text-vio" /> Catalog request
+            <Send className="size-3.5 text-sable" /> Catalog request
             {proposal.requiresApproval ? " · needs approval" : ""}
           </div>
           <p className="mt-1.5 font-medium">{proposal.itemName}</p>
@@ -143,7 +143,7 @@ function PortalConfirmCard({
               size="sm"
               onClick={confirm}
               disabled={state === "creating"}
-              className="h-7 gap-1.5 bg-vio px-3 text-vio-foreground hover:bg-vio/90"
+              className="h-7 gap-1.5 bg-sable px-3 text-sable-foreground hover:bg-sable/90"
             >
               {state === "creating" ? <Loader2 className="size-3.5 animate-spin" /> : <Check className="size-3.5" />}
               {cta}

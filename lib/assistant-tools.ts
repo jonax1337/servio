@@ -15,7 +15,7 @@ import {
 import { PRIORITIES, TICKET_STATUSES, ticketRef } from "@/lib/constants";
 
 /**
- * The GENERAL standalone Vio tool set (the /assistant surface, AGENT+).
+ * The GENERAL standalone Sable tool set (the /assistant surface, AGENT+).
  *
  * Read/web tools are re-used by reference from the ticket-bound chat
  * (`lib/ai-tools.ts`). The personal work tools (`list_my_tickets`,
@@ -25,7 +25,7 @@ import { PRIORITIES, TICKET_STATUSES, ticketRef } from "@/lib/constants";
  * model to pass "who am I"). `propose_create_ticket` is PROPOSE-only.
  */
 
-/** Who Vio is acting for — captured server-side, never model-supplied. */
+/** Who Sable is acting for — captured server-side, never model-supplied. */
 export type AssistantUserContext = {
   userId: string;
   name: string;

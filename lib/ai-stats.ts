@@ -3,7 +3,7 @@ import { getSetting, settingIsSet } from "@/lib/settings";
 import { OPEN_TICKET_STATUSES } from "@/lib/constants";
 
 /**
- * Pure Prisma aggregation helpers for the Admin-Vio assistant. No "use server";
+ * Pure Prisma aggregation helpers for the Admin-Sable assistant. No "use server";
  * these are plain async functions the admin tools call. Every return is JSON-safe
  * (numbers and strings only) so it can flow straight back through the ai-sdk tool
  * result and into a proposal-free "read" answer.

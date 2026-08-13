@@ -47,7 +47,7 @@ Enums, status/priority metadata, and reference helpers (`ticketRef`, `problemRef
 Servio's built-in AI service-desk agent — a chat surface that can read the queue,
 search the app and the web, and **propose changes the user approves before anything is written**.
 The display name is **Sable** (`AI_ASSISTANT_NAME` in `lib/constants.ts`); code identifiers and
-filenames stay `vio-*`/`Vio*`. Full write-up: [ai.md](./ai.md).
+filenames match it (`sable-*`/`Sable*`). Full write-up: [ai.md](./ai.md).
 
 | | |
 | --- | --- |
@@ -55,8 +55,8 @@ filenames stay `vio-*`/`Vio*`. Full write-up: [ai.md](./ai.md).
 | Streaming route | `app/api/assistant/chat/route.ts` (POST, AGENT+) — server-authoritative: rebuilds history from the DB and streams (AI SDK v7 `streamText` → `toUIMessageStreamResponse`; the claude-code provider is buffered and synthesises tool parts) |
 | Shared core | `lib/assistant-core.ts` (`getActingAgent`, `prepareAssistantTurn`, `buildUserContent`, `generalSystemPrompt`/`adminSystemPrompt`, `buildAssistantProposals`, `sanitizeUploads`) — pre-model logic shared by the route |
 | Actions | `lib/actions/ai-assistant.ts` — conversation CRUD (`listConversations`, `createConversation`, `getConversation`, `renameConversation`, `archiveConversation`) + folder actions (`listFolders`, `createFolder`, `renameFolder`, `deleteFolder`, `moveConversation`) + `applyAssistantProposal` (the old console `sendMessage` is retired) |
-| Global window | `components/assistant/` — `vio-provider` (state machine `closed`\|`min`\|`max`, mounted once in `app/(console)/layout.tsx`), `vio-mount`, `vio-window`, `vio-fab` (floating action button restoring the last state), `sable-chrome` (shared FAB/header chrome + Sable wordmark) |
-| Chat UI | `vio-thread` (wires `useChatRuntime(AssistantChatTransport)` to the streaming route, hydrates history, creates a conversation lazily on first send), `vio-tool-ui` (read-tool activity via `ToolFallback`; approve-first `proposal-card` for `propose_*` tools, persisted in localStorage), the left rail `vio-rail` (New chat, search, folders with @dnd-kit drag, archived, GENERAL/ADMIN scope switch) |
+| Global window | `components/assistant/` — `sable-provider` (state machine `closed`\|`min`\|`max`, mounted once in `app/(console)/layout.tsx`), `sable-mount`, `sable-window`, `sable-fab` (floating action button restoring the last state), `sable-chrome` (shared FAB/header chrome + Sable wordmark) |
+| Chat UI | `sable-thread` (wires `useChatRuntime(AssistantChatTransport)` to the streaming route, hydrates history, creates a conversation lazily on first send), `sable-tool-ui` (read-tool activity via `ToolFallback`; approve-first `proposal-card` for `propose_*` tools, persisted in localStorage), the left rail `sable-rail` (New chat, search, folders with @dnd-kit drag, archived, GENERAL/ADMIN scope switch) |
 | assistant-ui scaffold | `components/thread.tsx` (+ `markdown-text`, `reasoning`, `tool-fallback`, `tool-group`, `tooltip-icon-button`, `attachment`, `follow-up-suggestions`) — packages `@assistant-ui/react` + `@assistant-ui/react-ai-sdk` |
 | Provider layer | `lib/ai.ts` (config + privacy gate; `currentProvider`/`resolveChatModel`/`chatMaxOutputTokens`), `lib/claude-cli.ts` (Claude Agent SDK adapter) |
 | Read tools | `lib/assistant-tools.ts`, `lib/ai-tools.ts`, `lib/ai-admin-tools.ts`, `lib/ai-stats.ts` |
@@ -64,7 +64,7 @@ filenames stay `vio-*`/`Vio*`. Full write-up: [ai.md](./ai.md).
 | Settings | `app/(console)/settings/ai/page.tsx` (ADMIN) |
 | Data | `AiConversation` (with `folderId`), `AiFolder`, `AiMessage` (`prisma/schema.prisma`) |
 
-There is ONE global window, mounted once in the console layout via `<VioProvider>` + `<VioMount>`;
+There is ONE global window, mounted once in the console layout via `<SableProvider>` + `<SableMount>`;
 the floating action button (`SableFab`, bottom-right) restores its last state, and `/assistant`
 renders the same window inline. Every write is an RBAC-gated `AiOperation` surfaced as a `propose_*`
 tool; `applyAssistantProposal` re-checks role/scope and re-validates args before running the real
@@ -297,7 +297,7 @@ The requester surface under `app/portal/*`, laid out by `app/portal/layout.tsx` 
 | New ticket | `app/portal/new/page.tsx` | Raise a plain support ticket | `lib/actions/portal.ts` → `createPortalTicket` → `lib/portal-tickets.ts` |
 | My tickets | `app/portal/tickets/page.tsx`, `[id]/page.tsx` | Track own tickets, reply, attach files | `lib/actions/portal.ts` → `addPortalComment`; `components/portal/portal-comment`, `components/attachments/*` |
 | Knowledge | `app/portal/knowledge/page.tsx`, `[slug]/page.tsx` | Read published, public-facing KB articles (search + category pills) | `components/portal/knowledge-browser`; only published/public articles surface |
-| Ask Sable | widget in `app/portal/layout.tsx` | End-user AI assistant (see [ai.md](ai.md#vio-in-the-self-service-portal-end-users)) — uses the same assistant-ui `Thread` UI as the console, USER-scoped and still confirm-to-create | `components/portal/vio-widget`; `lib/portal-assistant.ts`; streaming route `app/api/portal/assistant/route.ts` + confirm-create `app/api/portal/assistant/create/route.ts` |
+| Ask Sable | widget in `app/portal/layout.tsx` | End-user AI assistant (see [ai.md](ai.md#sable-in-the-self-service-portal-end-users)) — uses the same assistant-ui `Thread` UI as the console, USER-scoped and still confirm-to-create | `components/portal/sable-widget`; `lib/portal-assistant.ts`; streaming route `app/api/portal/assistant/route.ts` + confirm-create `app/api/portal/assistant/create/route.ts` |
 
 Portal write paths are deliberately narrow and share one routed core (`lib/portal-tickets.ts`): requesters (and Sable, acting as them, confirm-first) can only create tickets/catalog requests, reply on their **own** tickets, and stage attachments (images/PDF/`.eml`, re-parented onto the new ticket). Catalog requests pre-route to the item's service/category team; free-form tickets default to the Service Desk triage team. All privileged mutations stay in the console action files.
 

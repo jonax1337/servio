@@ -72,8 +72,8 @@ AI mutations are a special case: **Sable never writes directly**. Its write oper
 re-checks role/scope and re-validates arguments before running the real action. All AI runs
 server-side — provider keys never reach the client. Sable's chat turns stream through a Route
 Handler (`app/api/assistant/chat`) rather than a Server Action; see below and [ai.md](./ai.md).
-(`Sable` is the display name — set by `AI_ASSISTANT_NAME` in `lib/constants.ts` — while the code
-identifiers and filenames remain `vio-*`/`Vio*`.)
+(`Sable` is the display name — set by `AI_ASSISTANT_NAME` in `lib/constants.ts` — and the code
+identifiers and filenames match it: `sable-*`/`Sable*`.)
 
 A representative action guards on role, validates, mutates, audits, and revalidates:
 
@@ -152,7 +152,7 @@ Three layouts define the three surfaces:
 - **`app/(console)/layout.tsx`** — the agent console. Calls
   `requireRole("AGENT")`; anything below `AGENT` is redirected to the portal.
   Renders the sidebar (`AppSidebar`) + topbar shell. It also mounts **Sable** once,
-  via `<VioProvider>` + `<VioMount>` — a single global assistant window (state
+  via `<SableProvider>` + `<SableMount>` — a single global assistant window (state
   machine: closed · min · max) opened from a floating action button, with the
   `/assistant` route rendering the same window inline.
 - **`app/portal/layout.tsx`** — the self-service portal. Calls `requireUser()`

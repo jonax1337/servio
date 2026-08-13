@@ -69,15 +69,15 @@ values):
 | `--ring` | `oklch(0.55 0.196 266)` | `oklch(0.66 0.18 266)` | Focus ring |
 | `--chart-1…5` | violet → magenta → blue → teal → amber | brighter variants | Charts |
 | `--sidebar*` | dedicated sidebar surface/accent/border set | — | Console sidebar |
-| `--vio` / `--vio-foreground` / `--vio-muted` | near-black solid + light muted fill | near-white solid + dark muted fill | AI ("Sable") accent |
+| `--sable` / `--sable-foreground` / `--sable-muted` | near-black solid + light muted fill | near-white solid + dark muted fill | AI ("Sable") accent |
 
-The **`--vio*`** trio is a deliberately **monochrome** AI accent — a near-black
+The **`--sable*`** trio is a deliberately **monochrome** AI accent — a near-black
 solid on light surfaces, near-white on dark — that **replaced the old
 violet/fuchsia AI tint** everywhere the app signals an AI affordance. They are
-mapped in `@theme inline` to `bg-vio` / `text-vio` / `text-vio-foreground` /
-`bg-vio-muted`, so retinting every AI surface is a two-variable change. Consumers
+mapped in `@theme inline` to `bg-sable` / `text-sable` / `text-sable-foreground` /
+`bg-sable-muted`, so retinting every AI surface is a two-variable change. Consumers
 include [`components/ui/ai-button.tsx`](../components/ui/ai-button.tsx) (an
-outline `Button` with a subtle `--vio` tint), the ticket triage per-field
+outline `Button` with a subtle `--sable` tint), the ticket triage per-field
 suggestions ([`ticket-properties.tsx`](../components/tickets/ticket-properties.tsx)),
 the AI draft/summary card ([`comment-thread.tsx`](../components/comments/comment-thread.tsx)),
 and the Sable chat surface (composer send button + caret).
@@ -218,7 +218,7 @@ primitives match the rest of the design system. The scaffolded Thread lives in
 (`markdown-text`, `reasoning`, `tool-fallback`, `tool-group`,
 `tooltip-icon-button`, `attachment`, `follow-up-suggestions`), and markdown
 rendering uses `react-markdown` + `remark-gfm`. The composer send button and
-caret are retinted to the `--vio` accent so the chat reads as an AI surface.
+caret are retinted to the `--sable` accent so the chat reads as an AI surface.
 
 ---
 

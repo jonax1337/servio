@@ -1,6 +1,6 @@
 "use client";
 
-import { useVio } from "./vio-provider";
+import { useSable } from "./sable-provider";
 import { SableFab } from "./sable-chrome";
 
 /**
@@ -9,8 +9,8 @@ import { SableFab } from "./sable-chrome";
  * restored. Hidden whenever a window is already on screen. Shares its look with
  * the portal launcher via <SableFab>.
  */
-export function VioFab() {
-  const vio = useVio();
-  if (vio.state !== "closed") return null;
-  return <SableFab onClick={vio.openLast} />;
+export function SableLauncher() {
+  const sable = useSable();
+  if (sable.state !== "closed") return null;
+  return <SableFab onClick={sable.openLast} />;
 }

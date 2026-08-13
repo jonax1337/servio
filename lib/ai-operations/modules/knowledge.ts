@@ -104,7 +104,7 @@ export const OPERATIONS: AiOperation[] = [
         select: { id: true },
       });
 
-      await writeAudit({ userId: ctx.userId, action: "CREATE", entity: "Article", entityId: article.id, summary: `Created article "${title}" via Vio` });
+      await writeAudit({ userId: ctx.userId, action: "CREATE", entity: "Article", entityId: article.id, summary: `Created article "${title}" via Sable` });
       return ok(`Created article "${title}"`);
     },
   },
@@ -164,7 +164,7 @@ export const OPERATIONS: AiOperation[] = [
         throw e;
       }
 
-      await writeAudit({ userId: ctx.userId, action: "DELETE", entity: "Article", entityId: article.id, summary: `Deleted article "${article.title}" via Vio` });
+      await writeAudit({ userId: ctx.userId, action: "DELETE", entity: "Article", entityId: article.id, summary: `Deleted article "${article.title}" via Sable` });
       return ok(`Deleted article "${article.title}"`);
     },
   },

@@ -45,7 +45,7 @@ export const OPERATIONS: AiOperation[] = [
           },
           select: { id: true },
         });
-        await writeAudit({ userId: ctx.userId, action: "CREATE", entity: "Category", entityId: row.id, summary: `Created category "${name}" via Vio` });
+        await writeAudit({ userId: ctx.userId, action: "CREATE", entity: "Category", entityId: row.id, summary: `Created category "${name}" via Sable` });
         return ok(`Created category "${name}"`);
       } catch (e) {
         if ((e as { code?: string })?.code === "P2002") return err("A category with that name already exists.");
@@ -87,7 +87,7 @@ export const OPERATIONS: AiOperation[] = [
       }
       if (Object.keys(data).length === 0) return err("Nothing to update.");
       await db.category.update({ where: { id: target.id }, data });
-      await writeAudit({ userId: ctx.userId, action: "UPDATE", entity: "Category", entityId: target.id, summary: `Updated category "${target.name}" via Vio` });
+      await writeAudit({ userId: ctx.userId, action: "UPDATE", entity: "Category", entityId: target.id, summary: `Updated category "${target.name}" via Sable` });
       return ok(`Updated category "${target.name}"`);
     },
   },

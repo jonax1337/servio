@@ -7,8 +7,8 @@ import {
 } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/app-sidebar";
 import { AppTopbar } from "@/components/app-topbar";
-import { VioProvider } from "@/components/assistant/vio-provider";
-import { VioMount } from "@/components/assistant/vio-mount";
+import { SableProvider } from "@/components/assistant/sable-provider";
+import { SableMount } from "@/components/assistant/sable-mount";
 
 export default async function ConsoleLayout({
   children,
@@ -26,7 +26,7 @@ export default async function ConsoleLayout({
     <SidebarProvider>
       <AppSidebar role={user.role} />
       <SidebarInset className="min-w-0">
-        <VioProvider>
+        <SableProvider>
           <AppTopbar
             user={{
               name: user.name,
@@ -37,12 +37,12 @@ export default async function ConsoleLayout({
             notifications={notifications}
           />
           <main className="min-w-0 flex-1">{children}</main>
-          <VioMount
+          <SableMount
             configured={configured}
             teaser={teaser}
             isAdmin={hasRole(user.role, "ADMIN")}
           />
-        </VioProvider>
+        </SableProvider>
       </SidebarInset>
     </SidebarProvider>
   );

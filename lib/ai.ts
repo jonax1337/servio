@@ -7,7 +7,7 @@ import type { z } from "zod";
 import { getSetting, getBoolSetting, getNumberSetting } from "@/lib/settings";
 
 /**
- * Self-hosted "AI Service Agent" (Vio) config. Config is resolved through
+ * Self-hosted "AI Service Agent" (Sable) config. Config is resolved through
  * lib/settings (DB AppSetting overrides process.env), gated on an async
  * *Configured() boolean, and secrets never leak to the client. All AI runs
  * server-side (server actions / route handlers).

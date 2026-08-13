@@ -20,7 +20,7 @@ import { PortalThread } from "./portal-thread";
  * Thread as the console, USER-scoped and ephemeral. An icon-only launcher opens
  * a small bottom-right card (no maximised state here).
  */
-export function VioWidget({
+export function SableWidget({
   firstName,
   previewOnly = false,
 }: {
@@ -71,7 +71,7 @@ export function VioWidget({
 
             {previewOnly ? (
               <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 p-6 text-center">
-                <span className="grid size-12 place-items-center rounded-xl bg-vio text-vio-foreground">
+                <span className="grid size-12 place-items-center rounded-xl bg-sable text-sable-foreground">
                   <Sparkles className="size-6" />
                 </span>
                 <p className="max-w-xs text-sm text-muted-foreground">

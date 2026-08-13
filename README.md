@@ -80,7 +80,7 @@ single requester. It answers from the **public** knowledge base and catalog, rea
 **own** tickets (never internal notes), understands attached **screenshots** of an error, and —
 with the same confirm-first cards — opens a correctly-routed ticket, fills a catalog request form,
 or posts a reply on one of their own tickets. It shares **none** of the agent tools. See
-[docs/ai.md](docs/ai.md#vio-in-the-self-service-portal-end-users).
+[docs/ai.md](docs/ai.md#sable-in-the-self-service-portal-end-users).
 
 **Self-hostable and privacy-first.** Sable runs against the provider *you* choose:
 

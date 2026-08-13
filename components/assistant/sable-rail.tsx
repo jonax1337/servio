@@ -62,7 +62,7 @@ import {
  * (create / rename / delete, drag chats in and out) and an archived section.
  * Monochrome and restrained — the classy end of the ITSM palette.
  */
-export function VioRail({
+export function SableRail({
   activeId,
   onSelect,
   onNewChat,
@@ -151,7 +151,7 @@ export function VioRail({
 
   return (
     <DndContext
-      id="vio-rail-dnd"
+      id="sable-rail-dnd"
       sensors={sensors}
       onDragStart={onDragStart}
       onDragEnd={onDragEnd}
@@ -166,7 +166,7 @@ export function VioRail({
                 onClick={() => onScope(s)}
                 className={cn(
                   "flex-1 rounded-md px-2 py-1 font-medium transition-colors",
-                  scope === s ? "bg-vio text-vio-foreground" : "text-muted-foreground hover:text-foreground",
+                  scope === s ? "bg-sable text-sable-foreground" : "text-muted-foreground hover:text-foreground",
                 )}
               >
                 {s === "GENERAL" ? "General" : "Admin"}
@@ -178,7 +178,7 @@ export function VioRail({
         <Button
           type="button"
           onClick={onNewChat}
-          className="w-full justify-start gap-2 rounded-lg bg-vio text-vio-foreground shadow-none hover:bg-vio/90"
+          className="w-full justify-start gap-2 rounded-lg bg-sable text-sable-foreground shadow-none hover:bg-sable/90"
         >
           <Plus className="size-4" /> New chat
         </Button>
@@ -275,7 +275,7 @@ export function VioRail({
       <DragOverlay dropAnimation={null}>
         {dragging ? (
           <div className="pointer-events-none flex max-w-56 items-center gap-2 rounded-lg border bg-popover px-2 py-1.5 text-sm shadow-lg">
-            <MessageSquare className="size-3.5 shrink-0 text-vio" />
+            <MessageSquare className="size-3.5 shrink-0 text-sable" />
             <span className="truncate">{dragging.title}</span>
           </div>
         ) : null}
@@ -307,7 +307,7 @@ function ChatSection({
   return (
     <section
       ref={setNodeRef}
-      className={cn("space-y-0.5 rounded-lg transition-colors", isOver && "bg-vio-muted/60 ring-1 ring-border")}
+      className={cn("space-y-0.5 rounded-lg transition-colors", isOver && "bg-sable-muted/60 ring-1 ring-border")}
     >
       <div className="px-1.5 pb-0.5 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
         {label}
@@ -373,7 +373,7 @@ function FolderNode({
   return (
     <div
       ref={setNodeRef}
-      className={cn("rounded-lg transition-colors", isOver && "bg-vio-muted/60 ring-1 ring-border")}
+      className={cn("rounded-lg transition-colors", isOver && "bg-sable-muted/60 ring-1 ring-border")}
     >
       <div
         className={cn(
@@ -553,7 +553,7 @@ function ChatRow({
         className="flex min-w-0 flex-1 items-center gap-2 text-left"
         title={conv.title}
       >
-        <MessageSquare className={cn("size-3.5 shrink-0", active ? "text-vio" : "text-muted-foreground")} />
+        <MessageSquare className={cn("size-3.5 shrink-0", active ? "text-sable" : "text-muted-foreground")} />
         <span
           className={cn(
             "min-w-0 flex-1 truncate text-sm",

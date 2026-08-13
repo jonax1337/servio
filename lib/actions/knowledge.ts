@@ -79,7 +79,7 @@ function parse(formData: FormData): ParsedArticle {
 const cleanCategory = (v: string) => (v && v !== "none" ? v : null);
 
 /** Prisma unique-constraint violation (e.g. slug or (articleId, version)). */
-function isUniqueViolation(e: unknown) {
+function isUniqueSablelation(e: unknown) {
   return typeof e === "object" && e !== null && (e as { code?: string }).code === "P2002";
 }
 
@@ -119,7 +119,7 @@ export async function createArticle(_prev: ArticleState, formData: FormData): Pr
         select: { id: true, slug: true },
       });
     } catch (e) {
-      if (isUniqueViolation(e)) continue;
+      if (isUniqueSablelation(e)) continue;
       throw e;
     }
   }
@@ -174,7 +174,7 @@ export async function updateArticle(_prev: ArticleState, formData: FormData): Pr
       });
       saved = true;
     } catch (e) {
-      if (isUniqueViolation(e)) continue;
+      if (isUniqueSablelation(e)) continue;
       throw e;
     }
   }

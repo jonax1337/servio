@@ -9,8 +9,8 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 /**
- * Confirm-to-create endpoint for the portal Vio widget. The user clicks
- * "Create request" on a draft Vio proposed; this re-validates that draft
+ * Confirm-to-create endpoint for the portal Sable widget. The user clicks
+ * "Create request" on a draft Sable proposed; this re-validates that draft
  * server-side and creates a fully-routed ticket as the signed-in user —
  * either a free-form ticket or a filled catalog order.
  */
@@ -53,7 +53,7 @@ export async function POST(req: Request) {
     if (parsed.data.kind === "service") {
       const answers: Record<string, string> = {};
       for (const a of parsed.data.answers) answers[a.key] = a.value;
-      const result = await createCatalogRequestFor(me, parsed.data.itemId, answers, "VIO");
+      const result = await createCatalogRequestFor(me, parsed.data.itemId, answers, "SABLE");
       if (!result.ok) return NextResponse.json({ error: result.error }, { status: 400 });
       await linkStagedAttachments(me.id, result.ticket.id, attachmentIds);
       await attachDataUrlsToTicket(me.id, result.ticket.id, attachments);
@@ -73,7 +73,7 @@ export async function POST(req: Request) {
       urgency: parsed.data.urgency,
       description: parsed.data.description,
       categoryId: parsed.data.categoryId ?? null,
-      source: "VIO",
+      source: "SABLE",
     });
     await linkStagedAttachments(me.id, ticket.id, attachmentIds);
     await attachDataUrlsToTicket(me.id, ticket.id, attachments);

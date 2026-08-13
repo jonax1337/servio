@@ -91,7 +91,7 @@ model AppSetting {
   updatedBy   User?    @relation(fields: [updatedById], references: [id])
 }
 
-/// A persisted standalone Vio conversation (the /assistant surface). Reopenable,
+/// A persisted standalone Sable conversation (the /assistant surface). Reopenable,
 /// listed in the left rail, auto-titled from the first user message. Distinct
 /// from ticket-bound chat, which is ephemeral.
 model AiConversation {
@@ -112,7 +112,7 @@ model AiConversation {
   @@index([folderId])
 }
 
-/// A per-user folder to organise Vio conversations. Deleting a folder just
+/// A per-user folder to organise Sable conversations. Deleting a folder just
 /// un-groups its chats (SetNull) — it never deletes conversations.
 model AiFolder {
   id        String   @id @default(cuid())

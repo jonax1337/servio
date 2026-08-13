@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 /**
- * A Button with an "AI" look — a subtle monochrome Onyx tint (the `--vio`
+ * A Button with an "AI" look — a subtle monochrome Onyx tint (the `--sable`
  * tokens) so AI affordances read as distinct from ordinary actions. Accepts
  * all Button props.
  */
@@ -14,7 +14,7 @@ function AiButton({ className, ...props }: React.ComponentProps<typeof Button>) 
       variant="outline"
       size="sm"
       className={cn(
-        "border-vio/25 bg-vio-muted/50 text-foreground hover:bg-vio-muted hover:text-foreground",
+        "border-sable/25 bg-sable-muted/50 text-foreground hover:bg-sable-muted hover:text-foreground",
         className,
       )}
       {...props}

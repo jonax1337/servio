@@ -12,7 +12,7 @@ import { usePathname } from "next/navigation";
 import type { AssistantScope } from "@/lib/actions/ai-assistant";
 
 /**
- * The global Vio window state machine. Mounted ONCE in the console layout
+ * The global Sable window state machine. Mounted ONCE in the console layout
  * (above the page) so the window — and the active conversation — survive
  * client-side navigation. Three visual states:
  *
@@ -25,11 +25,11 @@ import type { AssistantScope } from "@/lib/actions/ai-assistant";
  * reachable from the history rail in the maximised window.
  */
 
-export type VioState = "closed" | "min" | "max";
-export type VioOpenState = "min" | "max";
+export type SableState = "closed" | "min" | "max";
+export type SableOpenState = "min" | "max";
 
-const LS_STATE = "vio:lastOpen";
-const LS_CONV = "vio:conversationId";
+const LS_STATE = "sable:lastOpen";
+const LS_CONV = "sable:conversationId";
 
 function readLS(key: string): string | null {
   if (typeof window === "undefined") return null;
@@ -49,16 +49,16 @@ function writeLS(key: string, value: string | null) {
   }
 }
 
-export type VioContextValue = {
-  state: VioState;
+export type SableContextValue = {
+  state: SableState;
   /** The active conversation id (null = a fresh, not-yet-created chat). */
   conversationId: string | null;
   scope: AssistantScope;
-  /** In-context surface for the next turn (e.g. the ticket the user opened Vio from). */
+  /** In-context surface for the next turn (e.g. the ticket the user opened Sable from). */
   context?: { ticketId?: number };
   /** Open the window in a given state; optionally point it at a conversation/scope/context. */
   open: (
-    state: Exclude<VioState, "closed">,
+    state: Exclude<SableState, "closed">,
     opts?: { conversationId?: string | null; scope?: AssistantScope; context?: { ticketId?: number } },
   ) => void;
   /** Re-open in whatever state (min/max) it was last left in. */
@@ -73,20 +73,20 @@ export type VioContextValue = {
   setScope: (scope: AssistantScope) => void;
 };
 
-const VioCtx = createContext<VioContextValue | null>(null);
+const SableCtx = createContext<SableContextValue | null>(null);
 
-export function useVio(): VioContextValue {
-  const ctx = useContext(VioCtx);
-  if (!ctx) throw new Error("useVio must be used within <VioProvider>");
+export function useSable(): SableContextValue {
+  const ctx = useContext(SableCtx);
+  if (!ctx) throw new Error("useSable must be used within <SableProvider>");
   return ctx;
 }
 
-export function VioProvider({ children }: { children: ReactNode }) {
+export function SableProvider({ children }: { children: ReactNode }) {
   const pathname = usePathname();
-  const [state, setState] = useState<VioState>("closed");
+  const [state, setState] = useState<SableState>("closed");
   // Restore the last conversation + open state from a previous session.
   const [conversationId, setConversationId] = useState<string | null>(() => readLS(LS_CONV) || null);
-  const [lastOpen, setLastOpen] = useState<VioOpenState>(
+  const [lastOpen, setLastOpen] = useState<SableOpenState>(
     () => (readLS(LS_STATE) === "max" ? "max" : "min"),
   );
   const [scope, setScope] = useState<AssistantScope>("GENERAL");
@@ -98,13 +98,13 @@ export function VioProvider({ children }: { children: ReactNode }) {
     return m ? Number(m[1]) : undefined;
   }, [pathname]);
 
-  // An explicit context (from a "Vio" link) wins; otherwise use the current page's ticket.
+  // An explicit context (from a "Sable" link) wins; otherwise use the current page's ticket.
   const context = useMemo<{ ticketId?: number } | undefined>(() => {
     if (contextOverride) return contextOverride;
     return pathTicketId ? { ticketId: pathTicketId } : undefined;
   }, [contextOverride, pathTicketId]);
 
-  const open = useCallback<VioContextValue["open"]>((next, opts) => {
+  const open = useCallback<SableContextValue["open"]>((next, opts) => {
     if (opts && "conversationId" in opts) {
       setConversationId(opts.conversationId ?? null);
       writeLS(LS_CONV, opts.conversationId ?? null);
@@ -143,7 +143,7 @@ export function VioProvider({ children }: { children: ReactNode }) {
     writeLS(LS_CONV, id);
   }, []);
 
-  const value = useMemo<VioContextValue>(
+  const value = useMemo<SableContextValue>(
     () => ({
       state,
       conversationId,
@@ -161,5 +161,5 @@ export function VioProvider({ children }: { children: ReactNode }) {
     [state, conversationId, scope, context, open, openLast, minimize, maximize, close, newChat, setConversation],
   );
 
-  return <VioCtx.Provider value={value}>{children}</VioCtx.Provider>;
+  return <SableCtx.Provider value={value}>{children}</SableCtx.Provider>;
 }

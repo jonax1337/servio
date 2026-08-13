@@ -163,7 +163,7 @@ function AiSummaryBox({
   onAddAsInternal: (html: string) => void;
 }) {
   return (
-    <div className="relative rounded-xl border border-vio/25 bg-vio-muted/40 p-3">
+    <div className="relative rounded-xl border border-sable/25 bg-sable-muted/40 p-3">
       {summary && !pending ? (
         <button
           type="button"

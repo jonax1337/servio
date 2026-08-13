@@ -90,7 +90,7 @@ export const OPERATIONS: AiOperation[] = [
         action: "CREATE",
         entity: "Asset",
         entityId: row.id,
-        summary: `Created asset "${name}" via Vio`,
+        summary: `Created asset "${name}" via Sable`,
       });
       return ok(`Created asset "${name}"`);
     },
@@ -148,7 +148,7 @@ export const OPERATIONS: AiOperation[] = [
         action: "UPDATE",
         entity: "Asset",
         entityId: asset.id,
-        summary: `Updated ${dbField} of asset "${asset.name}" via Vio`,
+        summary: `Updated ${dbField} of asset "${asset.name}" via Sable`,
       });
       return ok(`Updated ${field} of asset "${asset.name}"`);
     },
@@ -286,7 +286,7 @@ export const OPERATIONS: AiOperation[] = [
         action: "DELETE",
         entity: "Location",
         entityId: target.id,
-        summary: `Deleted location "${target.name}" via Vio`,
+        summary: `Deleted location "${target.name}" via Sable`,
       });
       return ok(`Deleted location "${target.name}"`);
     },

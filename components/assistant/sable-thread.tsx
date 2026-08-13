@@ -13,7 +13,7 @@ import {
 import { useChatRuntime, AssistantChatTransport } from "@assistant-ui/react-ai-sdk";
 import type { UIMessage } from "@ai-sdk/react";
 import { Thread } from "@/components/thread";
-import { VioToolUI, VioConversationContext } from "./vio-tool-ui";
+import { SableToolUI, SableConversationContext } from "./sable-tool-ui";
 import {
   createConversation,
   getConversation,
@@ -21,9 +21,9 @@ import {
   type AssistantScope,
 } from "@/lib/actions/ai-assistant";
 
-const THREAD_COMPONENTS = { ToolFallback: VioToolUI };
+const THREAD_COMPONENTS = { ToolFallback: SableToolUI };
 
-type VioMetadata = {
+type SableMetadata = {
   proposals?: AssistantProposal[];
   toolCalls?: { name: string; input: unknown }[];
 };
@@ -36,7 +36,7 @@ function hydrate(
     toolCalls?: { name: string; input: unknown }[];
     proposals?: AssistantProposal[];
   }[],
-): UIMessage<VioMetadata>[] {
+): UIMessage<SableMetadata>[] {
   return rows.map((m, i) => ({
     id: `h${i}`,
     role: m.role,
@@ -53,7 +53,7 @@ function hydrate(
  * conversation is created LAZILY on the first send (never on mount), so empty
  * "New chat" rows don't appear until the user actually chats.
  */
-export function VioThread({
+export function SableThread({
   conversationId,
   scope,
   context,
@@ -66,7 +66,7 @@ export function VioThread({
   onConversationCreated?: (id: string) => void;
   onActivity?: () => void;
 }) {
-  const [initial, setInitial] = useState<UIMessage<VioMetadata>[]>([]);
+  const [initial, setInitial] = useState<UIMessage<SableMetadata>[]>([]);
   const [hydrating, setHydrating] = useState<boolean>(Boolean(conversationId));
 
   useEffect(() => {
@@ -116,7 +116,7 @@ function ThreadRuntime({
   initialConversationId: string | null;
   scope: AssistantScope;
   context?: { ticketId?: number };
-  initialMessages: UIMessage<VioMetadata>[];
+  initialMessages: UIMessage<SableMetadata>[];
   onConversationCreated?: (id: string) => void;
   onActivity?: () => void;
 }) {
@@ -127,7 +127,7 @@ function ThreadRuntime({
   // never-used chat never hits the DB / the rail, then reuse it. The ref is read
   // only inside this send-time callback (deferred, not during render).
   const prepareRequest = useCallback(
-    async ({ messages }: { messages: UIMessage<VioMetadata>[] }) => {
+    async ({ messages }: { messages: UIMessage<SableMetadata>[] }) => {
       let cid = convIdRef.current;
       if (!cid) {
         const res = await createConversation(scope);
@@ -144,7 +144,7 @@ function ThreadRuntime({
 
   const transport = useMemo(
     () =>
-      new AssistantChatTransport<UIMessage<VioMetadata>>({
+      new AssistantChatTransport<UIMessage<SableMetadata>>({
         api: "/api/assistant/chat",
         prepareSendMessagesRequest: prepareRequest,
       }),
@@ -160,7 +160,7 @@ function ThreadRuntime({
     [],
   );
 
-  const runtime = useChatRuntime<UIMessage<VioMetadata>>({
+  const runtime = useChatRuntime<UIMessage<SableMetadata>>({
     transport,
     messages: initialMessages,
     adapters: { attachments },
@@ -194,9 +194,9 @@ function ThreadRuntime({
   return (
     <div ref={containerRef} className="flex min-h-0 min-w-0 flex-1 flex-col">
       <AssistantRuntimeProvider runtime={runtime}>
-        <VioConversationContext.Provider value={convId ?? ""}>
+        <SableConversationContext.Provider value={convId ?? ""}>
           <Thread components={THREAD_COMPONENTS} />
-        </VioConversationContext.Provider>
+        </SableConversationContext.Provider>
       </AssistantRuntimeProvider>
     </div>
   );

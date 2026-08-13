@@ -23,7 +23,7 @@ import { ok, err, str, toFormData, coerceEnum } from "../helpers";
  * current value first and only call them when a change is actually needed.
  */
 
-// Non-secret keys an ADMIN may change through Vio. Anything else — and anything
+// Non-secret keys an ADMIN may change through Sable. Anything else — and anything
 // that looks like a credential — is rejected outright.
 const ALLOWED_SETTING_KEYS = [
   "APP_NAME",
@@ -214,7 +214,7 @@ export const OPERATIONS: AiOperation[] = [
         action: "UPDATE",
         entity: "AppSetting",
         entityId: key,
-        summary: `Set ${key} via Vio`,
+        summary: `Set ${key} via Sable`,
       });
       return ok(`Set ${key}`);
     },

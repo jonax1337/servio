@@ -8,9 +8,9 @@ import { parseFormSchema } from "@/lib/service-forms";
 import { TICKET_TYPES, PRIORITIES, IMPACT_URGENCY, ticketRef, AI_ASSISTANT_NAME } from "@/lib/constants";
 
 /**
- * Vio for the Self-Service Portal — an END-USER assistant.
+ * Sable for the Self-Service Portal — an END-USER assistant.
  *
- * Safer and smaller than the agent-console Vio (lib/ai-tools.ts): the read tools
+ * Safer and smaller than the agent-console Sable (lib/ai-tools.ts): the read tools
  * only touch PUBLIC, PUBLISHED content plus the keyless, SSRF-guarded web tools.
  * The two "write" paths (propose_request / propose_service_request) never mutate
  * on their own — they return a draft the user confirms with one click in the

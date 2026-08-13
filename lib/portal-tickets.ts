@@ -34,7 +34,7 @@ export async function linkStagedAttachments(userId: string, ticketId: number, id
 }
 
 /**
- * Post a PUBLIC reply on the user's OWN open ticket (used by the Vio assistant
+ * Post a PUBLIC reply on the user's OWN open ticket (used by the Sable assistant
  * after the user confirms). Scoped to requesterId, never internal, never on a
  * closed/cancelled ticket.
  */
@@ -62,13 +62,13 @@ export type PortalTicketInput = {
   serviceId?: string | null;
   impact?: Level;
   urgency?: Level;
-  /** Where the ticket came from — "PORTAL" (form) or "VIO" (assistant). */
+  /** Where the ticket came from — "PORTAL" (form) or "SABLE" (assistant). */
   source?: string;
 };
 
 /**
  * Shared core for creating a free-form self-service ticket, so the request form
- * action (lib/actions/portal.ts) and the portal Vio assistant create the SAME
+ * action (lib/actions/portal.ts) and the portal Sable assistant create the SAME
  * fully-routed ticket:
  *  - lands in the Service Desk triage team by default (so it's never teamless),
  *  - runs automations (which may re-route, e.g. VPN -> Infrastructure), then
@@ -103,7 +103,7 @@ export async function createPortalTicketFor(
     action: "CREATE",
     entity: "Ticket",
     entityId: ticket.id,
-    summary: input.source === "VIO" ? "Created via the Vio assistant" : "Submitted via self-service portal",
+    summary: input.source === "SABLE" ? "Created via the Sable assistant" : "Submitted via self-service portal",
   });
   if (me.email) {
     await sendMail({ to: me.email, toName: me.name, entity: "Ticket", entityId: ticket.id, ticketId: ticket.id, ...(await tplTicketReceived(ticket, await mailBrand(), { requesterName: me.name ?? "", messageHtml: ticket.description ? quoteHtml(textToHtmlParagraphs(ticket.description)) : "" })) });
@@ -121,8 +121,8 @@ export type CatalogRequestResult =
 
 /**
  * Shared core for ordering a catalog item (a service request with a dynamic
- * form). Used by the catalog request form action and by the portal Vio assistant
- * so a Vio-filled request routes exactly like a hand-filled one (triage team,
+ * form). Used by the catalog request form action and by the portal Sable assistant
+ * so a Sable-filled request routes exactly like a hand-filled one (triage team,
  * category from the item, approval flow, automations, auto-assign).
  *
  * `rawAnswers` is keyed by field key WITHOUT the `f_` prefix.

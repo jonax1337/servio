@@ -9,9 +9,9 @@ Sable is **optional and off by default**, **self-hostable** (runs fully local ag
 runs server-side — provider keys never reach the browser.
 
 > **Naming.** The display name lives in one place — `AI_ASSISTANT_NAME` in `lib/constants.ts`
-> (currently `"Sable"`). The code identifiers, filenames and route (`vio-*`, `Vio*`,
-> `/api/assistant`, `SOURCE_META.VIO`) keep the historical `vio` handle — only the label the user
-> sees changed.
+> (currently `"Sable"`). Code identifiers, filenames and the ticket source enum all use the matching
+> `sable`/`Sable`/`SABLE` handle (`sable-*`, `Sable*`, `SOURCE_META.SABLE`); the chat route is
+> `/api/assistant`. Change `AI_ASSISTANT_NAME` to relabel the assistant everywhere.
 
 See also: [configuration.md](configuration.md#ai-service-agent-sable) for the environment/settings
 reference, and [architecture.md](architecture.md) for the runtime model.
@@ -21,23 +21,23 @@ reference, and [architecture.md](architecture.md) for the runtime model.
 ## Where Sable lives
 
 There is exactly **one** Sable window in the console. It is mounted once — in
-`app/(console)/layout.tsx` via `<VioProvider>` + `<VioMount>` — so the window (and its active
+`app/(console)/layout.tsx` via `<SableProvider>` + `<SableMount>` — so the window (and its active
 conversation and in-flight stream) survive client-side navigation.
 
 | Surface | Location | Audience |
 | --- | --- | --- |
-| Global floating window | `<VioMount>` (`components/assistant/vio-mount.tsx`) → the `<VioWindow>` overlay | Agents+ |
-| Floating action button | `SableFab` (`components/assistant/{vio-fab,sable-chrome}.tsx`), bottom-right | Agents+ |
+| Global floating window | `<SableMount>` (`components/assistant/sable-mount.tsx`) → the `<SableWindow>` overlay | Agents+ |
+| Floating action button | `SableFab` (`components/assistant/{sable-fab,sable-chrome}.tsx`), bottom-right | Agents+ |
 | Inline route | `app/(console)/assistant/` → route `/assistant` (the same window, `variant="inline"`) | Agents+ |
 
-- **The window is a small state machine** (`components/assistant/vio-provider.tsx`): `closed` → nothing
+- **The window is a small state machine** (`components/assistant/sable-provider.tsx`): `closed` → nothing
   but the FAB; `min` → a small floating chat card; `max` → a large centered window that adds the
   conversation-history rail. `min` and `max` render the **same** conversation, so
   expanding/minimising never loses context.
 - **The FAB is the entry point.** The old top-bar launcher is gone; the always-present `SableFab`
   restores whatever state (min/max) Sable was last left in, with the last conversation reopened.
 - **`/assistant` renders the same window inline** (docked, full-page, no overlay) so the surface stays
-  deep-linkable while sharing the one `<VioProvider>` state. There is no separate standalone shell.
+  deep-linkable while sharing the one `<SableProvider>` state. There is no separate standalone shell.
 
 Ticket context is picked up automatically: on a `/tickets/:id` page the provider passes
 `{ ticketId }` so "this ticket"/"summarise it" resolve without typing the ref (a "Sable" link can
@@ -66,18 +66,18 @@ Sable's chat UI is built on **[assistant-ui](https://www.assistant-ui.com/)** �
 
 - The scaffolded base-ui thread is `components/thread.tsx`, with its supporting parts
   `components/{markdown-text,reasoning,tool-fallback,tool-group,tooltip-icon-button,attachment,follow-up-suggestions}.tsx`.
-- `components/assistant/vio-thread.tsx` wires a `useChatRuntime(AssistantChatTransport)` to the
+- `components/assistant/sable-thread.tsx` wires a `useChatRuntime(AssistantChatTransport)` to the
   streaming route and renders the `Thread`. It **hydrates history** from the DB (`getConversation`),
   and creates the conversation **lazily on the first send** (`createConversation`) — so an empty
   "New chat" never hits the DB or the rail until you actually chat.
-- `components/assistant/vio-tool-ui.tsx` is the thread's `ToolFallback`: it renders read-tool
+- `components/assistant/sable-tool-ui.tsx` is the thread's `ToolFallback`: it renders read-tool
   activity via the default `ToolFallback`, and for `propose_*` write tools it renders the
   approve-first `ProposalCard` (the proposal arrives as the tool's **result**). Approve/dismiss is
   persisted in `localStorage` (keyed `sable:prop:…`) so a proposal can't be re-approved after the
   thread re-hydrates.
 
-`components/assistant/vio-window.tsx` frames the thread (header + the max-state rail) and keeps a
-single `<VioThread>` mounted across the min↔max morph so an in-flight stream is never lost.
+`components/assistant/sable-window.tsx` frames the thread (header + the max-state rail) and keeps a
+single `<SableThread>` mounted across the min↔max morph so an in-flight stream is never lost.
 
 ---
 
@@ -175,7 +175,7 @@ Nothing Sable "decides" to change is applied automatically. The path is:
    operation's Zod schema and returns the full *proposal as the tool result* — **no mutation
    happens**.
 2. **Render.** assistant-ui renders that tool part through Sable's tool UI
-   (`components/assistant/vio-tool-ui.tsx`), which shows an **approval card**
+   (`components/assistant/sable-tool-ui.tsx`), which shows an **approval card**
    (`components/assistant/proposal-card.tsx`) with **Approve** and **Dismiss** buttons. (Proposals
    are also collected into message metadata and persisted, so the cards survive a re-hydrate.)
 3. **Approve.** Clicking Approve calls the `applyAssistantProposal` server action, which
@@ -285,7 +285,7 @@ file parts to providers that support them).
 
 ### The rail
 
-`components/assistant/vio-rail.tsx` is the premium left rail shown in the max window: **New chat**,
+`components/assistant/sable-rail.tsx` is the premium left rail shown in the max window: **New chat**,
 a search box, the **General/Admin scope switch** (above New chat), user **folders**
 (create / rename / delete, with `@dnd-kit` drag to move chats in and out), and a collapsible
 **Archived** section. Its folder + conversation actions call the server actions in
@@ -297,7 +297,7 @@ a search box, the **General/Admin scope switch** (above New chat), user **folder
 ## Sable in the self-service portal (end users)
 
 The help center has its own **USER-scoped** Sable — a floating widget
-(`components/portal/vio-widget.tsx`, launched with the same `SableFab`) mounted in
+(`components/portal/sable-widget.tsx`, launched with the same `SableFab`) mounted in
 `app/portal/layout.tsx`, gated by the same `aiConfigured()` / `aiTeaserEnabled()` switches. It is
 deliberately smaller and safer than the console Sable and shares **none** of the agent tools.
 
@@ -320,7 +320,7 @@ USER-scoped, confirm-to-create variant of the console thread.
   - `propose_service_request` → `createCatalogRequestFor` (fills a catalog item's dynamic form),
   - `propose_reply` → `addPortalReply` (a **public** reply on one of the user's own open tickets).
 
-  Portal/Sable tickets carry `source: "VIO"` — a neutral "Sable" badge (`SOURCE_META.VIO`, whose
+  Portal/Sable tickets carry `source: "SABLE"` — a neutral "Sable" badge (`SOURCE_META.SABLE`, whose
   label reads from `AI_ASSISTANT_NAME`).
 - **Attachments & vision:** the widget stages files (images / PDF / …, incl. `.eml`) and sends the
   current turn to a vision-capable model; anything attached is linked onto the ticket Sable opens. On
@@ -338,13 +338,13 @@ free-form tickets.
 ## Design tokens
 
 Sable — and every AI affordance in the app — uses a **monochrome** accent, not the old violet/fuchsia.
-The tokens live in `app/globals.css` (`:root` + `.dark`): `--vio`, `--vio-foreground`, `--vio-muted`,
-mapped in `@theme inline` to Tailwind's `bg-vio` / `text-vio` / `text-vio-foreground` / `bg-vio-muted`.
-Change the three `--vio*` variables to retint everything at once.
+The tokens live in `app/globals.css` (`:root` + `.dark`): `--sable`, `--sable-foreground`, `--sable-muted`,
+mapped in `@theme inline` to Tailwind's `bg-sable` / `text-sable` / `text-sable-foreground` / `bg-sable-muted`.
+Change the three `--sable*` variables to retint everything at once.
 
 These replaced the old AI accent across Sable and the app's AI affordances: `components/ui/ai-button.tsx`,
 the ticket triage per-field suggestions (`components/tickets/ticket-properties.tsx`), and the AI
-draft/summary card (`components/comments/comment-thread.tsx`) are all `vio`-tinted, as are the
+draft/summary card (`components/comments/comment-thread.tsx`) are all `sable`-tinted, as are the
 assistant-ui composer send button and caret. The Sable wordmark uses the app display font
 (Bricolage Grotesque, `font-display font-semibold`).
 
@@ -354,8 +354,8 @@ assistant-ui composer send button and caret. The Sable wordmark uses the app dis
 
 | Concern | Files |
 | --- | --- |
-| Window & state | `components/assistant/{vio-provider,vio-mount,vio-window,vio-fab,sable-chrome}.tsx` |
-| Chat surface | `components/assistant/{vio-thread,vio-tool-ui,proposal-card,vio-rail,typing-dots}.tsx` |
+| Window & state | `components/assistant/{sable-provider,sable-mount,sable-window,sable-fab,sable-chrome}.tsx` |
+| Chat surface | `components/assistant/{sable-thread,sable-tool-ui,proposal-card,sable-rail,typing-dots}.tsx` |
 | assistant-ui thread | `components/thread.tsx` + `components/{markdown-text,reasoning,tool-fallback,tool-group,tooltip-icon-button,attachment,follow-up-suggestions}.tsx` |
 | Inline route | `app/(console)/assistant/{page,layout}.tsx` (route `/assistant`) |
 | Streaming route | `app/api/assistant/chat/route.ts` (POST, AGENT+) |
@@ -364,7 +364,7 @@ assistant-ui composer send button and caret. The Sable wordmark uses the app dis
 | Provider layer | `lib/ai.ts` (config, gate, `currentProvider`/`resolveChatModel`/`chatMaxOutputTokens`, `generateAi*`), `lib/claude-cli.ts` (Agent SDK adapter) |
 | Read tools | `lib/assistant-tools.ts`, `lib/ai-tools.ts`, `lib/ai-admin-tools.ts`, `lib/ai-stats.ts` |
 | Write operations | `lib/ai-operations/` (`registry.ts`, `types.ts`, `tools.ts`, `modules/*`) |
-| Portal | `components/portal/vio-widget.tsx`, `lib/portal-assistant.ts`, `lib/portal-tickets.ts`, `app/api/portal/assistant/{route,create/route}.ts` |
+| Portal | `components/portal/sable-widget.tsx`, `lib/portal-assistant.ts`, `lib/portal-tickets.ts`, `app/api/portal/assistant/{route,create/route}.ts` |
 | Settings UI | `app/(console)/settings/ai/page.tsx` |
 | Persistence | `prisma/schema.prisma` (`AiConversation`, `AiMessage`, `AiFolder`) + migration `20260809000000_vio_assistant_conversations` |
 

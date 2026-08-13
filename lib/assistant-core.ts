@@ -1,5 +1,5 @@
 /**
- * Shared, non-"use server" core for the Vio agent console assistant.
+ * Shared, non-"use server" core for the Sable agent console assistant.
  *
  * This module holds the pieces the streaming route handler
  * (`app/api/assistant/chat/route.ts`) and the legacy `sendMessage` server action
@@ -62,7 +62,7 @@ export function coerceScope(raw: string): AssistantScope {
  * ──────────────────────────────────────────────────────────────────────────── */
 
 /**
- * Turn Vio's propose_* tool calls into approval cards. Each write tool maps (via
+ * Turn Sable's propose_* tool calls into approval cards. Each write tool maps (via
  * writeToolToOpId, built alongside the tools) to a registry operation id; we look
  * up the op to compute the card label. Deduped by operation + args.
  */

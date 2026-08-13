@@ -35,21 +35,26 @@ function injectStagedAttachments(
   writeToolToOpId: Map<string, string>,
   stagedIds: string[],
 ): boolean {
-  if (stagedIds.length === 0) return false;
   let used = false;
   for (const tc of rawToolCalls) {
     if (!ATTACHABLE_OPS.has(writeToolToOpId.get(tc.name) ?? "")) continue;
     const input = (tc.input ?? {}) as Record<string, unknown>;
-    if (input.attachFiles === false) continue; // model deemed the file irrelevant
-    input.attachmentIds = stagedIds;
+    // attachmentIds is SERVER-controlled: never trust a model-supplied value —
+    // strip it unconditionally, then set only the ids we staged this turn. (Even
+    // if a value slipped through to approval, linkStagedAttachments only ever
+    // re-parents the acting user's OWN still-unparented files, so it's inert.)
+    delete input.attachmentIds;
+    if (stagedIds.length && input.attachFiles !== false) {
+      input.attachmentIds = stagedIds;
+      used = true;
+    }
     tc.input = input;
-    used = true;
   }
   return used;
 }
 
 /**
- * Streaming chat turn for the unified console Vio (the global window: min & max
+ * Streaming chat turn for the unified console Sable (the global window: min & max
  * share this endpoint). Server-authoritative: it ignores any client-side message
  * history and rebuilds context from the DB via `prepareAssistantTurn`, then
  * streams the assistant reply token-by-token.
@@ -68,7 +73,7 @@ export const maxDuration = 120;
 const TEXT_ID = "t0";
 
 /** Message metadata sent to the client (approval cards + read-tool activity). */
-type VioMetadata = {
+type SableMetadata = {
   proposals?: ReturnType<typeof buildAssistantProposals>;
   toolCalls?: { name: string; input: unknown }[];
 };
@@ -251,7 +256,7 @@ export async function POST(req: Request) {
         const proposals = buildAssistantProposals(rawToolCalls, prepared.writeToolToOpId);
         writer.write({
           type: "message-metadata",
-          messageMetadata: { proposals, toolCalls: rawToolCalls } satisfies VioMetadata,
+          messageMetadata: { proposals, toolCalls: rawToolCalls } satisfies SableMetadata,
         });
         await persistAssistant(prepared.conv.id, text, rawToolCalls, prepared.writeToolToOpId);
       },
@@ -290,7 +295,7 @@ export async function POST(req: Request) {
   // in onFinish for cleanup). rawToolCalls are complete by the finish part.
   let usedStaged = false;
 
-  return result.toUIMessageStreamResponse<UIMessage<VioMetadata>>({
+  return result.toUIMessageStreamResponse<UIMessage<SableMetadata>>({
     messageMetadata: ({ part }) => {
       if (part.type === "finish") {
         usedStaged = injectStagedAttachments(rawToolCalls, prepared.writeToolToOpId, stagedIds);

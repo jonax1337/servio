@@ -37,7 +37,7 @@ function initials(s: string) {
 
 type Suggestion = { value: string; label: string };
 
-/** A single property: staged combobox with dirty highlight + optional inline Vio suggestion. */
+/** A single property: staged combobox with dirty highlight + optional inline Sable suggestion. */
 function EditProp({
   label, value, options, searchable, placeholder, dirty, pending, suggestion, onChange, onApply, onDismiss,
 }: {
@@ -67,15 +67,15 @@ function EditProp({
         searchPlaceholder={searchable ? `Search ${label.toLowerCase()}…` : "Filter…"}
         onChange={onChange}
         className={cn(
-          suggestion && "border-vio/40 ring-2 ring-vio/30",
+          suggestion && "border-sable/40 ring-2 ring-sable/30",
           !suggestion && dirty && "border-amber-500/40 ring-2 ring-amber-500/40",
         )}
       />
       {suggestion ? (
-        <div className="flex items-center gap-1 rounded-md border bg-vio-muted/50 px-2 py-1">
-          <Sparkles className="size-3 shrink-0 text-vio" />
+        <div className="flex items-center gap-1 rounded-md border bg-sable-muted/50 px-2 py-1">
+          <Sparkles className="size-3 shrink-0 text-sable" />
           <span className="min-w-0 flex-1 truncate text-xs text-foreground/80">{suggestion.label}</span>
-          <Button type="button" size="xs" className="h-5 shrink-0 bg-vio px-1.5 text-vio-foreground hover:bg-vio/90" onClick={onApply}>Apply</Button>
+          <Button type="button" size="xs" className="h-5 shrink-0 bg-sable px-1.5 text-sable-foreground hover:bg-sable/90" onClick={onApply}>Apply</Button>
           <Button type="button" size="xs" variant="ghost" className="h-5 shrink-0 px-1.5 text-muted-foreground" onClick={onDismiss}>
             Dismiss
           </Button>
@@ -238,7 +238,7 @@ export function TicketProperties({
     setStatusPayload(null);
   };
 
-  // ── Vio triage suggestions (inline, per field) ──
+  // ── Sable triage suggestions (inline, per field) ──
   const [sugg, setSugg] = useState<Extract<TriageState, { ok: true }> | null>(null);
   const [dismissed, setDismissed] = useState<Set<string>>(new Set());
   const triageStarted = useRef(false);

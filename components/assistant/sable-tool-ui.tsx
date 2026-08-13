@@ -7,7 +7,7 @@ import { ProposalCard, type ProposalStatus } from "./proposal-card";
 import type { AssistantProposal } from "@/lib/actions/ai-assistant";
 
 /** Provides the active conversation id to proposal cards (for applyAssistantProposal). */
-export const VioConversationContext = createContext<string>("");
+export const SableConversationContext = createContext<string>("");
 
 /* ── Persist approve/dismiss so a proposal can't be re-approved after the thread
  *    re-hydrates (assistant-ui re-renders the tool part as a fresh "idle"). ── */
@@ -38,7 +38,7 @@ function writeState(key: string, v: Persisted) {
  * `ProposalCard` for `propose_*` write tools (whose result carries the
  * proposal), and falls back to the default tool display for read tools.
  */
-export const VioToolUI: ToolCallMessagePartComponent = (props) => {
+export const SableToolUI: ToolCallMessagePartComponent = (props) => {
   if (props.toolName.startsWith("propose_")) {
     const result = props.result as { proposal?: AssistantProposal } | undefined;
     if (result?.proposal) return <ProposalTool proposal={result.proposal} />;
@@ -49,7 +49,7 @@ export const VioToolUI: ToolCallMessagePartComponent = (props) => {
 };
 
 function ProposalTool({ proposal }: { proposal: AssistantProposal }) {
-  const conversationId = useContext(VioConversationContext);
+  const conversationId = useContext(SableConversationContext);
   const key = propKey(conversationId, proposal);
   const [status, setStatus] = useState<ProposalStatus>(() => {
     const s = readState(key);

@@ -82,7 +82,7 @@ export function ProposalCard({
         <span
           className={cn(
             "grid size-6 shrink-0 place-items-center rounded-md",
-            applied ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400" : "bg-vio-muted text-vio",
+            applied ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400" : "bg-sable-muted text-sable",
           )}
         >
           {applied ? <Check className="size-3.5" /> : <Wand2 className="size-3.5" />}
@@ -123,7 +123,7 @@ export function ProposalCard({
               size="sm"
               onClick={approve}
               disabled={st === "applying"}
-              className="h-7 gap-1.5 bg-vio px-3 text-vio-foreground hover:bg-vio/90"
+              className="h-7 gap-1.5 bg-sable px-3 text-sable-foreground hover:bg-sable/90"
             >
               {st === "applying" ? <Loader2 className="size-3.5 animate-spin" /> : <Check className="size-3.5" />}
               Approve

@@ -73,7 +73,7 @@ export const OPERATIONS: AiOperation[] = [
           action: "CREATE",
           entity: "Service",
           entityId: row.id,
-          summary: `Created service "${name}" via Vio`,
+          summary: `Created service "${name}" via Sable`,
         });
         return ok(`Created service "${name}"`);
       } catch (e) {

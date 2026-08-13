@@ -5,13 +5,13 @@ import { Plus, X, Minus, Maximize2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { AI_ASSISTANT_NAME } from "@/lib/constants";
-import { useVio } from "./vio-provider";
-import { VioThread } from "./vio-thread";
-import { VioRail } from "./vio-rail";
+import { useSable } from "./sable-provider";
+import { SableThread } from "./sable-thread";
+import { SableRail } from "./sable-rail";
 import { SableHeader, SABLE_MIN_SIZE } from "./sable-chrome";
 
 /**
- * The global Vio window. A SINGLE persistent chat is kept mounted across the
+ * The global Sable window. A SINGLE persistent chat is kept mounted across the
  * min ↔ max transition (so an in-flight stream is never lost); only the framing
  * changes. The maximised state adds the conversation-history rail.
  *
@@ -19,7 +19,7 @@ import { SableHeader, SABLE_MIN_SIZE } from "./sable-chrome";
  * (used by the /assistant route so the sidebar item stays deep-linkable),
  * sharing the same provider state as the overlay.
  */
-export function VioWindow({
+export function SableWindow({
   isAdmin = false,
   disabled = false,
   teaser = false,
@@ -30,15 +30,15 @@ export function VioWindow({
   teaser?: boolean;
   variant?: "overlay" | "inline";
 }) {
-  const vio = useVio();
+  const sable = useSable();
   const inline = variant === "inline";
-  const state = inline ? "max" : vio.state;
+  const state = inline ? "max" : sable.state;
 
-  // A selection nonce keys <VioThread>: it changes ONLY on explicit selection or
+  // A selection nonce keys <SableThread>: it changes ONLY on explicit selection or
   // new-chat, never when a fresh chat auto-creates its id — so the live stream
   // survives min↔max and id assignment without a remount.
   const [selected, setSelected] = useState<{ id: string | null; nonce: number }>({
-    id: vio.conversationId,
+    id: sable.conversationId,
     nonce: 0,
   });
   // Bumped to make the rail refetch (after a turn / new chat / creation).
@@ -51,19 +51,19 @@ export function VioWindow({
     setClosing(true);
     window.setTimeout(() => {
       setClosing(false);
-      vio.close();
+      sable.close();
     }, 160);
-  }, [vio]);
+  }, [sable]);
 
-  // Bridge external conversation changes (e.g. a "Vio" link that opens a saved
+  // Bridge external conversation changes (e.g. a "Sable" link that opens a saved
   // chat) into a remount — but NOT when a fresh chat self-assigns its id (that
   // must keep the in-flight stream). Done during render (React's recommended
   // "adjust state when a prop changes" pattern) rather than in an effect.
-  const [lastExternalId, setLastExternalId] = useState<string | null>(vio.conversationId);
-  if (vio.conversationId !== lastExternalId) {
-    setLastExternalId(vio.conversationId);
+  const [lastExternalId, setLastExternalId] = useState<string | null>(sable.conversationId);
+  if (sable.conversationId !== lastExternalId) {
+    setLastExternalId(sable.conversationId);
     setSelected((s) =>
-      vio.conversationId === s.id ? s : { id: vio.conversationId, nonce: s.nonce + 1 },
+      sable.conversationId === s.id ? s : { id: sable.conversationId, nonce: s.nonce + 1 },
     );
   }
 
@@ -74,36 +74,36 @@ export function VioWindow({
   const selectConversation = useCallback(
     (id: string | null) => {
       setSelected((s) => ({ id, nonce: s.nonce + 1 }));
-      vio.setConversation(id);
+      sable.setConversation(id);
     },
-    [vio],
+    [sable],
   );
 
   const onNewChat = useCallback(() => {
     setSelected((s) => ({ id: null, nonce: s.nonce + 1 }));
-    vio.newChat();
-  }, [vio]);
+    sable.newChat();
+  }, [sable]);
 
   const onConversationCreated = useCallback(
     (id: string) => {
       // Adopt the new id WITHOUT bumping the nonce (no remount), then refresh the rail.
       setSelected((s) => ({ id, nonce: s.nonce }));
-      vio.setConversation(id);
+      sable.setConversation(id);
       void refresh();
     },
-    [vio, refresh],
+    [sable, refresh],
   );
 
   if (!visible) return null;
 
-  const scope = vio.scope;
+  const scope = sable.scope;
 
   const chat = disabled ? null : (
-    <VioThread
+    <SableThread
       key={selected.nonce}
       conversationId={selected.id}
       scope={scope}
-      context={vio.context}
+      context={sable.context}
       onConversationCreated={onConversationCreated}
       onActivity={refresh}
     />
@@ -111,18 +111,18 @@ export function VioWindow({
 
   const header = (
     <SableHeader
-      subtitle={vio.context?.ticketId ? `Helping with ticket #${vio.context.ticketId}` : undefined}
+      subtitle={sable.context?.ticketId ? `Helping with ticket #${sable.context.ticketId}` : undefined}
     >
       <Button type="button" variant="ghost" size="icon-sm" onClick={onNewChat} aria-label="New chat">
         <Plus className="size-4" />
       </Button>
       {!inline && state === "min" ? (
-        <Button type="button" variant="ghost" size="icon-sm" onClick={vio.maximize} aria-label="Expand">
+        <Button type="button" variant="ghost" size="icon-sm" onClick={sable.maximize} aria-label="Expand">
           <Maximize2 className="size-4" />
         </Button>
       ) : null}
       {!inline && state === "max" ? (
-        <Button type="button" variant="ghost" size="icon-sm" onClick={vio.minimize} aria-label="Minimize">
+        <Button type="button" variant="ghost" size="icon-sm" onClick={sable.minimize} aria-label="Minimize">
           <Minus className="size-4" />
         </Button>
       ) : null}
@@ -137,7 +137,7 @@ export function VioWindow({
   const rail =
     state === "max" ? (
       <aside className="hidden w-72 shrink-0 flex-col border-r bg-muted/20 md:flex">
-        <VioRail
+        <SableRail
           activeId={selected.id}
           onSelect={selectConversation}
           onNewChat={onNewChat}
@@ -145,7 +145,7 @@ export function VioWindow({
           isAdmin={isAdmin}
           scope={scope}
           onScope={(s) => {
-            vio.setScope(s);
+            sable.setScope(s);
             onNewChat();
           }}
         />
@@ -185,7 +185,7 @@ export function VioWindow({
     <div className="pointer-events-none fixed inset-0 z-50 flex items-end justify-end p-4">
       <div
         aria-hidden
-        onClick={vio.minimize}
+        onClick={sable.minimize}
         className={cn(
           "absolute inset-0 bg-black/40 backdrop-blur-sm transition-opacity duration-200",
           showBackdrop ? "pointer-events-auto opacity-100" : "pointer-events-none opacity-0",

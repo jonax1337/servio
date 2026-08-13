@@ -30,7 +30,7 @@ export function SableFab({ onClick, ariaLabel }: { onClick: () => void; ariaLabe
       onClick={onClick}
       className={cn(
         "fixed bottom-4 right-4 z-40 grid size-12 place-items-center rounded-xl",
-        "bg-vio text-vio-foreground shadow-lg",
+        "bg-sable text-sable-foreground shadow-lg",
         "duration-200 animate-in zoom-in-50 fade-in",
         "transition-transform hover:scale-105 active:scale-95",
       )}
@@ -56,7 +56,7 @@ export function SableHeader({
 }) {
   return (
     <header className="flex items-center gap-2.5 border-b px-3 py-2.5">
-      <span className="grid size-7 shrink-0 place-items-center rounded-lg bg-vio text-vio-foreground">
+      <span className="grid size-7 shrink-0 place-items-center rounded-lg bg-sable text-sable-foreground">
         <Sparkles className="size-4" />
       </span>
       <div className="min-w-0">

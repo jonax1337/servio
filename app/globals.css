@@ -42,10 +42,10 @@
   --color-popover: var(--popover);
   --color-card-foreground: var(--card-foreground);
   --color-card: var(--card);
-  /* Vio — monochrome "edel" accent (change --vio / --vio-foreground to retint everywhere). */
-  --color-vio: var(--vio);
-  --color-vio-foreground: var(--vio-foreground);
-  --color-vio-muted: var(--vio-muted);
+  /* Sable — monochrome "edel" accent (change --sable / --sable-foreground to retint everywhere). */
+  --color-sable: var(--sable);
+  --color-sable-foreground: var(--sable-foreground);
+  --color-sable-muted: var(--sable-muted);
   --radius-sm: calc(var(--radius) * 0.6);
   --radius-md: calc(var(--radius) * 0.8);
   --radius-lg: var(--radius);
@@ -105,10 +105,10 @@
   --sidebar-accent-foreground: oklch(0.42 0.12 266);
   --sidebar-border: oklch(0.915 0.006 264);
   --sidebar-ring: oklch(0.55 0.196 266);
-  /* Vio monochrome accent: near-black solid on light surfaces. */
-  --vio: oklch(0.24 0.006 264);
-  --vio-foreground: oklch(0.985 0.002 264);
-  --vio-muted: oklch(0.955 0.004 264);
+  /* Sable monochrome accent: near-black solid on light surfaces. */
+  --sable: oklch(0.24 0.006 264);
+  --sable-foreground: oklch(0.985 0.002 264);
+  --sable-muted: oklch(0.955 0.004 264);
 }
 
 .dark {
@@ -143,10 +143,10 @@
   --sidebar-accent-foreground: oklch(0.9 0.05 266);
   --sidebar-border: oklch(1 0 0 / 9%);
   --sidebar-ring: oklch(0.66 0.18 266);
-  /* Vio monochrome accent: near-white solid on dark surfaces. */
-  --vio: oklch(0.96 0.004 264);
-  --vio-foreground: oklch(0.2 0.01 264);
-  --vio-muted: oklch(0.27 0.012 264);
+  /* Sable monochrome accent: near-white solid on dark surfaces. */
+  --sable: oklch(0.96 0.004 264);
+  --sable-foreground: oklch(0.2 0.01 264);
+  --sable-muted: oklch(0.27 0.012 264);
 }
 
 @layer base {

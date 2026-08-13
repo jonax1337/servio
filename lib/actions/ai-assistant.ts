@@ -56,7 +56,7 @@ export type AssistantMessage = {
 };
 
 /**
- * A change Vio proposes via an operation from the RBAC registry
+ * A change Sable proposes via an operation from the RBAC registry
  * (`lib/ai-operations`). Nothing mutates until the human approves the card and
  * applyAssistantProposal re-checks the operation's role + chat scope, re-validates
  * the args against the operation's schema, and runs the real mutation.
@@ -165,7 +165,7 @@ function toAssistantMessage(row: {
 }
 
 /**
- * Turn Vio's propose_* tool calls into approval cards. Each write tool maps (via
+ * Turn Sable's propose_* tool calls into approval cards. Each write tool maps (via
  * writeToolToOpId, built alongside the tools) to a registry operation id; we look
  * up the op to compute the card label. Deduped by operation + args.
  */
@@ -623,7 +623,7 @@ export async function sendMessage(input: {
   conversationId: string;
   content: string;
   attachments?: UploadedAttachment[];
-  /** In-context surface, e.g. the ticket the user is viewing (from the Vio launcher). */
+  /** In-context surface, e.g. the ticket the user is viewing (from the Sable launcher). */
   context?: { ticketId?: number };
 }): Promise<SendMessageResult> {
   const me = await actingAgent();
@@ -738,9 +738,9 @@ export async function sendMessage(input: {
       ? adminSystemPrompt({ orgName, orgDirectory, meName: me.name, meRole: me.role })
       : generalSystemPrompt({ orgName, orgDirectory, meName: me.name, meRole: me.role });
 
-  // In-context surface: if the user opened Vio on a ticket, inject that ticket so
+  // In-context surface: if the user opened Sable on a ticket, inject that ticket so
   // "this ticket", "summarise it", "draft a KB article from it", "tag/resolve it"
-  // work without them typing the ref (Vio uses the ref shown below for tools).
+  // work without them typing the ref (Sable uses the ref shown below for tools).
   const ctxTicketId = Number(input.context?.ticketId);
   if (Number.isInteger(ctxTicketId) && ctxTicketId > 0) {
     const ticketContext = await getTicketAiContext(ctxTicketId);
