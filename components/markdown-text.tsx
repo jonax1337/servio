@@ -10,6 +10,7 @@ import {
 } from "@assistant-ui/react-markdown";
 import remarkGfm from "remark-gfm";
 import { type FC, memo, useState } from "react";
+import Link from "next/link";
 import { CheckIcon, CopyIcon } from "lucide-react";
 
 import { TooltipIconButton } from "@/components/tooltip-icon-button";
@@ -140,15 +141,27 @@ const defaultComponents = memoizeMarkdownComponents({
       {...props}
     />
   ),
-  a: ({ className, ...props }) => (
-    <a
-      className={cn(
-        "aui-md-a text-primary hover:text-primary/80 underline underline-offset-2",
-        className,
-      )}
-      {...props}
-    />
-  ),
+  a: ({ className, href, children, ...props }) => {
+    const cls = cn(
+      "aui-md-a text-primary hover:text-primary/80 underline underline-offset-2",
+      className,
+    );
+    // Internal app links navigate client-side (soft) so the globally-mounted
+    // Sable window keeps its state — only a real reload clears it. External links
+    // open in a new tab, likewise leaving the current page (and Sable) intact.
+    if (typeof href === "string" && href.startsWith("/") && !href.startsWith("//")) {
+      return (
+        <Link href={href} className={cls} {...props}>
+          {children}
+        </Link>
+      );
+    }
+    return (
+      <a href={href} className={cls} target="_blank" rel="noreferrer noopener" {...props}>
+        {children}
+      </a>
+    );
+  },
   blockquote: ({ className, ...props }) => (
     <blockquote
       className={cn(

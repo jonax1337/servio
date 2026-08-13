@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { AlertCircle, Send, MessageSquare, Check, Loader2, ArrowUpRight, Paperclip } from "lucide-react";
 import type { ToolCallMessagePartComponent } from "@assistant-ui/react";
 import { ToolFallback } from "@/components/tool-fallback";
@@ -129,13 +130,13 @@ function PortalConfirmCard({
 
       <div className="mt-2.5 flex items-center gap-2">
         {done && created ? (
-          <a
+          <Link
             href={created.url}
             className="inline-flex items-center gap-1.5 text-xs font-medium text-emerald-600 hover:underline dark:text-emerald-400"
           >
             <Check className="size-3.5" /> Created {created.ref}
             <ArrowUpRight className="size-3.5" />
-          </a>
+          </Link>
         ) : (
           <>
             <Button
