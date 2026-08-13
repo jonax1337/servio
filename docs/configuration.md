@@ -57,6 +57,7 @@ _(not in `.env.example`)_ are real but undocumented in the sample file.
 | `AI_MODEL` | No | provider default | Explicit model id. Blank falls back to `claude-opus-4-8` / `gpt-4o` / `$OLLAMA_MODEL`. |
 | `AI_MAX_OUTPUT_TOKENS` | No | `1024` | Cap on AI output tokens per call. |
 | `AI_TEASER` | No | `false` | When AI is **off**, still show the AI buttons as a disabled preview (a "ask your admin" nudge). |
+| `AI_TICKET_TRIAGE` | No | `true` | Show Sable's inline triage suggestions (priority/type/team/category) when an agent opens a ticket. Turn off to hide them; chat and request handling stay on. |
 | `ANTHROPIC_API_KEY` | No | — | Anthropic key. Secret — encrypted at rest when set via Settings. Only used when `AI_PROVIDER=anthropic` **and** the gate is open. |
 | `OPENAI_API_KEY` | No | — | OpenAI (compatible) key. Secret. Only used when `AI_PROVIDER=openai` **and** the gate is open. |
 | `OPENAI_BASE_URL` _(not in `.env.example`)_ | No | — | Override the OpenAI endpoint to reach any OpenAI-compatible cloud (OpenAI, OpenRouter, Moonshot/Kimi, Zhipu/GLM…). |

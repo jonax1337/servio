@@ -90,6 +90,7 @@ export function TicketProperties({
   options,
   aiEnabled = false,
   aiTeaser = false,
+  triageEnabled = false,
 }: {
   ticket: {
     id: number;
@@ -107,6 +108,7 @@ export function TicketProperties({
   options: FormOptions;
   aiEnabled?: boolean;
   aiTeaser?: boolean;
+  triageEnabled?: boolean;
 }) {
   // ── Options ──
   const statusOpts: ComboOption[] = TICKET_STATUSES.map((s) => ({
@@ -243,14 +245,14 @@ export function TicketProperties({
   const [dismissed, setDismissed] = useState<Set<string>>(new Set());
   const triageStarted = useRef(false);
   useEffect(() => {
-    if (!aiEnabled || aiTeaser || triageStarted.current) return;
+    if (!aiEnabled || aiTeaser || !triageEnabled || triageStarted.current) return;
     triageStarted.current = true;
     // Fetch (not a server action) so it never blocks Save changes.
     fetch(`/api/ai/triage?ticketId=${ticket.id}`)
       .then((r) => r.json())
       .then((res: TriageState) => { if (res?.ok) setSugg(res); })
       .catch(() => {});
-  }, [aiEnabled, aiTeaser, ticket.id]);
+  }, [aiEnabled, aiTeaser, triageEnabled, ticket.id]);
 
   function suggestionFor(k: DraftKey): Suggestion | null {
     if (!sugg || dismissed.has(k)) return null;

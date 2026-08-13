@@ -13,6 +13,7 @@ import { StatusBadge, VipBadge, ToneBadge } from "@/components/status-badge";
 import { TicketProperties } from "@/components/tickets/ticket-properties";
 import { CommentThread } from "@/components/comments/comment-thread";
 import { aiConfigured, aiTeaserEnabled } from "@/lib/ai";
+import { getBoolSetting } from "@/lib/settings";
 import { EditEntityDialog } from "@/components/edit-entity-dialog";
 import { addTicketComment, updateTicketDetails, unlinkTicket, unlinkAsset, unlinkRelation, setTicketProblem, setTicketChange, linkAsset } from "@/lib/actions/tickets";
 import { TicketActions } from "@/components/tickets/ticket-actions";
@@ -110,6 +111,8 @@ export default async function TicketDetailPage({
   const aiEnabled = await aiConfigured();
   const aiTeaser = !aiEnabled && (await aiTeaserEnabled()); // show buttons as a preview when disabled
   const aiVisible = aiEnabled || aiTeaser;
+  // Admins can turn off the inline triage suggestions independently of the rest.
+  const triageEnabled = aiEnabled && (await getBoolSetting("AI_TICKET_TRIAGE", true));
   const isWatching = !!me && ticket.watchers.some((w) => w.userId === me.id);
   const isAgentUser = !!me && isAgent(me.role as Role);
   const candidateOpts = candidates.map((c) => ({
@@ -381,7 +384,7 @@ export default async function TicketDetailPage({
         <Card className="mt-4">
           <CardHeader><CardTitle className="text-sm">Properties</CardTitle></CardHeader>
           <CardContent>
-            <TicketProperties ticket={ticket} options={options} aiEnabled={aiVisible} aiTeaser={aiTeaser} />
+            <TicketProperties ticket={ticket} options={options} aiEnabled={aiVisible} aiTeaser={aiTeaser} triageEnabled={triageEnabled} />
           </CardContent>
         </Card>
 

@@ -5,6 +5,7 @@ import { db } from "@/lib/db";
 import { getSessionUser, isAgent, type Role } from "@/lib/session";
 import { getFormOptions } from "@/lib/data/options";
 import { aiConfigured, generateAiText, generateAiObject } from "@/lib/ai";
+import { getBoolSetting } from "@/lib/settings";
 import { PRIORITIES, IMPACT_URGENCY, TICKET_TYPES, ticketRef, AI_ASSISTANT_NAME } from "@/lib/constants";
 import { parseFormSchema, answersToText } from "@/lib/service-forms";
 import { renderMarkdown } from "@/lib/markdown";
@@ -237,6 +238,11 @@ export async function suggestTriage(ticketId: number): Promise<TriageState> {
   const me = await requireAgent();
   if (!me) return { ok: false, error: "Not authorised" };
   if (!(await aiConfigured())) return { ok: false, error: NOT_CONFIGURED };
+  // Admins can turn off Sable's in-ticket triage suggestions without disabling
+  // the rest of the assistant (chat, request handling, etc.).
+  if (!(await getBoolSetting("AI_TICKET_TRIAGE", true))) {
+    return { ok: false, error: "Triage suggestions are turned off" };
+  }
 
   const ticket = await loadTicketContext(ticketId);
   if (!ticket) return { ok: false, error: "Ticket not found" };
