@@ -54,9 +54,14 @@ export function PortalThread({ firstName }: { firstName: string }) {
     },
   });
 
+  // The Thread root is `h-full`, so it needs a height-constrained flex parent —
+  // otherwise it resolves to 100% of the whole panel (ignoring the header) and
+  // pushes the composer below the visible area. Mirror the console wrapper.
   return (
     <AssistantRuntimeProvider runtime={runtime}>
-      <Thread components={COMPONENTS} />
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+        <Thread components={COMPONENTS} />
+      </div>
     </AssistantRuntimeProvider>
   );
 }
