@@ -314,9 +314,17 @@ type SourceItem = { label: string; url: string; kind: "web" | "kb" | "file" };
  * as a synthetic `cited_sources` tool part). Web links open in a new tab;
  * KB/file links stay in-app.
  */
+/** Defence-in-depth: never render a link with an unsafe scheme. Web links must be
+ *  http(s); in-app (kb/file) links must be a plain relative path (not "//…"). */
+function isSafeSourceUrl(s: SourceItem): boolean {
+  if (s.kind === "web") return /^https?:\/\//i.test(s.url);
+  return s.url.startsWith("/") && !s.url.startsWith("//");
+}
+
 export const SableSourcesCard: FC<{ result: unknown }> = ({ result }) => {
-  const sources = (result as { sources?: SourceItem[] } | undefined)?.sources;
-  if (!Array.isArray(sources) || sources.length === 0) return null;
+  const all = (result as { sources?: SourceItem[] } | undefined)?.sources;
+  const sources = Array.isArray(all) ? all.filter(isSafeSourceUrl) : [];
+  if (sources.length === 0) return null;
   return (
     <div className="my-1.5 flex flex-wrap items-center gap-1.5">
       <span className="text-[11px] font-medium text-muted-foreground">Sources</span>

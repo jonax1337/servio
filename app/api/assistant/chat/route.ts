@@ -89,6 +89,17 @@ function safeHostname(url: string): string {
   }
 }
 
+/** Only http(s) URLs are safe to render as an external link (blocks javascript:,
+ *  data:, etc. coming from an untrusted search provider). */
+function isHttpUrl(u: string): boolean {
+  try {
+    const p = new URL(u);
+    return p.protocol === "http:" || p.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Extract citable sources from a turn's tool results — the web pages searched,
  * KB articles and project files consulted — so we can show a "Sources" panel
@@ -105,7 +116,8 @@ function collectSources(
     if (r.name === "web_search") {
       for (const h of asArr(r.output)) {
         const url = typeof h.url === "string" ? h.url : "";
-        if (url) out.push({ label: (typeof h.title === "string" && h.title) || safeHostname(url), url, kind: "web" });
+        // The URL is from an external search provider — only trust http(s).
+        if (url && isHttpUrl(url)) out.push({ label: (typeof h.title === "string" && h.title) || safeHostname(url), url, kind: "web" });
       }
     } else if (r.name === "search_knowledge_base" || r.name === "search_knowledge") {
       for (const h of asArr(r.output)) {
@@ -122,7 +134,7 @@ function collectSources(
   for (const c of toolCalls) {
     if (c.name !== "fetch_url") continue;
     const u = (c.input as { url?: unknown })?.url;
-    if (typeof u === "string" && u) out.push({ label: safeHostname(u), url: u, kind: "web" });
+    if (typeof u === "string" && isHttpUrl(u)) out.push({ label: safeHostname(u), url: u, kind: "web" });
   }
   const seen = new Set<string>();
   const deduped: SourceRef[] = [];
