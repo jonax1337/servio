@@ -9,6 +9,8 @@ import { useSable } from "./sable-provider";
 import { SableThread } from "./sable-thread";
 import { SableRail } from "./sable-rail";
 import { SableHeader, SABLE_MIN_SIZE } from "./sable-chrome";
+import { ProjectHome } from "./project-home";
+import { SableCanvas } from "./sable-canvas";
 
 /**
  * The global Sable window. A SINGLE persistent chat is kept mounted across the
@@ -94,6 +96,31 @@ export function SableWindow({
     [sable, refresh],
   );
 
+  // Open a project as the active workspace: bind it and start a fresh, empty
+  // project-bound chat — whose empty state IS the project overview (files + links).
+  const openProjectOverview = useCallback(
+    (id: string, name: string) => {
+      sable.setProject(id, name);
+      sable.setConversation(null);
+      setSelected((s) => ({ id: null, nonce: s.nonce + 1 }));
+      if (!inline && sable.state !== "max") sable.maximize();
+    },
+    [sable, inline],
+  );
+
+  // Selecting a conversation reveals that chat and makes the active project follow
+  // it (id + name resolved by the rail) so the composer's project chip matches.
+  const selectConversationFromRail = useCallback(
+    (id: string, binding: { id: string | null; name: string | null }) => {
+      sable.setProject(binding.id, binding.name);
+      selectConversation(id);
+    },
+    [sable, selectConversation],
+  );
+
+  // The global "New chat" leaves any project (provider's newChat clears it).
+  const onNewChatGlobal = onNewChat;
+
   if (!visible) return null;
 
   const scope = sable.scope;
@@ -104,6 +131,25 @@ export function SableWindow({
       conversationId={selected.id}
       scope={scope}
       context={sable.context}
+      overview={
+        sable.projectId ? (
+          <ProjectHome
+            projectId={sable.projectId}
+            onChanged={refresh}
+            onDeleted={() => {
+              sable.setProject(null);
+              onNewChat();
+              void refresh();
+            }}
+          />
+        ) : undefined
+      }
+      projectName={sable.projectName}
+      onOpenOverview={
+        sable.projectId
+          ? () => openProjectOverview(sable.projectId as string, sable.projectName ?? "Project")
+          : undefined
+      }
       onConversationCreated={onConversationCreated}
       onActivity={refresh}
     />
@@ -114,7 +160,7 @@ export function SableWindow({
       beta
       subtitle={sable.context?.ticketId ? `Helping with ticket #${sable.context.ticketId}` : undefined}
     >
-      <Button type="button" variant="ghost" size="icon-sm" onClick={onNewChat} aria-label="New chat">
+      <Button type="button" variant="ghost" size="icon-sm" onClick={onNewChatGlobal} aria-label="New chat">
         <Plus className="size-4" />
       </Button>
       {!inline && state === "min" ? (
@@ -140,23 +186,26 @@ export function SableWindow({
       <aside className="hidden w-72 shrink-0 flex-col border-r bg-muted/20 md:flex">
         <SableRail
           activeId={selected.id}
-          onSelect={selectConversation}
-          onNewChat={onNewChat}
+          onSelect={selectConversationFromRail}
+          onNewChat={onNewChatGlobal}
           refreshKey={refreshKey}
           isAdmin={isAdmin}
-          scope={scope}
-          onScope={(s) => {
-            sable.setScope(s);
-            onNewChat();
-          }}
+          activeProjectId={sable.projectId}
+          onOpenProject={openProjectOverview}
+          onNewChatInProject={openProjectOverview}
+          onProjectsChanged={refresh}
         />
       </aside>
     ) : null;
 
+  // The Artifacts canvas is a SECOND, optional right-side pane (max only). It
+  // coexists with the chat (kept mounted) — the chat pane narrows to make room.
+  const showCanvas = state === "max" && sable.canvasOpen && sable.canvasDoc !== null;
+
   const panelBody = (
     <div className="flex min-h-0 flex-1 overflow-hidden">
       {rail}
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+      <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
         {disabled ? (
           <div className="border-b bg-amber-500/10 px-3 py-2 text-center text-xs text-amber-700 dark:text-amber-300">
             {teaser
@@ -164,8 +213,9 @@ export function SableWindow({
               : `${AI_ASSISTANT_NAME} is not enabled. Ask your admin to configure AI.`}
           </div>
         ) : null}
-        {chat}
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col">{chat}</div>
       </div>
+      {showCanvas ? <SableCanvas /> : null}
     </div>
   );
 
@@ -178,35 +228,32 @@ export function SableWindow({
     );
   }
 
-  const showBackdrop = state === "max" && !closing;
+  const maxed = state === "max";
 
   return (
-    // Full-screen, corner-anchored stage. Clicks pass through to the page in the
-    // minimised (non-modal) state; the max backdrop captures them → minimise.
-    <div className="pointer-events-none fixed inset-0 z-50 flex items-end justify-end p-4">
-      <div
-        aria-hidden
-        onClick={sable.minimize}
-        className={cn(
-          "absolute inset-0 bg-black/40 backdrop-blur-sm transition-opacity duration-200",
-          showBackdrop ? "pointer-events-auto opacity-100" : "pointer-events-none opacity-0",
-        )}
-      />
+    // Min: a small floating card bottom-right. Max: a large floating panel that fills
+    // the content area (small margins), leaving the app sidebar (width `--sidebar-width`)
+    // free on the left — full width on mobile where the sidebar is an off-canvas overlay.
+    // The frosted backdrop dims the page behind (incl. the sidebar); click it to minimise.
+    <div className={cn("pointer-events-none fixed z-50", maxed ? "inset-0" : "inset-0 flex items-end justify-end p-4")}>
+      {maxed && !closing ? (
+        <div
+          aria-hidden
+          onClick={sable.minimize}
+          className="pointer-events-auto absolute inset-0 bg-black/40 backdrop-blur-sm duration-200 animate-in fade-in-0"
+        />
+      ) : null}
       <div
         role="dialog"
-        aria-modal={state === "max"}
         aria-label={AI_ASSISTANT_NAME}
         className={cn(
-          "pointer-events-auto relative flex flex-col overflow-hidden rounded-xl border bg-background shadow-2xl",
-          // Size morph between min and max (same bottom-right anchor).
-          "transition-[width,height] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)]",
-          state === "max"
-            ? "h-[calc(100vh-2rem)] w-[min(1500px,calc(100vw-2rem))]"
-            : SABLE_MIN_SIZE,
-          // Enter on mount / exit on close.
+          "pointer-events-auto flex flex-col overflow-hidden rounded-xl border bg-background shadow-2xl",
+          maxed
+            ? "fixed inset-3 md:left-[calc(var(--sidebar-width)+0.75rem)]"
+            : cn("relative", SABLE_MIN_SIZE),
           closing
-            ? "duration-150 animate-out fade-out-0 zoom-out-95 slide-out-to-bottom-4"
-            : "duration-200 animate-in fade-in-0 zoom-in-95 slide-in-from-bottom-4",
+            ? "duration-150 animate-out fade-out-0 zoom-out-95"
+            : "duration-200 animate-in fade-in-0 zoom-in-95",
         )}
       >
         {header}

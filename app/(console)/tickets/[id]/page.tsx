@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import {
   ArrowLeft, Server, AlertTriangle, GitPullRequestArrow,
-  Flame, Link2, GitMerge, X, CheckCircle2, Users,
+  Flame, Link2, GitMerge, CheckCircle2, Users,
 } from "lucide-react";
 import { db } from "@/lib/db";
 import { getFormOptions } from "@/lib/data/options";
@@ -18,6 +18,7 @@ import { EditEntityDialog } from "@/components/edit-entity-dialog";
 import { addTicketComment, updateTicketDetails, unlinkTicket, unlinkAsset, unlinkRelation, setTicketProblem, setTicketChange, linkAsset } from "@/lib/actions/tickets";
 import { TicketActions } from "@/components/tickets/ticket-actions";
 import { LinkPicker } from "@/components/link-picker";
+import { LinkedChip as Chip, UnlinkButton as UnlinkBtn } from "@/components/linked-records";
 import { SlaBadge } from "@/components/tickets/sla-badge";
 import { UserAvatar } from "@/components/user-avatar";
 import { FormAnswers } from "@/components/tickets/form-answers";
@@ -472,42 +473,3 @@ function Meta({ label, value }: { label: string; value: string }) {
   );
 }
 
-function Chip({
-  href, icon, label, unlink,
-}: {
-  href: string;
-  icon: React.ReactNode;
-  label: string;
-  unlink: React.ReactNode;
-}) {
-  return (
-    <span className="group/chip inline-flex items-center rounded-lg border text-xs transition-colors hover:border-primary/40">
-      <Link href={href} className="inline-flex items-center gap-1.5 py-1 pl-2.5 pr-1.5">
-        {icon} {label}
-      </Link>
-      {unlink}
-    </span>
-  );
-}
-
-function UnlinkBtn({
-  action, fields,
-}: {
-  action: (formData: FormData) => void | Promise<void>;
-  fields: Record<string, string | number>;
-}) {
-  return (
-    <form action={action} className="flex">
-      {Object.entries(fields).map(([k, v]) => (
-        <input key={k} type="hidden" name={k} value={v} />
-      ))}
-      <button
-        type="submit"
-        aria-label="Unlink"
-        className="mr-1 grid size-5 place-items-center rounded text-muted-foreground opacity-0 transition-opacity hover:text-destructive group-hover/chip:opacity-100"
-      >
-        <X className="size-3.5" />
-      </button>
-    </form>
-  );
-}

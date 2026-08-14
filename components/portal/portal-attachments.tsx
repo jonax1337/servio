@@ -3,14 +3,11 @@
 import { useEffect, useRef, useState, useTransition } from "react";
 import { X, Loader2, UploadCloud } from "lucide-react";
 import { deleteAttachment } from "@/lib/actions/attachments";
-import { iconForMime, formatBytes, MAX_UPLOAD_BYTES } from "@/lib/attachments-ui";
+import { iconForMime, formatBytes, MAX_UPLOAD_BYTES, UPLOAD_ACCEPT } from "@/lib/attachments-ui";
+import { FilePreview, useFilePreview, canPreview, type PreviewFile } from "@/components/file-preview";
 import { cn } from "@/lib/utils";
 
 type Staged = { id: string; filename: string; mime: string; size: number; previewUrl?: string };
-
-// Images + documents + raw email — mirrors lib/files.ts ALLOWED_MIME.
-const ACCEPT =
-  "image/png,image/jpeg,image/gif,image/webp,application/pdf,.docx,.xlsx,.pptx,.txt,.log,.csv,.eml";
 
 /**
  * Stages files for a not-yet-created request: uploads each immediately to the
@@ -26,6 +23,7 @@ export function PortalAttachments() {
   const [error, setError] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
   const [, startDelete] = useTransition();
+  const preview = useFilePreview();
 
   useEffect(() => {
     const form = rootRef.current?.closest("form");
@@ -115,30 +113,50 @@ export function PortalAttachments() {
         )}
         <span className="text-sm font-medium">Add a screenshot or file</span>
         <span className="text-xs text-muted-foreground">
-          Drag &amp; drop, or click to browse. Images, PDF, Office docs, .eml (max {formatBytes(MAX_UPLOAD_BYTES)}).
+          Drag &amp; drop, or click to browse. Images, PDF, Office docs, media &amp; more (max {formatBytes(MAX_UPLOAD_BYTES)}).
         </span>
       </button>
 
-      <input ref={inputRef} type="file" multiple accept={ACCEPT} className="hidden" onChange={(e) => onFiles(e.target.files)} />
+      <input ref={inputRef} type="file" multiple accept={UPLOAD_ACCEPT} className="hidden" onChange={(e) => onFiles(e.target.files)} />
 
       {files.length > 0 ? (
         <div className="flex flex-wrap gap-2">
           {files.map((f) => {
             const Icon = iconForMime(f.mime);
+            const previewFile: PreviewFile = { id: f.id, name: f.filename, mime: f.mime, size: f.size };
+            const canOpen = canPreview(previewFile);
+            const thumb = f.previewUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={f.previewUrl} alt="" className="size-8 shrink-0 rounded-md object-cover" />
+            ) : (
+              <span className="grid size-8 shrink-0 place-items-center rounded-md bg-muted text-muted-foreground">
+                <Icon className="size-4" />
+              </span>
+            );
+            const meta = (
+              <span className="min-w-0 text-left">
+                <span className="block max-w-40 truncate font-medium">{f.filename}</span>
+                <span className="block text-muted-foreground">{formatBytes(f.size)}</span>
+              </span>
+            );
             return (
               <span key={f.id} className="group inline-flex items-center gap-2 rounded-lg border bg-card py-1 pl-1 pr-2 text-xs">
-                {f.previewUrl ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={f.previewUrl} alt="" className="size-8 shrink-0 rounded-md object-cover" />
+                {canOpen ? (
+                  <button
+                    type="button"
+                    onClick={() => preview.openFile(previewFile)}
+                    className="inline-flex items-center gap-2 rounded-md hover:opacity-80"
+                    title={`Preview ${f.filename}`}
+                  >
+                    {thumb}
+                    {meta}
+                  </button>
                 ) : (
-                  <span className="grid size-8 shrink-0 place-items-center rounded-md bg-muted text-muted-foreground">
-                    <Icon className="size-4" />
-                  </span>
+                  <>
+                    {thumb}
+                    {meta}
+                  </>
                 )}
-                <span className="min-w-0">
-                  <span className="block max-w-40 truncate font-medium">{f.filename}</span>
-                  <span className="block text-muted-foreground">{formatBytes(f.size)}</span>
-                </span>
                 <button
                   type="button"
                   onClick={() => remove(f.id)}
@@ -154,6 +172,8 @@ export function PortalAttachments() {
       ) : null}
 
       {error ? <p className="text-xs text-destructive">{error}</p> : null}
+
+      <FilePreview {...preview.props} />
     </div>
   );
 }

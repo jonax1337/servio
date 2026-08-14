@@ -6,6 +6,9 @@ import { validateUpload } from "@/lib/files";
 import { buildStorageKey, storage } from "@/lib/storage";
 import { canUploadTo, type UploadTarget } from "@/lib/attachments";
 import { getNumberSetting } from "@/lib/settings";
+import { extractText } from "@/lib/rag/extract";
+import { indexProjectFile } from "@/lib/rag/retrieve";
+import { classifyFile } from "@/lib/ai-file-tag";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -47,7 +50,9 @@ export async function POST(req: Request) {
   const ticketIdRaw = form.get("ticketId");
   const commentId = form.get("commentId");
   const articleId = form.get("articleId");
-  const targets = [ticketIdRaw, commentId, articleId].filter((v) => v != null && v !== "");
+  const aiProjectId = form.get("aiProjectId");
+  const aiProjectFolderId = form.get("aiProjectFolderId");
+  const targets = [ticketIdRaw, commentId, articleId, aiProjectId].filter((v) => v != null && v !== "");
   // Zero targets = a STAGING upload: the file is stored owned by the uploader with
   // no parent yet, to be re-parented onto a ticket when the (not-yet-created)
   // request form is submitted. Any authenticated user may stage their own files.
@@ -62,6 +67,9 @@ export async function POST(req: Request) {
     target = { kind: "comment", commentId: String(commentId) };
   } else if (articleId != null && articleId !== "") {
     target = { kind: "article", articleId: String(articleId) };
+  } else if (aiProjectId != null && aiProjectId !== "") {
+    const folderId = aiProjectFolderId != null && aiProjectFolderId !== "" ? String(aiProjectFolderId) : null;
+    target = { kind: "aiProject", projectId: String(aiProjectId), folderId };
   }
 
   // 4. Size pre-check before reading bytes.
@@ -110,6 +118,44 @@ export async function POST(req: Request) {
   }
 
   await writeAudit({ userId: me.id, action: "CREATE", entity: "Attachment", entityId: att.id, summary: `Uploaded "${v.safeName}"` });
+
+  // 10. Project-library uploads: create the AiProjectFile join row, extract text
+  //     for retrieval, and index it. Roll back the blob + attachment on failure so
+  //     we never leave an orphan Attachment the project can't see.
+  if (target?.kind === "aiProject") {
+    let projFile;
+    try {
+      projFile = await db.aiProjectFile.create({
+        data: { projectId: target.projectId, folderId: target.folderId ?? null, attachmentId: att.id, name: v.safeName },
+        select: { id: true },
+      });
+    } catch {
+      await db.attachment.deleteMany({ where: { id: att.id } }).catch(() => {});
+      await storage.delete(key).catch(() => {});
+      return err(409, "Could not attach the file to the project.");
+    }
+
+    // Best-effort text extraction + indexing — a failure here must not fail the
+    // upload (the file is still stored and listed; it just won't be searchable).
+    let extracted = "";
+    try {
+      extracted = await extractText(buf, v.mime, v.safeName);
+      await db.aiProjectFile.update({ where: { id: projFile.id }, data: { extractedText: extracted } });
+      await indexProjectFile(projFile.id);
+    } catch {
+      // swallow — retrieval degrades gracefully
+    }
+
+    // Content tag classification reuses any extracted text (AI refinement when
+    // configured; heuristic otherwise, e.g. images). Best-effort — never fail
+    // the upload.
+    try {
+      const tag = await classifyFile({ name: v.safeName, mime: v.mime, text: extracted });
+      await db.aiProjectFile.update({ where: { id: projFile.id }, data: { tag } });
+    } catch {
+      // swallow — tagging is non-essential
+    }
+  }
 
   // 11. Never expose storageKey/checksum/paths.
   return NextResponse.json(att, { status: 201 });

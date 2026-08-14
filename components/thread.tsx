@@ -5,6 +5,7 @@ import {
   ComposerAttachments,
   UserMessageAttachments,
 } from "@/components/attachment";
+import { ComposerCommands } from "@/components/assistant/composer-commands";
 import { ThreadFollowupSuggestions } from "@/components/follow-up-suggestions";
 import { MarkdownText } from "@/components/markdown-text";
 import {
@@ -59,6 +60,7 @@ import {
   type ComponentType,
   type FC,
   type PropsWithChildren,
+  type ReactNode,
 } from "react";
 
 export type ThreadGroupPart = MessagePrimitive.GroupedParts.GroupPart;
@@ -94,12 +96,26 @@ export type ThreadProps = {
    * @default true
    */
   editable?: boolean | undefined;
+  /**
+   * Content for the EMPTY state (e.g. a project's files + linked records). When
+   * set, it replaces the generic welcome/suggestions and the composer docks at the
+   * bottom (as in a live chat) so the overview scrolls above it. Hidden once the
+   * conversation has messages.
+   */
+  overview?: ReactNode | undefined;
+  /**
+   * A chip rendered inside the composer once a chat is under way — e.g. the active
+   * project, so the context lives in the composer instead of a header/breadcrumb.
+   */
+  composerChip?: ReactNode | undefined;
 };
 
 const EMPTY_COMPONENTS: ThreadComponents = {};
 const EMPTY_SUGGESTIONS: readonly string[] = [];
 const ThreadSuggestionsContext = createContext<readonly string[]>(EMPTY_SUGGESTIONS);
 const ThreadEditableContext = createContext<boolean>(true);
+const ThreadOverviewContext = createContext<ReactNode>(null);
+const ComposerChipContext = createContext<ReactNode>(null);
 
 // Group read-tool calls into a collapsed "N tool calls" group, but keep Sable's
 // propose_* approval cards STANDALONE (never collapsed) so they stay visible.
@@ -135,6 +151,8 @@ export const Thread: FC<ThreadProps> = ({
   components = EMPTY_COMPONENTS,
   suggestions = EMPTY_SUGGESTIONS,
   editable = true,
+  overview = null,
+  composerChip = null,
 }) => {
   const isEmpty = useAuiState(isNewChatView);
 
@@ -142,7 +160,11 @@ export const Thread: FC<ThreadProps> = ({
     <ThreadComponentsContext.Provider value={components}>
       <ThreadEditableContext.Provider value={editable}>
         <ThreadSuggestionsContext.Provider value={suggestions}>
-          <ThreadRoot isEmpty={isEmpty} />
+          <ThreadOverviewContext.Provider value={overview}>
+            <ComposerChipContext.Provider value={composerChip}>
+              <ThreadRoot isEmpty={isEmpty} />
+            </ComposerChipContext.Provider>
+          </ThreadOverviewContext.Provider>
         </ThreadSuggestionsContext.Provider>
       </ThreadEditableContext.Provider>
     </ThreadComponentsContext.Provider>
@@ -151,6 +173,8 @@ export const Thread: FC<ThreadProps> = ({
 
 const ThreadRoot: FC<{ isEmpty: boolean }> = ({ isEmpty }) => {
   const { Welcome = ThreadWelcome } = useContext(ThreadComponentsContext);
+  const overview = useContext(ThreadOverviewContext);
+  const hasOverview = overview != null;
 
   return (
     <ThreadPrimitive.Root
@@ -171,12 +195,20 @@ const ThreadRoot: FC<{ isEmpty: boolean }> = ({ isEmpty }) => {
         <div
           className={cn(
             "mx-auto flex w-full max-w-(--thread-max-width) flex-1 flex-col px-4 pt-4",
-            isEmpty && "justify-center",
+            // Generic new chat centers its welcome; a project overview flows from
+            // the top with the composer docked below (like a live chat).
+            isEmpty && !hasOverview && "justify-center",
           )}
         >
-          <AuiIf condition={isNewChatView}>
-            <Welcome />
-          </AuiIf>
+          {hasOverview ? (
+            <AuiIf condition={isNewChatView}>
+              <div className="flex w-full flex-1 flex-col pb-4">{overview}</div>
+            </AuiIf>
+          ) : (
+            <AuiIf condition={isNewChatView}>
+              <Welcome />
+            </AuiIf>
+          )}
 
           <div
             data-slot="aui_message-group"
@@ -190,16 +222,18 @@ const ThreadRoot: FC<{ isEmpty: boolean }> = ({ isEmpty }) => {
           <ThreadPrimitive.ViewportFooter
             className={cn(
               "aui-thread-viewport-footer bg-background flex flex-col gap-4 overflow-visible pb-4 md:pb-6",
-              !isEmpty &&
+              (!isEmpty || hasOverview) &&
                 "sticky bottom-0 mt-auto rounded-t-(--composer-radius)",
             )}
           >
             <ThreadScrollToBottom />
             <ThreadFollowupSuggestions />
             <Composer />
-            <AuiIf condition={(s) => isNewChatView(s) && s.composer.isEmpty}>
-              <ThreadSuggestions />
-            </AuiIf>
+            {!hasOverview ? (
+              <AuiIf condition={(s) => isNewChatView(s) && s.composer.isEmpty}>
+                <ThreadSuggestions />
+              </AuiIf>
+            ) : null}
           </ThreadPrimitive.ViewportFooter>
         </div>
       </ThreadPrimitive.Viewport>
@@ -263,17 +297,25 @@ const ThreadSuggestions: FC = () => {
 };
 
 const Composer: FC = () => {
+  const chip = useContext(ComposerChipContext);
   return (
-    <ComposerPrimitive.Root className="aui-composer-root relative flex w-full flex-col">
-      <ComposerPrimitive.AttachmentDropzone render={<div data-slot="aui_composer-shell" className="border-border/60 data-[dragging=true]:border-ring focus-within:border-border dark:border-muted-foreground/15 dark:focus-within:border-muted-foreground/30 flex w-full flex-col gap-2 rounded-(--composer-radius) border bg-(--composer-bg) p-(--composer-padding) shadow-[0_4px_16px_-8px_rgba(0,0,0,0.08),0_1px_2px_rgba(0,0,0,0.04)] transition-[border-color,box-shadow] focus-within:shadow-[0_6px_24px_-8px_rgba(0,0,0,0.12),0_1px_2px_rgba(0,0,0,0.05)] data-[dragging=true]:border-dashed data-[dragging=true]:bg-[color-mix(in_oklab,var(--color-accent)_50%,var(--color-background))] dark:shadow-none" />}><ComposerAttachments /><ComposerPrimitive.Input
-                      placeholder="Send a message..."
-                      className="aui-composer-input caret-sable placeholder:text-muted-foreground/80 max-h-32 min-h-10 w-full resize-none bg-transparent px-2.5 py-1 text-base outline-none"
-                      rows={1}
-                      autoFocus
-                      enterKeyHint="send"
-                      aria-label="Message input"
-                    /><ComposerAction /></ComposerPrimitive.AttachmentDropzone>
-    </ComposerPrimitive.Root>
+    <ComposerPrimitive.Unstable_TriggerPopoverRoot>
+      <ComposerPrimitive.Root className="aui-composer-root relative flex w-full flex-col">
+        <ComposerPrimitive.AttachmentDropzone render={<div data-slot="aui_composer-shell" className="border-border/60 data-[dragging=true]:border-ring focus-within:border-border dark:border-muted-foreground/15 dark:focus-within:border-muted-foreground/30 flex w-full flex-col gap-2 rounded-(--composer-radius) border bg-(--composer-bg) p-(--composer-padding) shadow-[0_4px_16px_-8px_rgba(0,0,0,0.08),0_1px_2px_rgba(0,0,0,0.04)] transition-[border-color,box-shadow] focus-within:shadow-[0_6px_24px_-8px_rgba(0,0,0,0.12),0_1px_2px_rgba(0,0,0,0.05)] data-[dragging=true]:border-dashed data-[dragging=true]:bg-[color-mix(in_oklab,var(--color-accent)_50%,var(--color-background))] dark:shadow-none" />}>{chip ? (
+                        <AuiIf condition={(s) => !isNewChatView(s)}>
+                          <div className="flex px-0.5 pt-0.5">{chip}</div>
+                        </AuiIf>
+                      ) : null}<ComposerAttachments /><ComposerPrimitive.Input
+                        placeholder="Send a message..."
+                        className="aui-composer-input caret-sable placeholder:text-muted-foreground/80 max-h-32 min-h-10 w-full resize-none bg-transparent px-2.5 py-1 text-base outline-none"
+                        rows={1}
+                        autoFocus
+                        enterKeyHint="send"
+                        aria-label="Message input"
+                      /><ComposerAction /></ComposerPrimitive.AttachmentDropzone>
+        <ComposerCommands />
+      </ComposerPrimitive.Root>
+    </ComposerPrimitive.Unstable_TriggerPopoverRoot>
   );
 };
 

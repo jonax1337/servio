@@ -6,6 +6,9 @@ import {
   BookOpen,
   Boxes,
   FileText,
+  FilePen,
+  FolderSearch,
+  Files,
   Globe,
   Link2,
   Search,
@@ -50,6 +53,11 @@ const TOOLS: Record<string, Meta> = {
   get_service_form: { icon: FileText, label: () => "Loaded a request form" },
   web_search: { icon: Globe, label: (a) => `Searched the web${suffix(a, "query")}` },
   fetch_url: { icon: Link2, label: () => "Read a web page" },
+  draft_document: { icon: FilePen, label: (a) => `Drafted a document${suffix(a, "title")}` },
+
+  // Project library (Sable Projects)
+  project_search_files: { icon: FolderSearch, label: (a) => `Searched the project files${suffix(a, "query")}` },
+  project_list_files: { icon: Files, label: () => "Listed the project files" },
 
   // Tickets (portal own-ticket + console)
   list_my_tickets: { icon: Ticket, label: () => "Looked up your tickets" },

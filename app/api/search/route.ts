@@ -26,12 +26,12 @@ export async function GET(req: Request) {
   ]);
 
   const results = [
-    ...tickets.map((t) => ({ group: "Tickets", href: `/tickets/${t.id}`, title: t.title, sub: ticketRef(t.id, t.prefix) })),
-    ...problems.map((p) => ({ group: "Problems", href: `/problems/${p.id}`, title: p.title, sub: problemRef(p.id) })),
-    ...changes.map((c) => ({ group: "Changes", href: `/changes/${c.id}`, title: c.title, sub: changeRef(c.id) })),
-    ...assets.map((a) => ({ group: "Assets", href: `/assets/${a.id}`, title: a.name, sub: a.assetTag ?? "Asset" })),
-    ...people.map((u) => ({ group: "People", href: `/people/${u.id}`, title: u.name ?? u.email, sub: u.email })),
-    ...services.map((s) => ({ group: "Services", href: `/services/${s.id}`, title: s.name, sub: "Service" })),
+    ...tickets.map((t) => ({ group: "Tickets", kind: "ticket" as const, id: t.id, href: `/tickets/${t.id}`, title: t.title, sub: ticketRef(t.id, t.prefix) })),
+    ...problems.map((p) => ({ group: "Problems", kind: "problem" as const, id: p.id, href: `/problems/${p.id}`, title: p.title, sub: problemRef(p.id) })),
+    ...changes.map((c) => ({ group: "Changes", kind: "change" as const, id: c.id, href: `/changes/${c.id}`, title: c.title, sub: changeRef(c.id) })),
+    ...assets.map((a) => ({ group: "Assets", kind: "asset" as const, id: a.id, href: `/assets/${a.id}`, title: a.name, sub: a.assetTag ?? "Asset" })),
+    ...people.map((u) => ({ group: "People", kind: "user" as const, id: u.id, href: `/people/${u.id}`, title: u.name ?? u.email, sub: u.email })),
+    ...services.map((s) => ({ group: "Services", kind: "service" as const, id: s.id, href: `/services/${s.id}`, title: s.name, sub: "Service" })),
   ];
 
   return NextResponse.json({ results });

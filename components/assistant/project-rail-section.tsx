@@ -1,0 +1,376 @@
+"use client";
+
+import { useCallback, useEffect, useState } from "react";
+import { useDroppable, useDraggable } from "@dnd-kit/core";
+import {
+  Boxes,
+  ChevronRight,
+  Loader2,
+  MessageSquare,
+  MoreHorizontal,
+  Pencil,
+  Plus,
+  Trash2,
+  Users,
+} from "lucide-react";
+import { toast } from "sonner";
+import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+} from "@/components/ui/dropdown-menu";
+import { NameDialog } from "./name-dialog";
+import { ConfirmDialog } from "@/components/confirm-dialog";
+import {
+  listProjects,
+  createProject,
+  renameConversation,
+  deleteConversation,
+  type ProjectSummary,
+  type ConversationSummary,
+} from "@/lib/actions/ai-assistant";
+
+/**
+ * The rail "Projects" section (above Folders) — the Vault entry point. Each
+ * project row opens as the active vault (home pane) and expands to show its
+ * pinned conversations plus a "New chat in project" action. A "+" creates a
+ * project and opens its home. Rows are `project:<id>` droppables so dragging a
+ * chat onto one pins it (handled by the parent DndContext's onDragEnd).
+ *
+ * Rendered INSIDE the rail's <DndContext>, so its droppables share the same
+ * drag session as the folders.
+ */
+export function ProjectRailSection({
+  conversations,
+  activeProjectId,
+  activeConversationId,
+  onSelectConversation,
+  onOpenProject,
+  onNewChatInProject,
+  onProjectsChanged,
+  onProjectsLoaded,
+  refreshKey,
+}: {
+  /** All the actor's conversations (from the rail) — filtered to pinned per project. */
+  conversations: ConversationSummary[];
+  activeProjectId: string | null;
+  activeConversationId: string | null;
+  onSelectConversation: (id: string) => void;
+  /** Open the project home (vault) + pin the window to it, labelled by name. */
+  onOpenProject: (id: string, name: string) => void;
+  /** Start (and select) a new chat inside a project — binds the vault by name. */
+  onNewChatInProject: (id: string, name: string) => void;
+  /** Bumped after create/rename/delete so the header chip etc. re-fetch. */
+  onProjectsChanged?: () => void;
+  /** Report the loaded (active) projects up so the rail can resolve names. */
+  onProjectsLoaded?: (projects: ProjectSummary[]) => void;
+  refreshKey: number;
+}) {
+  const [projects, setProjects] = useState<ProjectSummary[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  const [createOpen, setCreateOpen] = useState(false);
+
+  const apply = useCallback(
+    (rows: ProjectSummary[]) => {
+      const active = rows.filter((p) => !p.archived);
+      setProjects(active);
+      onProjectsLoaded?.(active);
+    },
+    [onProjectsLoaded],
+  );
+
+
+  useEffect(() => {
+    let ignore = false;
+    listProjects()
+      .then((rows) => {
+        if (!ignore) apply(rows);
+      })
+      .finally(() => {
+        if (!ignore) setLoading(false);
+      });
+    return () => {
+      ignore = true;
+    };
+  }, [refreshKey, apply]);
+
+  async function onCreate(name: string) {
+    const res = await createProject(name);
+    if (!res.ok) {
+      toast.error(res.error ?? "Could not create project");
+      return;
+    }
+    setProjects((p) => [res.project, ...p]);
+    onProjectsChanged?.();
+    onOpenProject(res.project.id, res.project.name);
+  }
+
+  const byProject: Record<string, ConversationSummary[]> = {};
+  for (const p of projects) byProject[p.id] = [];
+  for (const c of conversations) {
+    if (!c.archived && c.projectId && byProject[c.projectId]) byProject[c.projectId].push(c);
+  }
+
+  return (
+    <section className="space-y-0.5">
+      <div className="flex items-center justify-between px-1.5 pb-0.5">
+        <span className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+          Projects
+        </span>
+        <Button
+          type="button"
+          size="icon-xs"
+          variant="ghost"
+          onClick={() => setCreateOpen(true)}
+          aria-label="New project"
+          className="text-muted-foreground hover:text-foreground"
+        >
+          <Plus className="size-3.5" />
+        </Button>
+      </div>
+
+      <NameDialog
+        open={createOpen}
+        onOpenChange={setCreateOpen}
+        title="New project"
+        label="Project name"
+        placeholder="e.g. Q3 migration"
+        submitLabel="Create project"
+        onSubmit={onCreate}
+      />
+
+      {loading ? (
+        <div className="px-1.5 py-1">
+          <Loader2 className="size-3.5 animate-spin text-muted-foreground" />
+        </div>
+      ) : projects.length === 0 ? (
+        <button
+          type="button"
+          onClick={() => setCreateOpen(true)}
+          className="flex w-full flex-col items-center gap-1 rounded-lg border border-dashed border-sable/25 bg-sable-muted/20 px-3 py-4 text-center transition-colors hover:bg-sable-muted/40"
+        >
+          <Boxes className="size-4 text-sable/70" />
+          <span className="text-xs font-medium">Create a project</span>
+          <span className="text-[11px] text-muted-foreground">
+            Group chats, files and instructions.
+          </span>
+        </button>
+      ) : (
+        projects.map((project) => (
+          <ProjectRow
+            key={project.id}
+            project={project}
+            chats={byProject[project.id] ?? []}
+            open={expanded[project.id] ?? false}
+            onToggle={() => setExpanded((s) => ({ ...s, [project.id]: !s[project.id] }))}
+            isActive={project.id === activeProjectId}
+            activeConversationId={activeConversationId}
+            onSelectConversation={onSelectConversation}
+            onOpenProject={onOpenProject}
+            onNewChatInProject={onNewChatInProject}
+            onChanged={() => onProjectsChanged?.()}
+          />
+        ))
+      )}
+    </section>
+  );
+}
+
+function ProjectRow({
+  project,
+  chats,
+  open,
+  onToggle,
+  isActive,
+  activeConversationId,
+  onSelectConversation,
+  onOpenProject,
+  onNewChatInProject,
+  onChanged,
+}: {
+  project: ProjectSummary;
+  chats: ConversationSummary[];
+  open: boolean;
+  onToggle: () => void;
+  isActive: boolean;
+  activeConversationId: string | null;
+  onSelectConversation: (id: string) => void;
+  onOpenProject: (id: string, name: string) => void;
+  onNewChatInProject: (id: string, name: string) => void;
+  onChanged: () => void;
+}) {
+  const { setNodeRef, isOver } = useDroppable({ id: `project:${project.id}` });
+
+  // The "+" opens the project overview (its own composer starts the chat) rather
+  // than eagerly creating an empty "New chat" row.
+  function newChatInProject() {
+    onNewChatInProject(project.id, project.name);
+  }
+
+  return (
+    <div
+      ref={setNodeRef}
+      className={cn("rounded-lg transition-colors", isOver && "bg-sable-muted/60 ring-1 ring-sable/30")}
+    >
+      <div
+        className={cn(
+          "group/project flex items-center gap-1 rounded-lg px-1.5 py-1 transition-colors",
+          isActive ? "bg-muted" : "hover:bg-muted/60",
+        )}
+      >
+        <button type="button" onClick={onToggle} className="flex shrink-0 items-center" aria-label={open ? "Collapse" : "Expand"}>
+          <ChevronRight className={cn("size-3 text-muted-foreground transition-transform", open && "rotate-90")} />
+        </button>
+        <button
+          type="button"
+          onClick={() => onOpenProject(project.id, project.name)}
+          className="flex min-w-0 flex-1 items-center gap-1.5 text-left"
+          title={`Open ${project.name}`}
+        >
+          <Boxes className={cn("size-3.5 shrink-0", isActive ? "text-sable" : "text-muted-foreground")} />
+          <span className={cn("min-w-0 flex-1 truncate text-sm", isActive ? "font-medium" : "text-foreground/90")}>
+            {project.name}
+          </span>
+          {project.isShared ? (
+            <Users className="size-3 shrink-0 text-muted-foreground" aria-label="Shared" />
+          ) : null}
+        </button>
+        <Button
+          type="button"
+          size="icon-xs"
+          variant="ghost"
+          onClick={newChatInProject}
+          aria-label="New chat in project"
+          className="shrink-0 opacity-0 transition-opacity group-hover/project:opacity-100"
+        >
+          <Plus className="size-3.5" />
+        </Button>
+      </div>
+
+      {open ? (
+        <div className="ml-3 border-l pl-1">
+          {chats.length === 0 ? (
+            <div
+              className={cn(
+                "m-1 flex flex-col items-center gap-1 rounded-lg border border-dashed px-3 py-3 text-center transition-colors",
+                isOver ? "border-sable/40 bg-sable-muted/40" : "border-border/60",
+              )}
+            >
+              <MessageSquare className="size-3.5 text-muted-foreground/50" />
+              <span className="text-[11px] text-muted-foreground">Drop a chat here to pin it</span>
+            </div>
+          ) : (
+            chats.map((c) => (
+              <ProjectChatRow
+                key={c.id}
+                conv={c}
+                active={c.id === activeConversationId}
+                onSelect={onSelectConversation}
+                onChanged={onChanged}
+              />
+            ))
+          )}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function ProjectChatRow({
+  conv,
+  active,
+  onSelect,
+  onChanged,
+}: {
+  conv: ConversationSummary;
+  active: boolean;
+  onSelect: (id: string) => void;
+  onChanged: () => void;
+}) {
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: conv.id });
+  const [renaming, setRenaming] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+
+  async function rename(next: string) {
+    if (next === conv.title) return;
+    const res = await renameConversation(conv.id, next);
+    if (res.ok) onChanged();
+    else toast.error(res.error ?? "Could not rename");
+  }
+  async function remove() {
+    const res = await deleteConversation(conv.id);
+    if (res.ok) onChanged();
+    else toast.error(res.error ?? "Could not delete");
+  }
+
+  return (
+    <>
+      <div
+        ref={setNodeRef}
+        className={cn(
+          "group/prow flex items-center gap-1 rounded-lg px-1.5 py-1 transition-colors",
+          active ? "bg-muted" : "hover:bg-muted/60",
+          isDragging && "opacity-40",
+        )}
+      >
+        <button
+          type="button"
+          onClick={() => onSelect(conv.id)}
+          {...attributes}
+          {...listeners}
+          className="flex min-w-0 flex-1 items-center gap-2 text-left"
+          title={conv.title}
+        >
+          <MessageSquare className={cn("size-3.5 shrink-0", active ? "text-sable" : "text-muted-foreground")} />
+          <span className={cn("min-w-0 flex-1 truncate text-sm", active ? "font-medium" : "text-foreground/90")}>
+            {conv.title}
+          </span>
+        </button>
+        <DropdownMenu>
+          <DropdownMenuTrigger
+            render={
+              <Button
+                type="button"
+                size="icon-xs"
+                variant="ghost"
+                aria-label="Chat options"
+                className="shrink-0 opacity-0 transition-opacity group-hover/prow:opacity-100 aria-expanded:opacity-100"
+              />
+            }
+          >
+            <MoreHorizontal className="size-3.5" />
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem onClick={() => setRenaming(true)}>
+              <Pencil className="size-3.5" /> Rename
+            </DropdownMenuItem>
+            <DropdownMenuItem variant="destructive" onClick={() => setConfirmDelete(true)}>
+              <Trash2 className="size-3.5" /> Delete
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
+      <ConfirmDialog
+        open={confirmDelete}
+        onOpenChange={setConfirmDelete}
+        onConfirm={remove}
+        title="Delete chat?"
+        description="This permanently deletes the conversation and all its messages. This cannot be undone."
+        confirmLabel="Delete chat"
+      />
+      <NameDialog
+        open={renaming}
+        onOpenChange={setRenaming}
+        title="Rename chat"
+        label="Chat name"
+        initialValue={conv.title}
+        submitLabel="Rename"
+        onSubmit={rename}
+      />
+    </>
+  );
+}

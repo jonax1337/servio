@@ -4,7 +4,7 @@ import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Paperclip, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { MAX_UPLOAD_BYTES, formatBytes, type AttachmentTarget } from "@/lib/attachments-ui";
+import { MAX_UPLOAD_BYTES, UPLOAD_ACCEPT, formatBytes, type AttachmentTarget } from "@/lib/attachments-ui";
 
 function targetField(target: AttachmentTarget): [string, string] {
   if ("ticketId" in target) return ["ticketId", String(target.ticketId)];
@@ -13,7 +13,7 @@ function targetField(target: AttachmentTarget): [string, string] {
 }
 
 export function FileUpload({
-  target, disabled, accept, label = "Attach file",
+  target, disabled, accept = UPLOAD_ACCEPT, label = "Attach file",
 }: {
   target: AttachmentTarget;
   disabled?: boolean;

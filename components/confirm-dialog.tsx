@@ -87,3 +87,58 @@ export function ConfirmButton({
     </Dialog>
   );
 }
+
+/**
+ * A CONTROLLED confirmation dialog (no built-in trigger) — for confirming a
+ * destructive action from a menu item or other external control, where the
+ * trigger can't be the dialog's own button (e.g. inside a DropdownMenu).
+ */
+export function ConfirmDialog({
+  open,
+  onOpenChange,
+  onConfirm,
+  title,
+  description,
+  confirmLabel = "Delete",
+  cancelLabel = "Cancel",
+  confirmVariant = "destructive",
+}: {
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+  onConfirm: () => unknown | Promise<unknown>;
+  title: string;
+  description?: string;
+  confirmLabel?: string;
+  cancelLabel?: string;
+  confirmVariant?: BtnVariant;
+}) {
+  const [pending, startTransition] = useTransition();
+  const confirm = () => {
+    startTransition(async () => {
+      try {
+        await onConfirm();
+      } finally {
+        onOpenChange(false);
+      }
+    });
+  };
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-sm">
+        <DialogHeader>
+          <DialogTitle>{title}</DialogTitle>
+          {description ? <DialogDescription>{description}</DialogDescription> : null}
+        </DialogHeader>
+        <DialogFooter>
+          <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={pending}>
+            {cancelLabel}
+          </Button>
+          <Button type="button" variant={confirmVariant} onClick={confirm} disabled={pending}>
+            {pending ? <Loader2 className="size-4 animate-spin" /> : null}
+            {confirmLabel}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}

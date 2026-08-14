@@ -4,8 +4,12 @@ import type { Role } from "@/lib/session";
 /** The chat surface an operation is offered on. ADMIN-only ops need ADMIN scope. */
 export type AiOpChatScope = "GENERAL" | "ADMIN";
 
-/** The acting user, resolved fresh from the DB by the caller (never model-supplied). */
-export type AiOpCtx = { userId: string; role: Role; name: string };
+/**
+ * The acting user, resolved fresh from the DB by the caller (never model-supplied).
+ * `projectId` is the Sable Project the chat is bound to, when any — set only by the
+ * caller (from context, never the model) so project ops target the right library.
+ */
+export type AiOpCtx = { userId: string; role: Role; name: string; projectId?: string };
 
 /** Result of running an operation. `summary` is shown to the user on success. */
 export type AiOpResult =
@@ -21,8 +25,8 @@ export type AiOpResult =
  *
  * Authority is the app's real RBAC: `minRole` mirrors the underlying action, so
  * Sable can do exactly what the acting user could do in the UI — no more. `adminOnly`
- * additionally hides an op unless the chat is in ADMIN scope (the Admin tab), so
- * system-wide config lives there.
+ * now requires the ADMIN role (no separate chat scope), so system-wide config ops
+ * surface in the normal chat for admins only.
  */
 export type AiOperation = {
   /** Stable dot id, e.g. "category.create". Tool name = id with dots→underscores. */
@@ -32,7 +36,7 @@ export type AiOperation = {
   kind: "read" | "write";
   /** Minimum role, mirroring the underlying action's own RBAC check. */
   minRole: Role;
-  /** When true, only offered in ADMIN chat scope (system-wide config). */
+  /** When true, requires the ADMIN role (no separate chat scope). */
   adminOnly?: boolean;
   /** Tool description shown to the model. */
   description: string;

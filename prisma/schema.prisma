@@ -67,6 +67,7 @@ model User {
   emailTemplates  EmailTemplate[]
   notifications   Notification[]
   aiConversations AiConversation[] @relation("AiConversationUser")
+  aiProjects      AiProject[] @relation("AiProjectOwner")
   savedViews      SavedView[] @relation("SavedViewOwner")
   dashboards      Dashboard[] @relation("DashboardOwner")
   articles        Article[]
@@ -98,18 +99,21 @@ model AiConversation {
   id        String   @id @default(cuid())
   userId    String
   title     String   @default("New chat")
-  scope     String   @default("GENERAL") // GENERAL | ADMIN
+  scope     String   @default("GENERAL") // GENERAL | ADMIN (legacy behaviour hint; admin ops are now per-op RBAC-gated)
   archived  Boolean  @default(false)
   folderId  String? // optional grouping folder (SetNull on folder delete)
+  projectId String? // optional Sable project this chat belongs to (SetNull on project delete)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   user     User        @relation("AiConversationUser", fields: [userId], references: [id], onDelete: Cascade)
   folder   AiFolder?   @relation(fields: [folderId], references: [id], onDelete: SetNull)
+  project  AiProject?  @relation(fields: [projectId], references: [id], onDelete: SetNull)
   messages AiMessage[]
 
   @@index([userId, archived, updatedAt])
   @@index([folderId])
+  @@index([projectId])
 }
 
 /// A per-user folder to organise Sable conversations. Deleting a folder just
@@ -141,6 +145,101 @@ model AiMessage {
   conversation AiConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
 
   @@index([conversationId, createdAt])
+}
+
+/// A persistent Sable workspace: owns conversations, a foldered file library,
+/// custom instructions, and an optional ITSM binding (Change / Problem / Ticket).
+/// Personal by default; optionally shared with a team (mirrors SavedView sharing).
+model AiProject {
+  id           String   @id @default(cuid())
+  userId       String // owner
+  name         String   @default("New project")
+  description  String?
+  instructions String? // injected verbatim into every system prompt for this project
+  archived     Boolean  @default(false)
+
+  isShared Boolean @default(false) // visible to the shared group's members
+  groupId  String? // optional team the project is shared with (SetNull on group delete)
+
+  // Optional ITSM binding — the differentiator. Any subset may be set.
+  changeId  Int?
+  problemId Int?
+  ticketId  Int?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user          User              @relation("AiProjectOwner", fields: [userId], references: [id], onDelete: Cascade)
+  group         Group?            @relation("AiProjectGroup", fields: [groupId], references: [id], onDelete: SetNull)
+  change        Change?           @relation(fields: [changeId], references: [id], onDelete: SetNull)
+  problem       Problem?          @relation(fields: [problemId], references: [id], onDelete: SetNull)
+  ticket        Ticket?           @relation(fields: [ticketId], references: [id], onDelete: SetNull)
+  conversations AiConversation[]
+  folders       AiProjectFolder[]
+  files         AiProjectFile[]
+
+  @@index([userId, archived, updatedAt])
+  @@index([groupId])
+  @@index([changeId])
+  @@index([problemId])
+  @@index([ticketId])
+}
+
+/// A folder inside a project's file library (structure for docs). Self-nesting;
+/// deleting a folder un-nests its children/files (SetNull), never deletes blobs.
+model AiProjectFolder {
+  id        String   @id @default(cuid())
+  projectId String
+  parentId  String? // nested folders
+  name      String   @default("New folder")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  project  AiProject         @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  parent   AiProjectFolder?  @relation("AiProjectFolderTree", fields: [parentId], references: [id], onDelete: SetNull)
+  children AiProjectFolder[] @relation("AiProjectFolderTree")
+  files    AiProjectFile[]
+
+  @@index([projectId])
+  @@index([parentId])
+}
+
+/// A file in a project's library. Bytes live in blob storage (the linked
+/// Attachment row + lib/storage.ts); this row adds project structure and the
+/// server-extracted text used for retrieval.
+model AiProjectFile {
+  id            String    @id @default(cuid())
+  projectId     String
+  folderId      String? // null = project root
+  attachmentId  String    @unique // the blob (reuses Attachment + lib/storage.ts)
+  name          String
+  extractedText String? // server-side text extraction for retrieval (phase 2)
+  tag           String? // auto-classified content type (Documentation | Email | Spreadsheet | Presentation | Image | Contract | Report | Note | Other)
+  indexedAt     DateTime?
+  createdAt     DateTime  @default(now())
+
+  project    AiProject        @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  folder     AiProjectFolder? @relation(fields: [folderId], references: [id], onDelete: SetNull)
+  attachment Attachment       @relation("AiProjectFileBlob", fields: [attachmentId], references: [id], onDelete: Cascade)
+  chunks     AiProjectChunk[]
+
+  @@index([projectId, folderId])
+}
+
+/// Retrieval chunks of a project file. Phase 2 uses full-text (LIKE/tsvector);
+/// a later phase can add an embedding column (Postgres/pgvector) additively.
+model AiProjectChunk {
+  id        String   @id @default(cuid())
+  fileId    String
+  projectId String // denormalised for cheap project-scoped filtering
+  ord       Int
+  text      String
+  createdAt DateTime @default(now())
+
+  file AiProjectFile @relation(fields: [fileId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+  @@index([fileId, ord])
 }
 
 model Account {
@@ -204,6 +303,7 @@ model Group {
   dashboards Dashboard[]
   ownedCategories Category[] @relation("CategoryTeam")
   ownedServices   Service[]  @relation("ServiceTeam")
+  aiProjects AiProject[] @relation("AiProjectGroup")
 }
 
 /// A named, saved set of list filters (per-user, optionally shared with a team).
@@ -421,6 +521,7 @@ model Ticket {
   mergedTickets Ticket[]     @relation("TicketMerge")
   linksFrom     TicketLink[] @relation("LinkSource")
   linksTo       TicketLink[] @relation("LinkTarget")
+  aiProjects    AiProject[]
 
   @@index([status])
   @@index([priority])
@@ -577,6 +678,7 @@ model Problem {
   tickets  Ticket[]
   changes  Change[]
   comments ProblemComment[]
+  aiProjects AiProject[]
 
   @@index([status])
 }
@@ -632,6 +734,7 @@ model Change {
   assets    ChangeAsset[]
   tickets   Ticket[]
   comments  ChangeComment[]
+  aiProjects AiProject[]
 
   @@index([status])
 }
@@ -784,6 +887,7 @@ model Attachment {
   comment    TicketComment? @relation(fields: [commentId], references: [id], onDelete: Cascade)
   article    Article?       @relation(fields: [articleId], references: [id], onDelete: Cascade)
   uploadedBy User?          @relation("AttachmentUploader", fields: [uploadedById], references: [id])
+  aiProjectFile AiProjectFile? @relation("AiProjectFileBlob")
 
   @@index([ticketId])
   @@index([commentId])

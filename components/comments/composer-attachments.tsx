@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, useTransition } from "react";
 import { Paperclip, X, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { deleteAttachment } from "@/lib/actions/attachments";
-import { MAX_UPLOAD_BYTES, formatBytes } from "@/lib/attachments-ui";
+import { MAX_UPLOAD_BYTES, UPLOAD_ACCEPT, formatBytes } from "@/lib/attachments-ui";
 
 type Staged = { id: string; filename: string };
 
@@ -80,7 +80,7 @@ export function ComposerAttachments({
 
   const hiddenInputs = (
     <>
-      <input ref={inputRef} type="file" multiple className="hidden" onChange={(e) => onFiles(e.target.files)} />
+      <input ref={inputRef} type="file" multiple accept={UPLOAD_ACCEPT} className="hidden" onChange={(e) => onFiles(e.target.files)} />
       {files.map((f) => (
         <input key={f.id} type="hidden" name="attachmentIds" value={f.id} />
       ))}

@@ -143,7 +143,7 @@ export async function POST(req: Request) {
   let body: {
     conversationId?: string;
     messages?: UIMessage[];
-    context?: { ticketId?: number };
+    context?: { ticketId?: number; projectId?: string };
   };
   try {
     body = await req.json();
@@ -153,6 +153,15 @@ export async function POST(req: Request) {
 
   const conversationId = String(body.conversationId ?? "");
   if (!conversationId) return new Response("Missing conversationId", { status: 400 });
+
+  // Sanitise the in-context surface passed to prepareAssistantTurn: a numeric
+  // ticketId and/or a bounded project id (a cuid; access is re-checked upstream).
+  const rawCtx = body.context ?? {};
+  const rawProjectId = typeof rawCtx.projectId === "string" ? rawCtx.projectId.slice(0, 64) : undefined;
+  const context = {
+    ticketId: rawCtx.ticketId,
+    ...(rawProjectId ? { projectId: rawProjectId } : {}),
+  };
 
   // assistant-ui / useChat posts the full messages array; the new turn is the
   // last user message. We rebuild history server-side from the DB regardless.
@@ -171,7 +180,7 @@ export async function POST(req: Request) {
       conversationId,
       content,
       uploads,
-      context: body.context,
+      context,
     });
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Could not prepare the chat.";

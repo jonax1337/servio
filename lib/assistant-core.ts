@@ -15,8 +15,9 @@
 import type { ModelMessage, ToolSet } from "ai";
 import { db } from "@/lib/db";
 import { getCurrentUser, isAgent, hasRole, type Role } from "@/lib/session";
-import { getOrgDirectory } from "@/lib/ai-context";
+import { getOrgDirectory, getProjectContext } from "@/lib/ai-context";
 import { getTicketAiContext } from "@/lib/actions/ai";
+import { loadAccessibleProject } from "@/lib/ai-projects";
 import { getSetting } from "@/lib/settings";
 import { buildAssistantGeneralTools } from "@/lib/assistant-tools";
 import { ASSISTANT_ADMIN_TOOLS } from "@/lib/ai-admin-tools";
@@ -125,6 +126,10 @@ export function generalSystemPrompt(input: {
     "- search_knowledge_base: the org's own how-to / troubleshooting articles. Try this first.",
     "- search_tickets / search_problems / search_changes: free-text search of existing records (incl. comments).",
     "- web_search / fetch_url: the public web, only for facts not documented internally.",
+    "- draft_document: for a LONG document (a runbook, RCA, change doc, or KB draft) call this with the",
+    "  full markdown to open an editable canvas beside the chat where the user can refine and publish it.",
+    "  When the user asks for a SCRIPT or a file, call draft_document (pass `filename`/`language`, e.g.",
+    "  'deploy.sh'/'bash') to open that editable canvas, which the user can then save into the project's files.",
     "",
     "ACTIONS — you have many `propose_*` tools to change the system, scoped to what your role",
     "permits: create/update tickets, add comments, resolve, escalate, link, add tasks, log work;",
@@ -143,6 +148,32 @@ export function generalSystemPrompt(input: {
     "",
     "ORGANISATION DIRECTORY (real teams, services and categories):",
     orgDirectory,
+  ].join("\n");
+}
+
+/**
+ * Admin capabilities block, APPENDED to the general prompt when the acting user
+ * is an ADMIN (rather than swapping to a separate admin-only prompt that would
+ * hide the general guidance). Covers stats / settings / system-wide config ops.
+ */
+export function adminSystemPromptSection(): string {
+  return [
+    "",
+    "ADMIN CAPABILITIES (you are talking to a system administrator — these are also available):",
+    "- PULL STATISTICS with get_statistics. Available metrics: tickets_by_status,",
+    "  tickets_by_priority, tickets_by_team, tickets_by_category, open_tickets,",
+    "  tickets_created, tickets_resolved, sla_breaches, users_by_role, counts_overview.",
+    "  (optional groupBy, timeframeDays). Use it to answer \"how many…\", \"how is X trending\",",
+    "  \"which team has the most open tickets\", etc. Report numbers plainly (short tables/lists).",
+    "  Never invent metrics — always call get_statistics for numbers.",
+    "- REVIEW CONFIG with get_settings_overview (shows non-secret settings and whether secrets",
+    "  are configured). NEVER reveal or ask for secret values (API keys, passwords, encryption",
+    "  keys); you can see only whether they are set, never their contents. Never print a secret.",
+    "- LOOK UP people, groups, categories and services (search_people/groups/categories/services).",
+    "- SYSTEM-WIDE `propose_*` ACTIONS: manage groups/teams, services, catalog items, SLAs,",
+    "  problems, changes, USER ROLES, and app SETTINGS (NON-SECRET keys only — you can never read",
+    "  or set secrets like API keys / passwords / encryption keys). These follow the same",
+    "  propose-then-approve rule as every other action.",
   ].join("\n");
 }
 
@@ -350,14 +381,14 @@ export async function prepareAssistantTurn(input: {
   conversationId: string;
   content: string;
   uploads: UploadedAttachment[];
-  context?: { ticketId?: number };
+  context?: { ticketId?: number; projectId?: string };
 }): Promise<PreparedTurn> {
   const { me, uploads } = input;
   const content = String(input.content ?? "").trim();
 
   const conv = await db.aiConversation.findUnique({
     where: { id: input.conversationId },
-    select: { id: true, userId: true, scope: true, title: true },
+    select: { id: true, userId: true, scope: true, title: true, projectId: true },
   });
   if (!conv || conv.userId !== me.id) throw new Error("Not authorised");
 
@@ -414,17 +445,35 @@ export async function prepareAssistantTurn(input: {
     name: me.name,
     groupIds: memberships.map((m) => m.groupId),
   });
-  const adminReadTools = scope === "ADMIN" ? ASSISTANT_ADMIN_TOOLS : {};
+  // Admin read tools + system-wide config ops are gated by the acting user's
+  // ROLE (fresh from the DB), not by a separate chat scope — so an admin sees
+  // admin capabilities directly in the normal chat; a non-admin never does.
+  const isAdmin = hasRole(me.role, "ADMIN");
+  const adminReadTools = isAdmin ? ASSISTANT_ADMIN_TOOLS : {};
+
+  // If the chat is pinned to a project the acting user can access, thread its id
+  // into the op ctx so project.search_files/list_files resolve to that library.
+  // Prefer the explicit in-context project; fall back to the conversation's own
+  // pinned project (e.g. a chat created via "New chat in project") so it grounds
+  // even when the window's active project differs.
+  let projectId: string | undefined;
+  const rawProjectId =
+    (typeof input.context?.projectId === "string" && input.context.projectId) || conv.projectId || "";
+  if (rawProjectId) {
+    const access = await loadAccessibleProject({ id: me.id, role: me.role }, rawProjectId);
+    if (access) projectId = rawProjectId;
+  }
+
   const { tools: opTools, writeToolToOpId } = buildOperationTools(
-    { userId: me.id, role: me.role, name: me.name },
+    { userId: me.id, role: me.role, name: me.name, projectId },
     scope,
   );
   const tools = { ...readTools, ...adminReadTools, ...opTools };
 
-  let system =
-    scope === "ADMIN"
-      ? adminSystemPrompt({ orgName, orgDirectory, meName: me.name, meRole: me.role })
-      : generalSystemPrompt({ orgName, orgDirectory, meName: me.name, meRole: me.role });
+  // Always the general prompt; for admins, APPEND the admin capabilities block
+  // (rather than swapping to an admin-only prompt that hides general guidance).
+  let system = generalSystemPrompt({ orgName, orgDirectory, meName: me.name, meRole: me.role });
+  if (isAdmin) system += "\n" + adminSystemPromptSection();
 
   const ctxTicketId = Number(input.context?.ticketId);
   if (Number.isInteger(ctxTicketId) && ctxTicketId > 0) {
@@ -434,6 +483,19 @@ export async function prepareAssistantTurn(input: {
         "\n\nCURRENT TICKET (the user is viewing this — treat \"this ticket\"/\"it\" as this one, and " +
         "use its ref for ticket tools; you may draft a KB article from its problem + resolution):\n" +
         ticketContext;
+    }
+  }
+
+  // If the chat is pinned to a project, append its context so the model grounds
+  // answers in the project's instructions, bound records, and files.
+  if (projectId) {
+    const projectContext = await getProjectContext(projectId, me.id);
+    if (projectContext) {
+      system +=
+        "\n\nCURRENT PROJECT (this chat is pinned to it — honour its INSTRUCTIONS, treat its " +
+        "BOUND RECORDS as the subject, and call project.search_files to ground answers in its files " +
+        "rather than guessing):\n" +
+        projectContext;
     }
   }
 

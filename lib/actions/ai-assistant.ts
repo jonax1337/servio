@@ -4,7 +4,7 @@ import type { ModelMessage } from "ai";
 import { db } from "@/lib/db";
 import { getCurrentUser, isAgent, hasRole, type Role } from "@/lib/session";
 import { aiConfigured, generateAiChat } from "@/lib/ai";
-import { getOrgDirectory } from "@/lib/ai-context";
+import { getOrgDirectory, getProjectContext } from "@/lib/ai-context";
 import { getTicketAiContext } from "@/lib/actions/ai";
 import { getSetting } from "@/lib/settings";
 import { renderMarkdown } from "@/lib/markdown";
@@ -12,7 +12,8 @@ import { buildAssistantGeneralTools } from "@/lib/assistant-tools";
 import { ASSISTANT_ADMIN_TOOLS } from "@/lib/ai-admin-tools";
 import { buildOperationTools, runOperation } from "@/lib/ai-operations/tools";
 import { findOperation } from "@/lib/ai-operations/registry";
-import { AI_ASSISTANT_NAME, AI_SCOPES } from "@/lib/constants";
+import { AI_ASSISTANT_NAME, AI_SCOPES, ticketRef, problemRef, changeRef } from "@/lib/constants";
+import { loadAccessibleProject, canManageProjectRow } from "@/lib/ai-projects";
 
 /* ────────────────────────────────────────────────────────────────────────────
  * SHARED TYPES — defined once here, imported (type-only) everywhere else.
@@ -85,6 +86,7 @@ export type ConversationSummary = {
   scope: AssistantScope;
   archived: boolean;
   folderId: string | null;
+  projectId: string | null;
   updatedAt: string; // ISO string (serialized for the client)
 };
 
@@ -92,6 +94,35 @@ export type ConversationSummary = {
 export type AiFolderSummary = {
   id: string;
   name: string;
+};
+
+/** A Sable project as shown in the rail / switcher. `role` is the actor's relationship. */
+export type ProjectSummary = {
+  id: string;
+  name: string;
+  archived: boolean;
+  isShared: boolean;
+  groupId: string | null;
+  role: "owner" | "member";
+  changeId: number | null;
+  problemId: number | null;
+  ticketId: number | null;
+  updatedAt: string; // ISO string
+};
+
+/** Full project for the project home pane (getProject). */
+export type ProjectDetail = ProjectSummary & {
+  description: string | null;
+  instructions: string | null;
+};
+
+/** A searchable option for the project-links picker (mirrors the ticket LinkPicker). */
+export type ProjectLinkOption = { value: string; label: string };
+/** A currently-linked record, rendered as a chip. */
+export type ProjectLinkRef = { id: number; label: string; href: string };
+export type ProjectLinks = {
+  current: { ticket: ProjectLinkRef | null; problem: ProjectLinkRef | null; change: ProjectLinkRef | null };
+  options: { tickets: ProjectLinkOption[]; problems: ProjectLinkOption[]; changes: ProjectLinkOption[] };
 };
 
 /** Full conversation for the active-view (getConversation). */
@@ -206,7 +237,7 @@ export async function listConversations(): Promise<ConversationSummary[]> {
   const rows = await db.aiConversation.findMany({
     where: { userId: me.id },
     orderBy: [{ archived: "asc" }, { updatedAt: "desc" }],
-    select: { id: true, title: true, scope: true, archived: true, folderId: true, updatedAt: true },
+    select: { id: true, title: true, scope: true, archived: true, folderId: true, projectId: true, updatedAt: true },
   });
 
   return rows
@@ -217,6 +248,7 @@ export async function listConversations(): Promise<ConversationSummary[]> {
       scope: coerceScope(r.scope),
       archived: r.archived,
       folderId: r.folderId,
+      projectId: r.projectId,
       updatedAt: r.updatedAt.toISOString(),
     }));
 }
@@ -291,12 +323,15 @@ export async function moveConversation(
     if (!folder || folder.userId !== me.id) return { ok: false, error: "Not authorised" };
   }
 
-  await db.aiConversation.update({ where: { id: conversationId }, data: { folderId } });
+  // Folders and projects are mutually-exclusive grouping axes — moving a chat into
+  // (or out of) a folder clears any project pin, so it never lives in both.
+  await db.aiConversation.update({ where: { id: conversationId }, data: { folderId, projectId: null } });
   return { ok: true };
 }
 
 export async function createConversation(
   scope: AssistantScope,
+  projectId?: string | null,
 ): Promise<
   { ok: true; conversation: ConversationSummary } | { ok: false; error: string }
 > {
@@ -307,9 +342,15 @@ export async function createConversation(
     return { ok: false, error: "Not authorised" };
   }
 
+  // If pinned to a project, the actor must be able to access it.
+  if (projectId) {
+    const p = await loadAccessibleProject(me, projectId);
+    if (!p) return { ok: false, error: "Not authorised" };
+  }
+
   const row = await db.aiConversation.create({
-    data: { userId: me.id, scope, title: "New chat" },
-    select: { id: true, title: true, scope: true, archived: true, folderId: true, updatedAt: true },
+    data: { userId: me.id, scope, title: "New chat", projectId: projectId ?? null },
+    select: { id: true, title: true, scope: true, archived: true, folderId: true, projectId: true, updatedAt: true },
   });
 
   return {
@@ -320,6 +361,7 @@ export async function createConversation(
       scope: coerceScope(row.scope),
       archived: row.archived,
       folderId: row.folderId,
+      projectId: row.projectId,
       updatedAt: row.updatedAt.toISOString(),
     },
   };
@@ -410,6 +452,323 @@ export async function archiveConversation(
   return { ok: true };
 }
 
+/** Permanently delete a conversation and its messages (owner only). */
+export async function deleteConversation(id: string): Promise<{ ok: boolean; error?: string }> {
+  const me = await actingAgent();
+  if (!me) return { ok: false, error: "Not authorised" };
+
+  const row = await db.aiConversation.findUnique({
+    where: { id },
+    select: { userId: true },
+  });
+  if (!row || row.userId !== me.id) return { ok: false, error: "Not authorised" };
+
+  await db.aiConversation.delete({ where: { id } }); // AiMessage cascades
+  return { ok: true };
+}
+
+/* ────────────────────────────────────────────────────────────────────────────
+ * Projects — persistent Sable workspaces (conversations + file library +
+ * custom instructions + optional ITSM binding). Owner-managed; optionally
+ * shared with one team. Access is enforced via lib/ai-projects.ts.
+ * ──────────────────────────────────────────────────────────────────────────── */
+
+type ProjectRow = {
+  id: string;
+  userId: string;
+  name: string;
+  archived: boolean;
+  isShared: boolean;
+  groupId: string | null;
+  changeId: number | null;
+  problemId: number | null;
+  ticketId: number | null;
+  updatedAt: Date;
+};
+
+const PROJECT_SELECT = {
+  id: true, userId: true, name: true, archived: true,
+  isShared: true, groupId: true, changeId: true, problemId: true, ticketId: true, updatedAt: true,
+} as const;
+
+function toProjectSummary(row: ProjectRow, meId: string): ProjectSummary {
+  return {
+    id: row.id,
+    name: row.name,
+    archived: row.archived,
+    isShared: row.isShared,
+    groupId: row.groupId,
+    role: row.userId === meId ? "owner" : "member",
+    changeId: row.changeId,
+    problemId: row.problemId,
+    ticketId: row.ticketId,
+    updatedAt: row.updatedAt.toISOString(),
+  };
+}
+
+/** All projects the actor can see: their own + shared projects for their teams. */
+export async function listProjects(): Promise<ProjectSummary[]> {
+  const me = await actingAgent();
+  if (!me) return [];
+  const memberships = await db.groupMember.findMany({
+    where: { userId: me.id },
+    select: { groupId: true },
+  });
+  const groupIds = memberships.map((m) => m.groupId);
+  const rows = await db.aiProject.findMany({
+    where: { OR: [{ userId: me.id }, { isShared: true, groupId: { in: groupIds } }] },
+    orderBy: [{ archived: "asc" }, { updatedAt: "desc" }],
+    select: PROJECT_SELECT,
+  });
+  return rows.map((r) => toProjectSummary(r, me.id));
+}
+
+export async function getProject(
+  id: string,
+): Promise<{ ok: true; project: ProjectDetail } | { ok: false; error: string }> {
+  const me = await actingAgent();
+  if (!me) return { ok: false, error: "Not authorised" };
+  const row = await db.aiProject.findUnique({
+    where: { id },
+    select: { ...PROJECT_SELECT, description: true, instructions: true },
+  });
+  if (!row) return { ok: false, error: "Not found" };
+  const access = await loadAccessibleProject(me, id);
+  if (!access) return { ok: false, error: "Not authorised" };
+  return {
+    ok: true,
+    project: {
+      ...toProjectSummary(row, me.id),
+      description: row.description,
+      instructions: row.instructions,
+    },
+  };
+}
+
+export async function createProject(
+  name?: string,
+): Promise<{ ok: true; project: ProjectSummary } | { ok: false; error: string }> {
+  const me = await actingAgent();
+  if (!me) return { ok: false, error: "Not authorised" };
+  const trimmed = String(name ?? "").trim().slice(0, 80) || "New project";
+  const row = await db.aiProject.create({
+    data: { userId: me.id, name: trimmed },
+    select: PROJECT_SELECT,
+  });
+  return { ok: true, project: toProjectSummary(row, me.id) };
+}
+
+/** Guard: the actor owns the project (manage rights). Returns the row or an error. */
+async function requireManagedProject(
+  meId: string,
+  id: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const row = await db.aiProject.findUnique({
+    where: { id },
+    select: { userId: true, isShared: true, groupId: true },
+  });
+  if (!row) return { ok: false, error: "Not found" };
+  if (!canManageProjectRow({ id: meId, role: "AGENT" }, row)) return { ok: false, error: "Not authorised" };
+  return { ok: true };
+}
+
+export async function renameProject(id: string, name: string): Promise<{ ok: boolean; error?: string }> {
+  const me = await actingAgent();
+  if (!me) return { ok: false, error: "Not authorised" };
+  const guard = await requireManagedProject(me.id, id);
+  if (!guard.ok) return guard;
+  const trimmed = String(name ?? "").trim().slice(0, 80) || "New project";
+  await db.aiProject.update({ where: { id }, data: { name: trimmed } });
+  return { ok: true };
+}
+
+export async function updateProjectInstructions(
+  id: string,
+  instructions: string,
+): Promise<{ ok: boolean; error?: string }> {
+  const me = await actingAgent();
+  if (!me) return { ok: false, error: "Not authorised" };
+  const guard = await requireManagedProject(me.id, id);
+  if (!guard.ok) return guard;
+  const trimmed = String(instructions ?? "").slice(0, 4000);
+  await db.aiProject.update({ where: { id }, data: { instructions: trimmed || null } });
+  return { ok: true };
+}
+
+/**
+ * Bind the project to an ITSM entity (Change / Problem / Ticket). Pass a value to
+ * set, `null` to clear that binding, or omit a key to leave it unchanged. Each id
+ * is verified to exist before it is stored.
+ */
+export async function updateProjectBinding(
+  id: string,
+  binding: { changeId?: number | null; problemId?: number | null; ticketId?: number | null },
+): Promise<{ ok: boolean; error?: string }> {
+  const me = await actingAgent();
+  if (!me) return { ok: false, error: "Not authorised" };
+  const guard = await requireManagedProject(me.id, id);
+  if (!guard.ok) return guard;
+
+  const data: { changeId?: number | null; problemId?: number | null; ticketId?: number | null } = {};
+
+  if ("changeId" in binding) {
+    const v = binding.changeId;
+    if (v == null) data.changeId = null;
+    else {
+      const exists = await db.change.findUnique({ where: { id: Number(v) }, select: { id: true } });
+      if (!exists) return { ok: false, error: "Change not found" };
+      data.changeId = Number(v);
+    }
+  }
+  if ("problemId" in binding) {
+    const v = binding.problemId;
+    if (v == null) data.problemId = null;
+    else {
+      const exists = await db.problem.findUnique({ where: { id: Number(v) }, select: { id: true } });
+      if (!exists) return { ok: false, error: "Problem not found" };
+      data.problemId = Number(v);
+    }
+  }
+  if ("ticketId" in binding) {
+    const v = binding.ticketId;
+    if (v == null) data.ticketId = null;
+    else {
+      const exists = await db.ticket.findUnique({ where: { id: Number(v) }, select: { id: true } });
+      if (!exists) return { ok: false, error: "Ticket not found" };
+      data.ticketId = Number(v);
+    }
+  }
+
+  await db.aiProject.update({ where: { id }, data });
+  return { ok: true };
+}
+
+/**
+ * Share (or un-share) the project with one team. Sharing requires the owner to be
+ * a member of that team. Clearing (isShared=false) leaves the groupId untouched
+ * but hides it from members.
+ */
+export async function shareProject(
+  id: string,
+  input: { isShared: boolean; groupId?: string | null },
+): Promise<{ ok: boolean; error?: string }> {
+  const me = await actingAgent();
+  if (!me) return { ok: false, error: "Not authorised" };
+  const guard = await requireManagedProject(me.id, id);
+  if (!guard.ok) return guard;
+
+  if (input.isShared) {
+    const groupId = input.groupId ?? null;
+    if (!groupId) return { ok: false, error: "Pick a team to share with" };
+    const member = await db.groupMember.findFirst({
+      where: { userId: me.id, groupId },
+      select: { userId: true },
+    });
+    if (!member) return { ok: false, error: "You are not a member of that team" };
+    await db.aiProject.update({ where: { id }, data: { isShared: true, groupId } });
+  } else {
+    await db.aiProject.update({ where: { id }, data: { isShared: false } });
+  }
+  return { ok: true };
+}
+
+/** The actor's teams — used to populate the project Share picker (owner shares with one team). */
+export type TeamSummary = { id: string; name: string };
+
+export async function listMyTeams(): Promise<TeamSummary[]> {
+  const me = await actingAgent();
+  if (!me) return [];
+  const rows = await db.groupMember.findMany({
+    where: { userId: me.id },
+    orderBy: { group: { name: "asc" } },
+    select: { group: { select: { id: true, name: true } } },
+  });
+  return rows.map((r) => ({ id: r.group.id, name: r.group.name }));
+}
+
+/** Delete a project. Files + folders cascade; conversations are un-pinned (SetNull). */
+export async function deleteProject(id: string): Promise<{ ok: boolean; error?: string }> {
+  const me = await actingAgent();
+  if (!me) return { ok: false, error: "Not authorised" };
+  const guard = await requireManagedProject(me.id, id);
+  if (!guard.ok) return guard;
+  await db.aiProject.delete({ where: { id } });
+  return { ok: true };
+}
+
+/** Pin one of the actor's own conversations to a project (or unpin when null). */
+export async function moveConversationToProject(
+  conversationId: string,
+  projectId: string | null,
+): Promise<{ ok: boolean; error?: string }> {
+  const me = await actingAgent();
+  if (!me) return { ok: false, error: "Not authorised" };
+
+  const conv = await db.aiConversation.findUnique({
+    where: { id: conversationId },
+    select: { userId: true },
+  });
+  if (!conv || conv.userId !== me.id) return { ok: false, error: "Not authorised" };
+
+  if (projectId) {
+    const access = await loadAccessibleProject(me, projectId);
+    if (!access) return { ok: false, error: "Not authorised" };
+  }
+
+  // Pinning to a project clears any folder — a chat belongs to one grouping (project
+  // or folder), mirroring how moveConversation clears the project.
+  await db.aiConversation.update({ where: { id: conversationId }, data: { projectId, folderId: null } });
+  return { ok: true };
+}
+
+/**
+ * Options + current links for the project-links picker — the same shape the ticket
+ * page feeds its LinkPicker (searchable Combobox over a bounded, recent list).
+ */
+export async function getProjectLinks(
+  projectId: string,
+): Promise<{ ok: true; links: ProjectLinks } | { ok: false; error: string }> {
+  const me = await actingAgent();
+  if (!me) return { ok: false, error: "Not authorised" };
+  const access = await loadAccessibleProject(me, projectId);
+  if (!access) return { ok: false, error: "Not authorised" };
+
+  const p = await db.aiProject.findUnique({
+    where: { id: projectId },
+    select: { ticketId: true, problemId: true, changeId: true },
+  });
+  if (!p) return { ok: false, error: "Not found" };
+
+  // Option lists mirror the ticket page's LinkPicker exactly: active records only,
+  // agent-readable (Servio has no per-agent ticket/problem/change visibility — this
+  // action is already AGENT+ and project-access gated, and returns the same data the
+  // caller can read on /tickets etc.). No per-tenant scoping exists in this app.
+  const [tickets, problems, changes, curTicket, curProblem, curChange] = await Promise.all([
+    db.ticket.findMany({ where: { status: { notIn: ["CLOSED", "CANCELLED"] } }, orderBy: { updatedAt: "desc" }, take: 60, select: { id: true, title: true, prefix: true } }),
+    db.problem.findMany({ where: { status: { notIn: ["RESOLVED", "CLOSED"] } }, orderBy: { updatedAt: "desc" }, take: 100, select: { id: true, title: true } }),
+    db.change.findMany({ where: { status: { notIn: ["CLOSED", "REJECTED", "FAILED"] } }, orderBy: { updatedAt: "desc" }, take: 100, select: { id: true, title: true } }),
+    p.ticketId ? db.ticket.findUnique({ where: { id: p.ticketId }, select: { id: true, title: true, prefix: true } }) : Promise.resolve(null),
+    p.problemId ? db.problem.findUnique({ where: { id: p.problemId }, select: { id: true, title: true } }) : Promise.resolve(null),
+    p.changeId ? db.change.findUnique({ where: { id: p.changeId }, select: { id: true, title: true } }) : Promise.resolve(null),
+  ]);
+
+  return {
+    ok: true,
+    links: {
+      current: {
+        ticket: curTicket ? { id: curTicket.id, label: `${ticketRef(curTicket.id, curTicket.prefix)} · ${curTicket.title}`, href: `/tickets/${curTicket.id}` } : null,
+        problem: curProblem ? { id: curProblem.id, label: `${problemRef(curProblem.id)} · ${curProblem.title}`, href: `/problems/${curProblem.id}` } : null,
+        change: curChange ? { id: curChange.id, label: `${changeRef(curChange.id)} · ${curChange.title}`, href: `/changes/${curChange.id}` } : null,
+      },
+      options: {
+        tickets: tickets.map((t) => ({ value: String(t.id), label: `${ticketRef(t.id, t.prefix)} · ${t.title}` })),
+        problems: problems.map((pr) => ({ value: String(pr.id), label: `${problemRef(pr.id)} · ${pr.title}` })),
+        changes: changes.map((c) => ({ value: String(c.id), label: `${changeRef(c.id)} · ${c.title}` })),
+      },
+    },
+  };
+}
+
 /* ────────────────────────────────────────────────────────────────────────────
  * System prompts.
  * ──────────────────────────────────────────────────────────────────────────── */
@@ -444,6 +803,10 @@ function generalSystemPrompt(input: {
     "- search_knowledge_base: the org's own how-to / troubleshooting articles. Try this first.",
     "- search_tickets / search_problems / search_changes: free-text search of existing records (incl. comments).",
     "- web_search / fetch_url: the public web, only for facts not documented internally.",
+    "- draft_document: for a LONG document (a runbook, RCA, change doc, or KB draft) call this with the",
+    "  full markdown to open an editable canvas beside the chat where the user can refine and publish it.",
+    "  When the user asks for a SCRIPT or a file, call draft_document (pass `filename`/`language`, e.g.",
+    "  'deploy.sh'/'bash') to open that editable canvas, which the user can then save into the project's files.",
     "",
     "ACTIONS — you have many `propose_*` tools to change the system, scoped to what your role",
     "permits: create/update tickets, add comments, resolve, escalate, link, add tasks, log work;",
@@ -461,46 +824,29 @@ function generalSystemPrompt(input: {
   ].join("\n");
 }
 
-function adminSystemPrompt(input: {
-  orgName: string;
-  orgDirectory: string;
-  meName: string;
-  meRole: string;
-}): string {
-  const { orgName, orgDirectory, meName, meRole } = input;
+/**
+ * Admin capabilities block, APPENDED to the general prompt when the acting user
+ * is an ADMIN (rather than swapping to a separate admin-only prompt that would
+ * hide the general guidance). Mirrors adminSystemPromptSection in assistant-core.ts.
+ */
+function adminSystemPromptSection(): string {
   return [
-    `You are ${AI_ASSISTANT_NAME}, the AI assistant built into ${orgName}, an IT service`,
-    "management system, now in ADMIN mode: a system-wide setup & management assistant for an",
-    `administrator. You help configure, organise and understand the whole ${orgName} instance.`,
     "",
-    "WHO YOU ARE HELPING:",
-    `${meName || "An administrator"} (role ${meRole}) — a trusted system administrator.`,
-    "",
-    "WHAT YOU CAN DO:",
+    "ADMIN CAPABILITIES (you are talking to a system administrator — these are also available):",
     "- PULL STATISTICS with get_statistics. Available metrics: tickets_by_status,",
     "  tickets_by_priority, tickets_by_team, tickets_by_category, open_tickets,",
     "  tickets_created, tickets_resolved, sla_breaches, users_by_role, counts_overview.",
     "  (optional groupBy, timeframeDays). Use it to answer \"how many…\", \"how is X trending\",",
     "  \"which team has the most open tickets\", etc. Report numbers plainly (short tables/lists).",
+    "  Never invent metrics — always call get_statistics for numbers.",
     "- REVIEW CONFIG with get_settings_overview (shows non-secret settings and whether secrets",
     "  are configured). NEVER reveal or ask for secret values (API keys, passwords, encryption",
     "  keys); you can see only whether they are set, never their contents. Never print a secret.",
-    "- LOOK UP people, groups, categories and services (search_people/groups/categories/services),",
-    "  and the general read tools (search_knowledge_base, search_tickets/problems/changes, web).",
-    "",
-    "ACTIONS — in ADMIN mode you have the FULL set of `propose_*` tools: manage tickets, categories,",
-    "groups/teams, services, catalog items, assets, locations, SLAs, knowledge articles,",
-    "problems, changes, USER ROLES, and app SETTINGS (NON-SECRET keys only — you can never read or",
-    "set secrets like API keys / passwords / encryption keys). Refer to records by their real names.",
-    "Each ONLY PROPOSES an approval card; nothing is applied on its own. Propose each distinct change",
-    "EXACTLY ONCE. IMPORTANT: you CANNOT apply anything yourself. In your reply, say you have PROPOSED",
-    "the change(s) for approval below. NEVER say a change is \"done\", \"applied\", \"created\" or \"approved\".",
-    "",
-    "Be precise and factual; never invent metrics — always call get_statistics for numbers.",
-    "Use short markdown. Reply in the user's language.",
-    "",
-    "ORGANISATION DIRECTORY (real teams, services and categories):",
-    orgDirectory,
+    "- LOOK UP people, groups, categories and services (search_people/groups/categories/services).",
+    "- SYSTEM-WIDE `propose_*` ACTIONS: manage groups/teams, services, catalog items, SLAs,",
+    "  problems, changes, USER ROLES, and app SETTINGS (NON-SECRET keys only — you can never read",
+    "  or set secrets like API keys / passwords / encryption keys). These follow the same",
+    "  propose-then-approve rule as every other action.",
   ].join("\n");
 }
 
@@ -624,7 +970,7 @@ export async function sendMessage(input: {
   content: string;
   attachments?: UploadedAttachment[];
   /** In-context surface, e.g. the ticket the user is viewing (from the Sable launcher). */
-  context?: { ticketId?: number };
+  context?: { ticketId?: number; projectId?: string };
 }): Promise<SendMessageResult> {
   const me = await actingAgent();
   if (!me) return { ok: false, error: "Not authorised" };
@@ -727,16 +1073,30 @@ export async function sendMessage(input: {
     name: me.name,
     groupIds: memberships.map((m) => m.groupId),
   });
-  const adminReadTools = scope === "ADMIN" ? ASSISTANT_ADMIN_TOOLS : {};
+  // Admin read tools + system-wide config ops are gated by the acting user's
+  // ROLE (fresh from the DB), not by a separate chat scope — so an admin sees
+  // admin capabilities directly in the normal chat; a non-admin never does.
+  const isAdmin = hasRole(me.role, "ADMIN");
+  const adminReadTools = isAdmin ? ASSISTANT_ADMIN_TOOLS : {};
+
+  // If the chat is pinned to a project the acting user can access, thread its id
+  // into the op ctx so project.search_files/list_files resolve to that library.
+  let projectId: string | undefined;
+  const rawProjectId = typeof input.context?.projectId === "string" ? input.context.projectId : "";
+  if (rawProjectId) {
+    const access = await loadAccessibleProject({ id: me.id, role: me.role }, rawProjectId);
+    if (access) projectId = rawProjectId;
+  }
+
   const { tools: opTools, writeToolToOpId } = buildOperationTools(
-    { userId: me.id, role: me.role, name: me.name },
+    { userId: me.id, role: me.role, name: me.name, projectId },
     scope,
   );
   const tools = { ...readTools, ...adminReadTools, ...opTools };
-  let system =
-    scope === "ADMIN"
-      ? adminSystemPrompt({ orgName, orgDirectory, meName: me.name, meRole: me.role })
-      : generalSystemPrompt({ orgName, orgDirectory, meName: me.name, meRole: me.role });
+  // Always the general prompt; for admins, APPEND the admin capabilities block
+  // (rather than swapping to an admin-only prompt that hides general guidance).
+  let system = generalSystemPrompt({ orgName, orgDirectory, meName: me.name, meRole: me.role });
+  if (isAdmin) system += "\n" + adminSystemPromptSection();
 
   // In-context surface: if the user opened Sable on a ticket, inject that ticket so
   // "this ticket", "summarise it", "draft a KB article from it", "tag/resolve it"
@@ -749,6 +1109,19 @@ export async function sendMessage(input: {
         "\n\nCURRENT TICKET (the user is viewing this — treat \"this ticket\"/\"it\" as this one, and " +
         "use its ref for ticket tools; you may draft a KB article from its problem + resolution):\n" +
         ticketContext;
+    }
+  }
+
+  // If the chat is pinned to a project, append its context so the model grounds
+  // answers in the project's instructions, bound records, and files.
+  if (projectId) {
+    const projectContext = await getProjectContext(projectId, me.id);
+    if (projectContext) {
+      system +=
+        "\n\nCURRENT PROJECT (this chat is pinned to it — honour its INSTRUCTIONS, treat its " +
+        "BOUND RECORDS as the subject, and call project.search_files to ground answers in its files " +
+        "rather than guessing):\n" +
+        projectContext;
     }
   }
 
@@ -833,9 +1206,17 @@ export async function applyAssistantProposal(input: {
   // Ownership of the conversation.
   const conv = await db.aiConversation.findUnique({
     where: { id: input.conversationId },
-    select: { userId: true, scope: true },
+    select: { userId: true, scope: true, projectId: true },
   });
   if (!conv || conv.userId !== me.id) return { ok: false, error: "Not authorised" };
+
+  // If the conversation is bound to a project the acting user can still access,
+  // thread its id so project ops (e.g. project.file_delete) target the right library.
+  let projectId: string | undefined;
+  if (conv.projectId) {
+    const access = await loadAccessibleProject({ id: me.id, role: me.role }, conv.projectId);
+    if (access) projectId = conv.projectId;
+  }
 
   // Generic dispatch: runOperation re-looks-up the operation, re-checks its
   // minRole against the FRESH DB role (actingAgent), enforces adminOnly against
@@ -845,7 +1226,7 @@ export async function applyAssistantProposal(input: {
     const res = await runOperation({
       operationId: p.operationId,
       args: p.args,
-      ctx: { userId: me.id, role: me.role, name: me.name },
+      ctx: { userId: me.id, role: me.role, name: me.name, projectId },
       scope: coerceScope(conv.scope),
     });
     return res.ok ? { ok: true, applied: res.summary } : { ok: false, error: res.error };

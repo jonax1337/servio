@@ -21,6 +21,7 @@ import { Reply, MoreHorizontal } from "lucide-react";
 import type { ComboOption } from "@/components/combobox";
 import { sanitizeCommentHtml } from "@/lib/markdown";
 import { iconForMime, formatBytes, type AttachmentRow } from "@/lib/attachments-ui";
+import { FilePreview, useFilePreview, canPreview, type PreviewFile } from "@/components/file-preview";
 import { formatDistanceToNow, format } from "date-fns";
 
 export type ThreadComment = {
@@ -40,25 +41,39 @@ export type ThreadComment = {
   attachments: AttachmentRow[];
 };
 
+function toPreviewFile(a: AttachmentRow): PreviewFile {
+  return { id: a.id, name: a.filename, mime: a.mime, size: a.size };
+}
+
 function CommentAttachments({ attachments }: { attachments: AttachmentRow[] }) {
+  const preview = useFilePreview();
   if (attachments.length === 0) return null;
+  const previewable = attachments.filter((a) => canPreview(toPreviewFile(a))).map(toPreviewFile);
+  const chipClass =
+    "inline-flex items-center gap-1.5 rounded-md border bg-background px-2 py-1 text-xs hover:border-primary/40 hover:text-primary";
   return (
     <div className="mt-1.5 flex flex-wrap gap-1.5">
       {attachments.map((a) => {
         const Icon = iconForMime(a.mime);
-        return (
-          <a
-            key={a.id}
-            href={`/api/files/${a.id}`}
-            download
-            className="inline-flex items-center gap-1.5 rounded-md border bg-background px-2 py-1 text-xs hover:border-primary/40 hover:text-primary"
-          >
+        const file = toPreviewFile(a);
+        const inner = (
+          <>
             <Icon className="size-3.5 shrink-0 text-muted-foreground" />
             <span className="max-w-48 truncate font-medium">{a.filename}</span>
             <span className="text-muted-foreground">{formatBytes(a.size)}</span>
+          </>
+        );
+        return canPreview(file) ? (
+          <button key={a.id} type="button" onClick={() => preview.openFile(file, previewable)} className={chipClass}>
+            {inner}
+          </button>
+        ) : (
+          <a key={a.id} href={`/api/files/${a.id}`} download className={chipClass}>
+            {inner}
           </a>
         );
       })}
+      <FilePreview {...preview.props} />
     </div>
   );
 }

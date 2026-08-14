@@ -13,6 +13,7 @@ import { type FC, memo, useState } from "react";
 import Link from "next/link";
 import { CheckIcon, CopyIcon } from "lucide-react";
 
+import { SyntaxHighlighter } from "@/components/shiki-highlighter";
 import { TooltipIconButton } from "@/components/tooltip-icon-button";
 import { cn } from "@/lib/utils";
 
@@ -269,4 +270,5 @@ const defaultComponents = memoizeMarkdownComponents({
     );
   },
   CodeHeader,
+  SyntaxHighlighter,
 });

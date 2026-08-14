@@ -5,6 +5,13 @@ import type { ToolCallMessagePartComponent } from "@assistant-ui/react";
 import { ToolFallback } from "@/components/tool-fallback";
 import { ProposalCard, type ProposalStatus } from "./proposal-card";
 import { ToolActivityChip, hasToolActivity } from "./tool-activity";
+import {
+  SableCitationRow,
+  SableDraftCard,
+  SableFileHitsCard,
+  SableTicketCard,
+  type Citation,
+} from "./sable-read-cards";
 import type { AssistantProposal } from "@/lib/actions/ai-assistant";
 
 /** Provides the active conversation id to proposal cards (for applyAssistantProposal). */
@@ -48,16 +55,61 @@ export const SableToolUI: ToolCallMessagePartComponent = (props) => {
     return null;
   }
   if (hasToolActivity(props.toolName) && props.status?.type !== "incomplete") {
+    const running = props.status?.type === "running";
     return (
-      <ToolActivityChip
-        toolName={props.toolName}
-        args={props.args as Record<string, unknown> | undefined}
-        running={props.status?.type === "running"}
-      />
+      <div className="flex flex-col gap-1">
+        <ToolActivityChip
+          toolName={props.toolName}
+          args={props.args as Record<string, unknown> | undefined}
+          running={running}
+        />
+        {!running ? <BrandedResult toolName={props.toolName} result={props.result} /> : null}
+      </div>
     );
   }
   return <ToolFallback {...props} />;
 };
+
+/**
+ * Generative read UI for a couple of high-value tools, rendered from the tool
+ * RESULT beneath its activity chip. Quietly returns nothing when there's no
+ * result (e.g. the buffered claude-code path never surfaces tool outputs), so
+ * the chip alone remains the graceful baseline.
+ */
+function BrandedResult({ toolName, result }: { toolName: string; result: unknown }) {
+  if (result == null) return null;
+  switch (toolName) {
+    // Console only: the ticket card links to /tickets/[id]. Portal's
+    // get_my_ticket keeps its plain chip (its route is /portal/tickets/[id]).
+    case "get_ticket":
+      return <SableTicketCard result={result} />;
+    case "project_search_files":
+      return <SableFileHitsCard result={result} />;
+    case "draft_document":
+      return <SableDraftCard result={result} />;
+    case "search_knowledge_base":
+    case "search_knowledge":
+      return <SableCitationRow citations={knowledgeCitations(result)} />;
+    default:
+      return null;
+  }
+}
+
+/** KB search returns `[{ title, url, excerpt, audience }]`; keep the real hits. */
+function knowledgeCitations(result: unknown): Citation[] {
+  if (!Array.isArray(result)) return [];
+  const seen = new Set<string>();
+  const out: Citation[] = [];
+  for (const row of result) {
+    const r = row as { title?: unknown; url?: unknown };
+    const title = typeof r.title === "string" ? r.title : "";
+    const url = typeof r.url === "string" ? r.url : "";
+    if (!title || !url || seen.has(url)) continue;
+    seen.add(url);
+    out.push({ label: title, href: url });
+  }
+  return out;
+}
 
 function ProposalTool({ proposal }: { proposal: AssistantProposal }) {
   const conversationId = useContext(SableConversationContext);

@@ -7,6 +7,7 @@ import { OPERATIONS as cmdbOps } from "./modules/cmdb";
 import { OPERATIONS as configOps } from "./modules/config";
 import { OPERATIONS as knowledgeOps } from "./modules/knowledge";
 import { OPERATIONS as pcOps } from "./modules/problems-changes";
+import { OPERATIONS as projectOps } from "./modules/projects";
 
 /** Every RBAC-gated operation Sable can perform, composed from the domain modules. */
 export const ALL_OPERATIONS: AiOperation[] = [
@@ -18,6 +19,7 @@ export const ALL_OPERATIONS: AiOperation[] = [
   ...configOps,
   ...knowledgeOps,
   ...pcOps,
+  ...projectOps,
 ];
 
 const BY_ID = new Map(ALL_OPERATIONS.map((o) => [o.id, o]));
