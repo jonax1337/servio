@@ -10,6 +10,7 @@ import {
   PanelRightOpen,
   Ticket as TicketIcon,
 } from "lucide-react";
+import { useEffect } from "react";
 import type { FC, ReactNode } from "react";
 
 import { cn } from "@/lib/utils";
@@ -130,25 +131,76 @@ const Pill: FC<{ children: ReactNode; muted?: boolean }> = ({
 
 type DraftResult = { ok?: boolean; title?: string; markdown?: string; filename?: string; language?: string };
 
+/** True once per distinct draft signature, so a fresh draft auto-opens the
+ * canvas exactly once — but re-hydrating the thread (reload, revisit) does not
+ * re-pop it. Survives client re-renders; a full reload resets it, at which point
+ * the localStorage guard below takes over. */
+const AUTO_OPENED = new Set<string>();
+
+function draftSignature(d: SableCanvasDoc): string {
+  return `${d.title}␟${d.filename ?? ""}␟${d.markdown.length}␟${d.markdown.slice(0, 48)}`;
+}
+function seenPersisted(sig: string): boolean {
+  try {
+    return window.localStorage.getItem(`sable:draft-opened:${sig}`) === "1";
+  } catch {
+    return false;
+  }
+}
+function markPersisted(sig: string) {
+  try {
+    window.localStorage.setItem(`sable:draft-opened:${sig}`, "1");
+  } catch {
+    /* ignore */
+  }
+}
+
 /**
  * A compact card for `draft_document`: Sable handed a long draft to the editable
  * canvas. Renders the title + an "Open in canvas" button that pops the document
- * into the side panel (via the provider). The draft itself lives in the tool
- * result, so re-opening after a re-hydrate still works.
+ * into the side panel (via the provider), and AUTO-OPENS the canvas the first
+ * time a fresh draft lands (matching the prompt's promise that drafting "opens
+ * an editable canvas beside the chat"). Reads from the tool `result`, falling
+ * back to the `args` — `draft_document`'s execute is a pure pass-through, so the
+ * args always carry the full document even on providers that don't surface tool
+ * results to the client (Ollama streaming, buffered claude-code).
  */
-export const SableDraftCard: FC<{ result: unknown }> = ({ result }) => {
+export const SableDraftCard: FC<{ result: unknown; args?: Record<string, unknown> }> = ({
+  result,
+  args,
+}) => {
   const { openCanvas } = useSable();
-  const r = result as DraftResult | undefined;
-  const title = typeof r?.title === "string" ? r.title.trim() : "";
-  const markdown = typeof r?.markdown === "string" ? r.markdown : "";
-  if (!title || !markdown) return null;
-
-  const doc: SableCanvasDoc = {
-    title,
-    markdown,
-    filename: typeof r?.filename === "string" ? r.filename : undefined,
-    language: typeof r?.language === "string" ? r.language : undefined,
+  const r = (result ?? undefined) as DraftResult | undefined;
+  const a = (args ?? undefined) as DraftResult | undefined;
+  const pick = (k: keyof DraftResult): string | undefined => {
+    const v = r?.[k] ?? a?.[k];
+    return typeof v === "string" ? v : undefined;
   };
+  const title = (pick("title") ?? "").trim();
+  const markdown = pick("markdown") ?? "";
+
+  const doc: SableCanvasDoc | null =
+    title && markdown
+      ? {
+          title,
+          markdown,
+          filename: pick("filename"),
+          language: pick("language"),
+        }
+      : null;
+
+  // Auto-open the canvas once per fresh draft (never on re-hydrate).
+  useEffect(() => {
+    if (!doc) return;
+    const sig = draftSignature(doc);
+    if (AUTO_OPENED.has(sig) || seenPersisted(sig)) return;
+    AUTO_OPENED.add(sig);
+    markPersisted(sig);
+    openCanvas(doc);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [doc?.title, doc?.markdown]);
+
+  if (!doc) return null;
   return (
     <div className="my-1 flex items-center gap-3 rounded-xl border bg-card p-3 text-sm shadow-sm">
       <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-sable-muted text-sable">

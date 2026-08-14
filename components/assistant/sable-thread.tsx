@@ -33,6 +33,38 @@ type SableMetadata = {
   toolCalls?: { name: string; input: unknown }[];
 };
 
+type UIPart = UIMessage<SableMetadata>["parts"][number];
+
+/**
+ * Rebuild the read-tool parts of a persisted assistant turn so their activity
+ * chips — and Sable's generative cards (notably the `draft_document` artifact) —
+ * survive a reload, not just the live stream. `propose_*` write tools are
+ * deliberately NOT resurrected: an approval card must only be actionable during
+ * its live turn (re-approving a stale proposal on reload would double-apply).
+ *
+ * A drafted document's output is the pass-through of its input, so we synthesise
+ * `{ ok, ...input }` — the card then renders fully off the reconstructed part
+ * even though only the tool INPUT was persisted.
+ */
+function toolPartsOf(toolCalls: { name: string; input: unknown }[] | undefined, msgIdx: number): UIPart[] {
+  if (!Array.isArray(toolCalls)) return [];
+  const out: UIPart[] = [];
+  toolCalls.forEach((tc, j) => {
+    if (typeof tc.name !== "string" || tc.name.startsWith("propose_")) return;
+    const input = (tc.input ?? {}) as Record<string, unknown>;
+    const output =
+      tc.name === "draft_document" ? { ok: true, ...input } : null;
+    out.push({
+      type: `tool-${tc.name}`,
+      toolCallId: `h${msgIdx}-t${j}`,
+      state: "output-available",
+      input,
+      output,
+    } as unknown as UIPart);
+  });
+  return out;
+}
+
 /** Convert a persisted transcript into assistant-ui / useChat UI messages. */
 function hydrate(
   rows: {
@@ -45,7 +77,12 @@ function hydrate(
   return rows.map((m, i) => ({
     id: `h${i}`,
     role: m.role,
-    parts: [{ type: "text", text: m.content }],
+    // Read-tool parts first (chips + cards), then the answer — mirrors the live
+    // layout where tool activity precedes the reply.
+    parts: [
+      ...(m.role === "assistant" ? toolPartsOf(m.toolCalls, i) : []),
+      { type: "text", text: m.content } as UIPart,
+    ],
     metadata:
       m.role === "assistant" ? { proposals: m.proposals, toolCalls: m.toolCalls } : undefined,
   }));

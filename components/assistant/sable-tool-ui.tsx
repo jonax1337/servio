@@ -63,7 +63,13 @@ export const SableToolUI: ToolCallMessagePartComponent = (props) => {
           args={props.args as Record<string, unknown> | undefined}
           running={running}
         />
-        {!running ? <BrandedResult toolName={props.toolName} result={props.result} /> : null}
+        {!running ? (
+          <BrandedResult
+            toolName={props.toolName}
+            result={props.result}
+            args={props.args as Record<string, unknown> | undefined}
+          />
+        ) : null}
       </div>
     );
   }
@@ -74,9 +80,24 @@ export const SableToolUI: ToolCallMessagePartComponent = (props) => {
  * Generative read UI for a couple of high-value tools, rendered from the tool
  * RESULT beneath its activity chip. Quietly returns nothing when there's no
  * result (e.g. the buffered claude-code path never surfaces tool outputs), so
- * the chip alone remains the graceful baseline.
+ * the chip alone remains the graceful baseline. `draft_document` is the
+ * exception: its `execute` is a pure pass-through of the args, so the card can
+ * (and must) fall back to the ARGS — otherwise providers that don't surface tool
+ * results to the client (Ollama streaming, buffered claude-code) would never
+ * show the artifact at all.
  */
-function BrandedResult({ toolName, result }: { toolName: string; result: unknown }) {
+function BrandedResult({
+  toolName,
+  result,
+  args,
+}: {
+  toolName: string;
+  result: unknown;
+  args?: Record<string, unknown>;
+}) {
+  if (toolName === "draft_document") {
+    return <SableDraftCard result={result} args={args} />;
+  }
   if (result == null) return null;
   switch (toolName) {
     // Console only: the ticket card links to /tickets/[id]. Portal's
@@ -85,8 +106,6 @@ function BrandedResult({ toolName, result }: { toolName: string; result: unknown
       return <SableTicketCard result={result} />;
     case "project_search_files":
       return <SableFileHitsCard result={result} />;
-    case "draft_document":
-      return <SableDraftCard result={result} />;
     case "search_knowledge_base":
     case "search_knowledge":
       return <SableCitationRow citations={knowledgeCitations(result)} />;

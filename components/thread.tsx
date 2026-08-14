@@ -118,12 +118,17 @@ const ThreadOverviewContext = createContext<ReactNode>(null);
 const ComposerChipContext = createContext<ReactNode>(null);
 
 // Group read-tool calls into a collapsed "N tool calls" group, but keep Sable's
-// propose_* approval cards STANDALONE (never collapsed) so they stay visible.
+// approve-first `propose_*` cards AND `draft_document`'s artifact card STANDALONE
+// (never collapsed) so they stay visible — a drafted document is the whole point
+// of the turn, so it must not be buried inside a collapsed "N tool calls" group.
 const baseGroupBy = groupPartByType({
   reasoning: ["group-chainOfThought", "group-reasoning"],
   "tool-call": ["group-chainOfThought", "group-tool"],
   "standalone-tool-call": [],
 });
+function isStandaloneTool(toolName: string): boolean {
+  return toolName.startsWith("propose_") || toolName === "draft_document";
+}
 function vioGroupBy(
   ...args: Parameters<typeof baseGroupBy>
 ): ReturnType<typeof baseGroupBy> {
@@ -131,7 +136,7 @@ function vioGroupBy(
   if (
     part?.type === "tool-call" &&
     typeof part.toolName === "string" &&
-    part.toolName.startsWith("propose_")
+    isStandaloneTool(part.toolName)
   ) {
     return [] as ReturnType<typeof baseGroupBy>;
   }
