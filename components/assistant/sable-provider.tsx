@@ -28,7 +28,8 @@ import type { AssistantScope } from "@/lib/actions/ai-assistant";
 export type SableState = "closed" | "min" | "max";
 export type SableOpenState = "min" | "max";
 
-/** A long document Sable drafted for the editable canvas (session-only, no DB). */
+/** A document shown in the canvas (session-only, no DB) — a draft Sable produced,
+ *  or a read-only preview of a pending proposal's body. */
 export type SableCanvasDoc = {
   title: string;
   markdown: string;
@@ -36,6 +37,12 @@ export type SableCanvasDoc = {
   filename?: string;
   /** Optional code/document language hint (e.g. 'bash', 'python'). */
   language?: string;
+  /** Pre-rendered HTML body (e.g. a KB-article proposal) — shown as-is (sanitised)
+   *  instead of rendering `markdown`. */
+  html?: string;
+  /** Read-only preview of a proposal: hides the draft write-actions (save/publish),
+   *  leaving just Copy / Download / Close. */
+  preview?: boolean;
 };
 
 const LS_STATE = "sable:lastOpen";

@@ -12,7 +12,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { renderMarkdown } from "@/lib/markdown";
+import { renderMarkdown, sanitizeDocumentHtml, htmlToText } from "@/lib/markdown";
 import { cn } from "@/lib/utils";
 import { useSable } from "./sable-provider";
 
@@ -175,22 +175,26 @@ export function SableCanvas() {
   const sable = useSable();
   const doc = sable.canvasDoc;
 
-  const isCode = useMemo(() => (doc ? isCodeDoc(doc) : false), [doc]);
-  // Code → the runnable body (prose/fences stripped). Prose → rendered markdown.
+  const preview = !!doc?.preview;
+  // A pre-rendered HTML body (proposal preview) is never treated as code.
+  const isCode = useMemo(() => (doc && !doc.html ? isCodeDoc(doc) : false), [doc]);
+  // Code → the runnable body (prose/fences stripped). Prose → rendered markdown,
+  // or a supplied HTML body rendered as-is (both DOMPurify-sanitised).
   const code = useMemo(() => (doc && isCode ? extractCode(doc.markdown) : ""), [doc, isCode]);
-  const proseHtml = useMemo(
-    () => (doc && !isCode ? renderMarkdown(doc.markdown, "markdown") : ""),
-    [doc, isCode],
-  );
+  const proseHtml = useMemo(() => {
+    if (!doc || isCode) return "";
+    return doc.html ? sanitizeDocumentHtml(doc.html) : renderMarkdown(doc.markdown, "markdown");
+  }, [doc, isCode]);
   const shikiLang = useMemo(() => (doc ? shikiLangFor(doc) : "text"), [doc]);
   const badge = isCode ? LANG_LABEL[shikiLang] ?? "Code" : "Document";
 
   const [copied, setCopied] = useState(false);
   const [publishing, setPublishing] = useState(false);
 
-  // The verbatim artifact content (raw code or the source markdown).
+  // The verbatim artifact content (raw code, source markdown, or plain text of an
+  // HTML body) — for copy / download / insert.
   const rawContent = useCallback(
-    () => (isCode ? code : doc?.markdown ?? ""),
+    () => (isCode ? code : doc?.html ? htmlToText(doc.html) : doc?.markdown ?? ""),
     [isCode, code, doc],
   );
 
@@ -238,7 +242,7 @@ export function SableCanvas() {
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1.5">
             <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-              {isCode ? artifactFilename(doc) : "Canvas"}
+              {preview ? "Preview" : isCode ? artifactFilename(doc) : "Canvas"}
             </p>
             <span className="rounded bg-muted px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide text-muted-foreground">
               {badge}
@@ -283,17 +287,23 @@ export function SableCanvas() {
             <Download className="size-3.5" />
             Download
           </Button>
-          <Button type="button" variant="outline" size="sm" className="gap-1.5" onClick={insert}>
-            <MessageSquarePlus className="size-3.5" />
-            Insert into chat
-          </Button>
-          <SaveToProjectMenu
-            filename={artifactFilename(doc)}
-            getContent={rawContent}
-            defaultProjectId={sable.projectId}
-          />
+          {/* A proposal preview is read-only: only Copy / Download / Close. The
+              write-actions belong to the approval card, not the preview. */}
+          {!preview ? (
+            <>
+              <Button type="button" variant="outline" size="sm" className="gap-1.5" onClick={insert}>
+                <MessageSquarePlus className="size-3.5" />
+                Insert into chat
+              </Button>
+              <SaveToProjectMenu
+                filename={artifactFilename(doc)}
+                getContent={rawContent}
+                defaultProjectId={sable.projectId}
+              />
+            </>
+          ) : null}
           {/* A script isn't a KB article — only offer publishing for prose docs. */}
-          {!isCode ? (
+          {!isCode && !preview ? (
             <Button
               type="button"
               size="sm"
