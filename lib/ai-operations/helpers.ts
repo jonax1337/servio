@@ -1,7 +1,25 @@
+import { renderMarkdown } from "@/lib/markdown";
 import type { AiOpResult } from "./types";
 
 export const ok = (summary: string, data?: unknown): AiOpResult => ({ ok: true, summary, data });
 export const err = (error: string): AiOpResult => ({ ok: false, error });
+
+/** Heuristic: does this text already contain HTML tags (vs markdown / plain)? */
+export function looksLikeHtml(s: string): boolean {
+  return /<\/?(p|div|ul|ol|li|h[1-6]|pre|code|blockquote|strong|em|a|br|table)\b/i.test(s);
+}
+
+/**
+ * Convert AI-authored rich text (markdown, or occasionally HTML) into sanitised
+ * HTML for a rich-text field — a comment's `bodyHtml`, a record's `descriptionHtml`
+ * twin, etc. Without this the model's markdown (paragraphs, line breaks, lists)
+ * collapses into a wall of text when rendered as HTML. Returns null for empty input.
+ */
+export function richHtml(text: unknown): string | null {
+  const s = String(text ?? "").trim();
+  if (!s) return null;
+  return renderMarkdown(s, looksLikeHtml(s) ? "html" : "markdown");
+}
 
 /** Validate a value against an enum set (case-insensitive, upper-cased) or return null. */
 export function coerceEnum(value: unknown, allowed: readonly string[]): string | null {

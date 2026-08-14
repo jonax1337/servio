@@ -45,6 +45,10 @@ const optionalId = z
 const createSchema = z.object({
   title: z.string().min(3, "Title must be at least 3 characters"),
   description: z.string().default(""),
+  // Optional rich-text twin (sanitised HTML) — set by callers that have formatted
+  // content (e.g. Sable renders the model's markdown), so the description shows
+  // paragraphs/lists instead of a wall of text. Falls back to the plaintext.
+  descriptionHtml: z.string().nullish(),
   type: z.enum(TICKET_TYPES),
   priority: z.enum(PRIORITIES),
   impact: z.enum(IMPACT_URGENCY),

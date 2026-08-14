@@ -15,7 +15,7 @@ import {
   changeRef,
 } from "@/lib/constants";
 import type { AiOperation } from "../types";
-import { ok, err, str, toFormData, coerceEnum } from "../helpers";
+import { ok, err, str, toFormData, coerceEnum, richHtml } from "../helpers";
 
 /**
  * Problems & Changes. Exports `OPERATIONS: AiOperation[]`, one entry per capability.
@@ -72,6 +72,7 @@ export const OPERATIONS: AiOperation[] = [
         data: {
           title,
           description: str(a.description) ?? "",
+          descriptionHtml: richHtml(a.description),
           status: "NEW",
           priority,
           impact,
@@ -175,7 +176,7 @@ export const OPERATIONS: AiOperation[] = [
       if (!text) return err("Comment text is required.");
       const internal = a.internal === true;
       await addProblemComment(
-        toFormData({ problemId: problem.id, bodyHtml: text, isInternal: internal ? "on" : "" }),
+        toFormData({ problemId: problem.id, bodyHtml: richHtml(text) ?? text, isInternal: internal ? "on" : "" }),
       );
       return ok(`Added ${internal ? "an internal note" : "a comment"} to ${problemRef(problem.id)}`);
     },
@@ -224,6 +225,7 @@ export const OPERATIONS: AiOperation[] = [
         data: {
           title,
           description: str(a.description) ?? "",
+          descriptionHtml: richHtml(a.description),
           type,
           risk,
           priority,
@@ -333,7 +335,7 @@ export const OPERATIONS: AiOperation[] = [
       if (!text) return err("Comment text is required.");
       const internal = a.internal === true;
       await addChangeComment(
-        toFormData({ changeId: change.id, bodyHtml: text, isInternal: internal ? "on" : "" }),
+        toFormData({ changeId: change.id, bodyHtml: richHtml(text) ?? text, isInternal: internal ? "on" : "" }),
       );
       return ok(`Added ${internal ? "an internal note" : "a comment"} to ${changeRef(change.id)}`);
     },

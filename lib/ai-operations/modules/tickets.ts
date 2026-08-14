@@ -23,7 +23,7 @@ import {
   ticketRef,
 } from "@/lib/constants";
 import type { AiOperation } from "../types";
-import { ok, err, str, toFormData, coerceEnum } from "../helpers";
+import { ok, err, str, toFormData, coerceEnum, richHtml } from "../helpers";
 
 /**
  * Tickets. Reference module shape — export `OPERATIONS: AiOperation[]`, one entry
@@ -104,6 +104,7 @@ export const OPERATIONS: AiOperation[] = [
         {
           title,
           description: str(a.description) ?? "",
+          descriptionHtml: richHtml(a.description),
           type,
           priority,
           impact: "MEDIUM",
@@ -228,7 +229,9 @@ export const OPERATIONS: AiOperation[] = [
       if (!text) return err("Comment text is required.");
       const internal = a.internal === true;
       await addTicketComment(
-        toFormData({ ticketId: ticket.id, bodyHtml: text, isInternal: internal }),
+        // Render the model's markdown to HTML so paragraphs / line breaks / lists
+        // survive (the comment field stores & renders `bodyHtml`).
+        toFormData({ ticketId: ticket.id, bodyHtml: richHtml(text) ?? text, isInternal: internal }),
       );
       // Attach the turn's staged files to the ticket (see ticket.create).
       if (a.attachFiles !== false && Array.isArray(a.attachmentIds) && a.attachmentIds.length) {

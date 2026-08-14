@@ -319,7 +319,20 @@ export async function resolveGroupId(name: string) {
 }
 export async function resolveCategoryId(name: string) {
   const q = name.trim();
-  return db.category.findFirst({ where: { OR: [{ name: q }, { name: { contains: q } }] }, select: { id: true, name: true } });
+  // The org directory prints sub-categories as a "Parent > Child" path, so the AI
+  // often passes e.g. "Network > VPN" — but a category resolves by its own (leaf)
+  // name. Fall back to the last path segment. Prefer an exact match, then contains.
+  const leaf = q.split(/\s*[>\/›»]\s*/).pop()?.trim() || q;
+  return (
+    (await db.category.findFirst({
+      where: { OR: [{ name: q }, { name: leaf }] },
+      select: { id: true, name: true },
+    })) ??
+    (await db.category.findFirst({
+      where: { name: { contains: leaf } },
+      select: { id: true, name: true },
+    }))
+  );
 }
 export async function resolveAgentId(name: string) {
   const q = name.trim();
