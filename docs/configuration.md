@@ -63,6 +63,10 @@ _(not in `.env.example`)_ are real but undocumented in the sample file.
 | `OPENAI_BASE_URL` _(not in `.env.example`)_ | No | — | Override the OpenAI endpoint to reach any OpenAI-compatible cloud (OpenAI, OpenRouter, Moonshot/Kimi, Zhipu/GLM…). |
 | `OLLAMA_BASE_URL` | No | `http://localhost:11434/v1` | Local Ollama endpoint (OpenAI-compatible). No key required. |
 | `OLLAMA_MODEL` | No | `llama3.1` | Local Ollama model id. |
+| `WEB_SEARCH_PROVIDER` | No | `auto` | Backend for Sable's `web_search` tool: `tavily` \| `brave` \| `duckduckgo` \| `auto`. `auto` uses a configured key (Tavily → Brave) else the keyless DuckDuckGo scraper. |
+| `TAVILY_API_KEY` | No | — | [Tavily](https://app.tavily.com) key (LLM-oriented search, clean results; free tier ~1k/mo). Secret. |
+| `BRAVE_API_KEY` | No | — | [Brave Search](https://brave.com/search/api) key (independent web index; free tier ~2k/mo). Secret. |
+| `GOTENBERG_URL` | No | — | Optional [Gotenberg](https://gotenberg.dev) (LibreOffice) service, e.g. `http://gotenberg:3000`. When set, office docs (docx/pptx/legacy/ODF) preview as a faithful PDF; blank = built-in best-effort text/HTML. See [deployment.md](deployment.md#-docker). |
 | `SETTINGS_ENCRYPTION_KEY` | Recommended | — | 32-byte key (base64/hex) that encrypts secret settings (SMTP password, AI keys) stored in the DB. Bootstrap secret — `.env`-only. |
 | `API_CORS_ORIGIN` _(not in `.env.example`)_ | No | `*` | Allowed origin for the bearer-token REST API responses. Read in [`../lib/api.ts`](../lib/api.ts). Lock this down in production — see [rest-api.md](rest-api.md). |
 | `NODE_ENV` | No | — | Standard Node/Next env. Toggles Prisma query logging ([`../lib/db.ts`](../lib/db.ts)) and the HMR-safe singleton guards in `lib/db.ts` / `lib/storage.ts`. |
