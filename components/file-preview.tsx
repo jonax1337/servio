@@ -66,6 +66,8 @@ function previewUrl(id: string): string {
 type DocState = {
   loading: boolean;
   html: string | null;
+  /** A faithful PDF render (Gotenberg) to embed in an iframe, when available. */
+  pdfUrl: string | null;
   /** Extracted-text fallback used when the rich preview is unavailable. */
   fallbackText: string | null;
   error: string | null;
@@ -78,13 +80,14 @@ function useDocumentHtml(file: PreviewFile, kind: PreviewKind, open: boolean): D
   const [state, setState] = React.useState<DocState>({
     loading: false,
     html: null,
+    pdfUrl: null,
     fallbackText: null,
     error: null,
   });
 
   React.useEffect(() => {
     if (!open || kind !== "document") {
-      setState({ loading: false, html: null, fallbackText: null, error: null });
+      setState({ loading: false, html: null, pdfUrl: null, fallbackText: null, error: null });
       return;
     }
     let cancelled = false;
@@ -92,7 +95,7 @@ function useDocumentHtml(file: PreviewFile, kind: PreviewKind, open: boolean): D
       file.extractedText != null && file.extractedText !== ""
         ? file.extractedText.slice(0, MAX_TEXT_CHARS)
         : null;
-    setState({ loading: true, html: null, fallbackText: fallback, error: null });
+    setState({ loading: true, html: null, pdfUrl: null, fallbackText: fallback, error: null });
     (async () => {
       try {
         const res = await fetch(previewUrl(file.id));
@@ -101,6 +104,7 @@ function useDocumentHtml(file: PreviewFile, kind: PreviewKind, open: boolean): D
             setState({
               loading: false,
               html: null,
+              pdfUrl: null,
               fallbackText: fallback,
               error: fallback ? null : "No inline preview for this file",
             });
@@ -108,11 +112,12 @@ function useDocumentHtml(file: PreviewFile, kind: PreviewKind, open: boolean): D
           return;
         }
         if (!res.ok) throw new Error(`Failed to load (${res.status})`);
-        const data = (await res.json()) as { html?: string };
+        const data = (await res.json()) as { html?: string; pdf?: string };
         if (!cancelled) {
           setState({
             loading: false,
             html: data.html ?? null,
+            pdfUrl: data.pdf ?? null,
             fallbackText: fallback,
             error: null,
           });
@@ -122,6 +127,7 @@ function useDocumentHtml(file: PreviewFile, kind: PreviewKind, open: boolean): D
           setState({
             loading: false,
             html: null,
+            pdfUrl: null,
             fallbackText: fallback,
             error: e instanceof Error ? e.message : "Failed to load preview",
           });
@@ -281,6 +287,16 @@ function DocumentView({ state, file }: { state: DocState; file: PreviewFile }) {
       <div className="flex h-[calc(90vh-3.25rem)] items-center justify-center text-muted-foreground">
         <Loader2 className="mr-2 size-4 animate-spin" /> Loading preview…
       </div>
+    );
+  }
+  if (state.pdfUrl) {
+    // Faithful office render (Gotenberg → PDF), embedded like a native PDF.
+    return (
+      <iframe
+        src={state.pdfUrl}
+        title={`Preview of ${file.name}`}
+        className="h-[calc(90vh-3.25rem)] w-full bg-background"
+      />
     );
   }
   if (state.html) {

@@ -164,7 +164,10 @@ export async function saveUploadSettings(
   if (!me) return { error: "Not authorised" };
   return persist(
     me.id,
-    [{ key: "MAX_UPLOAD_MB", value: str(fd, "MAX_UPLOAD_MB") }],
+    [
+      { key: "MAX_UPLOAD_MB", value: str(fd, "MAX_UPLOAD_MB") },
+      { key: "GOTENBERG_URL", value: str(fd, "GOTENBERG_URL") },
+    ],
     "Updated upload settings",
     "/settings/uploads",
   );

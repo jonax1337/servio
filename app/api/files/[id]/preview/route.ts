@@ -3,6 +3,7 @@ import { getCurrentUser, type Role } from "@/lib/session";
 import { storage } from "@/lib/storage";
 import { canViewAttachment } from "@/lib/attachments";
 import { renderFileHtml } from "@/lib/rag/render";
+import { gotenbergConfigured, isPdfConvertible } from "@/lib/office-convert";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -39,6 +40,22 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
 
   if (!att.storageKey) return new Response("Not found", { status: 404 });
   if (att.size > MAX_RENDER_BYTES) return new Response(null, { status: 204 });
+
+  // High-fidelity path: when a Gotenberg service is configured, render office
+  // documents (docx/pptx/legacy/ODF) via a faithful PDF the lightbox embeds in an
+  // iframe, instead of the best-effort HTML/text below. Point the client at the
+  // sibling /pdf route (which does the actual conversion).
+  const ext = att.filename.includes(".") ? att.filename.split(".").pop()!.toLowerCase() : "";
+  if (isPdfConvertible(att.mime, ext) && (await gotenbergConfigured())) {
+    return new Response(JSON.stringify({ pdf: `/api/files/${encodeURIComponent(id)}/pdf` }), {
+      status: 200,
+      headers: {
+        "Content-Type": "application/json; charset=utf-8",
+        "X-Content-Type-Options": "nosniff",
+        "Cache-Control": "private, no-store",
+      },
+    });
+  }
 
   let obj;
   try {
