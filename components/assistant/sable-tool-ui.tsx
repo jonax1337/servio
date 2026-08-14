@@ -9,6 +9,7 @@ import {
   SableCitationRow,
   SableDraftCard,
   SableFileHitsCard,
+  SableSourcesCard,
   SableTicketCard,
   type Citation,
 } from "./sable-read-cards";
@@ -48,6 +49,11 @@ function writeState(key: string, v: Persisted) {
  * default collapsible fallback for anything else (or a read tool that errored).
  */
 export const SableToolUI: ToolCallMessagePartComponent = (props) => {
+  // The synthetic "Sources" part (emitted after the answer) — render the panel
+  // directly from its result, no chip.
+  if (props.toolName === "cited_sources") {
+    return props.result ? <SableSourcesCard result={props.result} /> : null;
+  }
   if (props.toolName.startsWith("propose_")) {
     const result = props.result as { proposal?: AssistantProposal } | undefined;
     if (result?.proposal) return <ProposalTool proposal={result.proposal} />;

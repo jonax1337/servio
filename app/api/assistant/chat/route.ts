@@ -78,6 +78,63 @@ type SableMetadata = {
   toolCalls?: { name: string; input: unknown }[];
 };
 
+/** A cited source Sable grounded on this turn (web page, KB article, project file). */
+type SourceRef = { label: string; url: string; kind: "web" | "kb" | "file" };
+
+function safeHostname(url: string): string {
+  try {
+    return new URL(url).hostname.replace(/^www\./, "");
+  } catch {
+    return url;
+  }
+}
+
+/**
+ * Extract citable sources from a turn's tool results — the web pages searched,
+ * KB articles and project files consulted — so we can show a "Sources" panel
+ * under the answer. Robust to the various result shapes; de-duped by URL.
+ */
+function collectSources(
+  toolCalls: { name: string; input: unknown }[],
+  toolResults: { name: string; output: unknown }[],
+): SourceRef[] {
+  const asArr = (v: unknown): Record<string, unknown>[] =>
+    Array.isArray(v) ? (v as Record<string, unknown>[]) : [];
+  const out: SourceRef[] = [];
+  for (const r of toolResults) {
+    if (r.name === "web_search") {
+      for (const h of asArr(r.output)) {
+        const url = typeof h.url === "string" ? h.url : "";
+        if (url) out.push({ label: (typeof h.title === "string" && h.title) || safeHostname(url), url, kind: "web" });
+      }
+    } else if (r.name === "search_knowledge_base" || r.name === "search_knowledge") {
+      for (const h of asArr(r.output)) {
+        const url = typeof h.url === "string" ? h.url : "";
+        if (url) out.push({ label: (typeof h.title === "string" && h.title) || url, url, kind: "kb" });
+      }
+    } else if (r.name === "project_search_files") {
+      for (const h of asArr((r.output as { hits?: unknown })?.hits)) {
+        const id = typeof h.fileId === "string" ? h.fileId : "";
+        if (id) out.push({ label: (typeof h.file === "string" && h.file) || "file", url: `/api/files/${id}`, kind: "file" });
+      }
+    }
+  }
+  for (const c of toolCalls) {
+    if (c.name !== "fetch_url") continue;
+    const u = (c.input as { url?: unknown })?.url;
+    if (typeof u === "string" && u) out.push({ label: safeHostname(u), url: u, kind: "web" });
+  }
+  const seen = new Set<string>();
+  const deduped: SourceRef[] = [];
+  for (const s of out) {
+    if (seen.has(s.url)) continue;
+    seen.add(s.url);
+    deduped.push(s);
+    if (deduped.length >= 12) break;
+  }
+  return deduped;
+}
+
 /** Persist the finished assistant turn (mirrors the legacy sendMessage write). */
 async function persistAssistant(
   convId: string,
@@ -200,6 +257,7 @@ export async function POST(req: Request) {
       execute: async ({ writer }) => {
         let text = "(no answer)";
         let rawToolCalls: { name: string; input: unknown }[] = [];
+        let rawToolResults: { name: string; output: unknown }[] = [];
         try {
           const result = await generateAiChat({
             system: prepared.system,
@@ -209,6 +267,7 @@ export async function POST(req: Request) {
           });
           text = result.text || "(no answer)";
           rawToolCalls = result.toolCalls ?? [];
+          rawToolResults = result.toolResults ?? [];
         } catch (e) {
           text = e instanceof Error ? `⚠️ ${e.message}` : "⚠️ The AI request failed.";
         }
@@ -235,6 +294,15 @@ export async function POST(req: Request) {
         writer.write({ type: "text-start", id: TEXT_ID });
         writer.write({ type: "text-delta", id: TEXT_ID, delta: text });
         writer.write({ type: "text-end", id: TEXT_ID });
+
+        // Sources panel: the web pages / KB / files this turn grounded on, emitted
+        // as a synthetic `cited_sources` tool part AFTER the answer so it renders
+        // as a tidy "Sources" row at the end.
+        const sources = collectSources(rawToolCalls, rawToolResults);
+        if (sources.length) {
+          writer.write({ type: "tool-input-available", toolCallId: "sources", toolName: "cited_sources", input: {} });
+          writer.write({ type: "tool-output-available", toolCallId: "sources", output: { sources } });
+        }
 
         rawToolCalls.forEach((tc, i) => {
           const operationId = prepared.writeToolToOpId.get(tc.name);

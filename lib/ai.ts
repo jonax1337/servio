@@ -216,7 +216,12 @@ export async function generateAiChat(input: {
   temperature?: number;
   /** Enable extended thinking (claude-code / reasoning-capable models); returns `reasoning`. */
   maxThinkingTokens?: number;
-}): Promise<{ text: string; toolCalls: { name: string; input: unknown }[]; reasoning?: string }> {
+}): Promise<{
+  text: string;
+  toolCalls: { name: string; input: unknown }[];
+  toolResults: { name: string; output: unknown }[];
+  reasoning?: string;
+}> {
   // claude-code routes through the Agent SDK (subscription CLI), adapting the
   // same ai-sdk tools into in-process SDK tools so tool use + proposals work
   // identically to the built-in providers.
@@ -241,9 +246,15 @@ export async function generateAiChat(input: {
   const toolCalls = result.steps.flatMap((s) =>
     s.toolCalls.map((tc) => ({ name: tc.toolName, input: (tc as { input?: unknown }).input })),
   );
+  const toolResults = result.steps.flatMap((s) =>
+    (s.toolResults ?? []).map((tr) => ({
+      name: (tr as { toolName: string }).toolName,
+      output: (tr as { output?: unknown; result?: unknown }).output ?? (tr as { result?: unknown }).result,
+    })),
+  );
   // reasoning-capable models (e.g. Anthropic extended thinking) expose reasoningText.
   const reasoning = (result as { reasoningText?: string }).reasoningText?.trim() || undefined;
-  return { text: result.text.trim(), toolCalls, reasoning };
+  return { text: result.text.trim(), toolCalls, toolResults, reasoning };
 }
 
 /* ────────────────────────────────────────────────────────────────────────────

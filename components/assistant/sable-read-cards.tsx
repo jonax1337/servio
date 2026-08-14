@@ -3,10 +3,12 @@
 import Link from "next/link";
 import {
   AlertTriangle,
+  BookOpen,
   Clock,
   FilePen,
   FileText,
   FolderSearch,
+  Globe,
   PanelRightOpen,
   Ticket as TicketIcon,
 } from "lucide-react";
@@ -299,6 +301,42 @@ const SourceChip: FC<{ fileId?: string; name?: string }> = ({
     >
       {chip}
     </a>
+  );
+};
+
+/* ── cited_sources (web + KB + files, aggregated at the end) ────────────── */
+
+type SourceItem = { label: string; url: string; kind: "web" | "kb" | "file" };
+
+/**
+ * A "Sources" row rendered UNDER the answer: every web page, KB article and
+ * project file Sable grounded on this turn (aggregated server-side and emitted
+ * as a synthetic `cited_sources` tool part). Web links open in a new tab;
+ * KB/file links stay in-app.
+ */
+export const SableSourcesCard: FC<{ result: unknown }> = ({ result }) => {
+  const sources = (result as { sources?: SourceItem[] } | undefined)?.sources;
+  if (!Array.isArray(sources) || sources.length === 0) return null;
+  return (
+    <div className="my-1.5 flex flex-wrap items-center gap-1.5">
+      <span className="text-[11px] font-medium text-muted-foreground">Sources</span>
+      {sources.map((s, i) => {
+        const Icon = s.kind === "kb" ? BookOpen : s.kind === "file" ? FileText : Globe;
+        const cls =
+          "inline-flex max-w-[240px] items-center gap-1 rounded-md border border-border/60 bg-background px-1.5 py-0.5 text-[11px] font-medium text-foreground/80 transition-colors hover:border-sable/40 hover:bg-sable-muted/30 hover:text-sable";
+        return s.kind === "web" ? (
+          <a key={`${s.url}-${i}`} href={s.url} target="_blank" rel="noreferrer noopener" className={cls}>
+            <Icon className="size-3 shrink-0 text-muted-foreground" />
+            <span className="truncate">{s.label}</span>
+          </a>
+        ) : (
+          <Link key={`${s.url}-${i}`} href={s.url} className={cls}>
+            <Icon className="size-3 shrink-0 text-muted-foreground" />
+            <span className="truncate">{s.label}</span>
+          </Link>
+        );
+      })}
+    </div>
   );
 };
 

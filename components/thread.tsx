@@ -127,7 +127,11 @@ const baseGroupBy = groupPartByType({
   "standalone-tool-call": [],
 });
 function isStandaloneTool(toolName: string): boolean {
-  return toolName.startsWith("propose_") || toolName === "draft_document";
+  return (
+    toolName.startsWith("propose_") ||
+    toolName === "draft_document" ||
+    toolName === "cited_sources"
+  );
 }
 function vioGroupBy(
   ...args: Parameters<typeof baseGroupBy>
