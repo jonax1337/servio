@@ -146,6 +146,10 @@ export async function saveAiSettings(
       { key: "AI_TICKET_TRIAGE", value: bool(fd, "AI_TICKET_TRIAGE") },
       { key: "ANTHROPIC_API_KEY", value: str(fd, "ANTHROPIC_API_KEY"), encrypted: true, keepIfEmpty: true },
       { key: "OPENAI_API_KEY", value: str(fd, "OPENAI_API_KEY"), encrypted: true, keepIfEmpty: true },
+      // Web search: optional real provider (Tavily/Brave); blank → keyless DuckDuckGo.
+      { key: "WEB_SEARCH_PROVIDER", value: str(fd, "WEB_SEARCH_PROVIDER") },
+      { key: "TAVILY_API_KEY", value: str(fd, "TAVILY_API_KEY"), encrypted: true, keepIfEmpty: true },
+      { key: "BRAVE_API_KEY", value: str(fd, "BRAVE_API_KEY"), encrypted: true, keepIfEmpty: true },
     ],
     "Updated AI settings",
     "/settings/ai",
