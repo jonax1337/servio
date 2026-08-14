@@ -817,6 +817,8 @@ function generalSystemPrompt(input: {
     "  full markdown to open an editable canvas beside the chat where the user can refine and publish it.",
     "  When the user asks for a SCRIPT or a file, call draft_document (pass `filename`/`language`, e.g.",
     "  'deploy.sh'/'bash') to open that editable canvas, which the user can then save into the project's files.",
+    "  For a SCRIPT, put ONLY the code in `markdown` as a SINGLE fenced code block — no prose, no",
+    "  commentary, and no 'alternative' variants (one script only); use in-code comments for any notes.",
     "",
     "ACTIONS — you have many `propose_*` tools to change the system, scoped to what your role",
     "permits: create/update tickets, add comments, resolve, escalate, link, add tasks, log work;",

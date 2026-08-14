@@ -252,3 +252,78 @@
 @custom-variant data-open (&:where([data-state="open"], [data-open]:not([data-open="false"])));
 
 @custom-variant data-closed (&:where([data-state="closed"], [data-closed]:not([data-closed="false"])));
+
+/* ── Sable code canvas: Prism syntax highlighting (theme-aware) ──────────────
+   Scoped to `.sable-code` (the react-simple-code-editor wrapper). Kept tasteful
+   and legible in both themes; the textarea caret/selection stay on brand. */
+.sable-code {
+  --tok-comment: oklch(0.55 0.02 262);
+  --tok-punct: oklch(0.5 0.02 262);
+  --tok-keyword: oklch(0.5 0.16 296);
+  --tok-string: oklch(0.52 0.13 150);
+  --tok-number: oklch(0.55 0.15 40);
+  --tok-func: oklch(0.5 0.14 250);
+  --tok-var: oklch(0.5 0.12 20);
+  --tok-op: oklch(0.5 0.02 262);
+  caret-color: var(--sable);
+  tab-size: 2;
+}
+.dark .sable-code {
+  --tok-comment: oklch(0.62 0.02 262);
+  --tok-punct: oklch(0.72 0.02 262);
+  --tok-keyword: oklch(0.78 0.14 300);
+  --tok-string: oklch(0.8 0.14 150);
+  --tok-number: oklch(0.82 0.13 55);
+  --tok-func: oklch(0.8 0.12 240);
+  --tok-var: oklch(0.82 0.1 25);
+  --tok-op: oklch(0.75 0.02 262);
+}
+.sable-code textarea::selection,
+.sable-code pre ::selection {
+  background: color-mix(in oklch, var(--sable) 22%, transparent);
+}
+.sable-code .token.comment,
+.sable-code .token.prolog,
+.sable-code .token.doctype,
+.sable-code .token.cdata {
+  color: var(--tok-comment);
+  font-style: italic;
+}
+.sable-code .token.punctuation {
+  color: var(--tok-punct);
+}
+.sable-code .token.property,
+.sable-code .token.tag,
+.sable-code .token.boolean,
+.sable-code .token.number,
+.sable-code .token.constant,
+.sable-code .token.symbol {
+  color: var(--tok-number);
+}
+.sable-code .token.selector,
+.sable-code .token.attr-name,
+.sable-code .token.string,
+.sable-code .token.char,
+.sable-code .token.builtin,
+.sable-code .token.inserted {
+  color: var(--tok-string);
+}
+.sable-code .token.operator,
+.sable-code .token.entity,
+.sable-code .token.url {
+  color: var(--tok-op);
+}
+.sable-code .token.atrule,
+.sable-code .token.attr-value,
+.sable-code .token.keyword {
+  color: var(--tok-keyword);
+}
+.sable-code .token.function,
+.sable-code .token.class-name {
+  color: var(--tok-func);
+}
+.sable-code .token.variable,
+.sable-code .token.regex,
+.sable-code .token.important {
+  color: var(--tok-var);
+}

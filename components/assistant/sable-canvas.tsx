@@ -1,23 +1,36 @@
 "use client";
 
-import { useCallback, useMemo, useRef, useState } from "react";
-import { Check, Copy, FolderPlus, MessageSquarePlus, Save, X } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Boxes, Check, Copy, FolderPlus, Loader2, MessageSquarePlus, Save, X } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { SableMark } from "@/components/sable-mark";
+import { CodeEditor } from "@/components/ui/code-editor";
 import { RichTextEditor, type RichTextEditorHandle } from "@/components/ui/rich-text-editor";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { renderMarkdown } from "@/lib/markdown";
 import { cn } from "@/lib/utils";
 import { useSable } from "./sable-provider";
 import { ProposalCard, type ProposalStatus } from "./proposal-card";
 import { saveArtifactToProject } from "@/lib/actions/ai-project-files";
-import type { AssistantProposal } from "@/lib/actions/ai-assistant";
+import { listProjects, type AssistantProposal, type ProjectSummary } from "@/lib/actions/ai-assistant";
 
 /** Map a language hint → a file extension for a saved artifact. */
 const LANG_EXT: Record<string, string> = {
   bash: "sh",
   sh: "sh",
   shell: "sh",
+  powershell: "ps1",
+  ps1: "ps1",
+  pwsh: "ps1",
+  bat: "bat",
+  batch: "bat",
+  cmd: "cmd",
   python: "py",
   py: "py",
   ruby: "rb",
@@ -35,12 +48,57 @@ const LANG_EXT: Record<string, string> = {
   json: "json",
   yaml: "yaml",
   yml: "yaml",
+  toml: "toml",
   xml: "xml",
   html: "html",
   css: "css",
+  dockerfile: "dockerfile",
   markdown: "md",
   md: "md",
 };
+
+/** File extensions we treat as CODE (raw monospace, never rich text). */
+const CODE_EXTS = new Set([
+  "sh", "ps1", "bat", "cmd", "py", "rb", "go", "rs", "java", "c", "cpp", "cc",
+  "h", "hpp", "js", "mjs", "cjs", "ts", "tsx", "jsx", "sql", "json", "yaml",
+  "yml", "toml", "ini", "xml", "html", "htm", "css", "pl", "php", "dockerfile",
+]);
+
+/** The lowercase extension of a filename (without the dot), or "". */
+function fileExt(name?: string): string {
+  if (!name) return "";
+  const i = name.lastIndexOf(".");
+  return i >= 0 ? name.slice(i + 1).toLowerCase() : "";
+}
+
+/**
+ * A draft is CODE (shown in a plain monospace editor, saved verbatim) when its
+ * language or filename points at a code type — anything but a prose document
+ * (markdown/plain text), which stays in the rich-text editor.
+ */
+function isCodeDoc(doc: { language?: string; filename?: string }): boolean {
+  const lang = (doc.language ?? "").trim().toLowerCase();
+  if (lang) {
+    const ext = LANG_EXT[lang] ?? lang;
+    if (ext !== "md" && ext !== "txt" && CODE_EXTS.has(ext)) return true;
+  }
+  const fext = fileExt(doc.filename);
+  return !!fext && CODE_EXTS.has(fext);
+}
+
+/**
+ * Pull the runnable code out of a code draft: if the model wrapped it in fenced
+ * ``` blocks (often with prose between/around them), keep ONLY the block bodies
+ * so the canvas shows a clean script — not the surrounding explanation. Falls
+ * back to the trimmed text when there are no fences.
+ */
+function extractCode(markdown: string): string {
+  const blocks = [...markdown.matchAll(/```[^\n]*\n([\s\S]*?)```/g)].map((m) =>
+    m[1].replace(/\n+$/, ""),
+  );
+  if (blocks.length) return blocks.join("\n\n");
+  return markdown.trim();
+}
 
 /** Turn a title into a filesystem-friendly slug (letters/digits/dashes). */
 function slugify(s: string): string {
@@ -78,23 +136,41 @@ export function SableCanvas() {
   const sable = useSable();
   const doc = sable.canvasDoc;
 
-  // Seed the editor from the draft markdown → sanitised HTML. Keyed by title so a
-  // NEW draft re-seeds the editor (a fresh RichTextEditor mount via the panel key).
+  const isCode = useMemo(() => (doc ? isCodeDoc(doc) : false), [doc]);
+
+  // Prose drafts → sanitised HTML for the rich editor. Keyed by title so a NEW
+  // draft re-seeds (a fresh RichTextEditor mount via the panel key).
   const seedHtml = useMemo(
-    () => (doc ? renderMarkdown(doc.markdown, "markdown") : ""),
-    [doc],
+    () => (doc && !isCode ? renderMarkdown(doc.markdown, "markdown") : ""),
+    [doc, isCode],
+  );
+  // Code drafts → the runnable code, with any surrounding prose/fences stripped.
+  const seedCode = useMemo(
+    () => (doc && isCode ? extractCode(doc.markdown) : ""),
+    [doc, isCode],
   );
 
   const handleRef = useRef<RichTextEditorHandle | null>(null);
   // Live HTML mirror of the editor, for "Save as KB article" (article bodies are
   // persisted as HTML). Seeded so a publish before any edit still has the draft.
   const [html, setHtml] = useState(seedHtml);
+  // Editable code buffer for code drafts. Re-seeded when a new draft lands.
+  const [code, setCode] = useState(seedCode);
+  useEffect(() => {
+    setCode(seedCode);
+  }, [seedCode]);
+
   const [copied, setCopied] = useState(false);
   const [publishing, setPublishing] = useState(false);
-  const [saving, setSaving] = useState(false);
+
+  // Current editable content, whichever editor is active.
+  const currentText = useCallback(
+    () => (isCode ? code : handleRef.current?.getText() ?? doc?.markdown ?? ""),
+    [isCode, code, doc],
+  );
 
   const copy = useCallback(async () => {
-    const text = handleRef.current?.getText() ?? doc?.markdown ?? "";
+    const text = currentText();
     try {
       await navigator.clipboard.writeText(text);
       setCopied(true);
@@ -102,37 +178,14 @@ export function SableCanvas() {
     } catch {
       toast.error("Couldn't copy to the clipboard.");
     }
-  }, [doc]);
+  }, [currentText]);
 
   const insert = useCallback(() => {
-    const text = handleRef.current?.getText() ?? doc?.markdown ?? "";
+    const text = currentText();
     if (!text.trim()) return;
     sable.insertIntoComposer(text);
     toast.success("Added to the chat composer.");
-  }, [sable, doc]);
-
-  // Save the artifact into the active project's files. Persists the EDITED text
-  // (the editor content, falling back to the draft markdown) as a real project
-  // file so it appears in Files and is retrievable. Enabled only with a project.
-  const saveToProject = useCallback(async () => {
-    if (!doc || !sable.projectId) return;
-    const content = handleRef.current?.getText() ?? doc.markdown;
-    if (!content.trim()) {
-      toast.error("Nothing to save.");
-      return;
-    }
-    const name = artifactFilename(doc);
-    setSaving(true);
-    try {
-      const res = await saveArtifactToProject(sable.projectId, { name, content });
-      if (res.ok) toast.success(`Saved “${res.file.name}” to the project.`);
-      else toast.error(res.error || "Couldn't save to the project.");
-    } catch {
-      toast.error("Couldn't save to the project.");
-    } finally {
-      setSaving(false);
-    }
-  }, [doc, sable.projectId]);
+  }, [sable, currentText]);
 
   if (!doc) return null;
 
@@ -144,7 +197,7 @@ export function SableCanvas() {
         </span>
         <div className="min-w-0 flex-1">
           <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-            Canvas
+            {isCode ? artifactFilename(doc) : "Canvas"}
           </p>
           <p className="truncate font-display text-sm font-semibold leading-tight tracking-tight text-foreground">
             {doc.title}
@@ -162,17 +215,28 @@ export function SableCanvas() {
       </header>
 
       <div className="min-h-0 flex-1 overflow-y-auto p-3">
-        <RichTextEditor
-          key={doc.title}
-          name="sable-canvas-body"
-          ariaLabel="Document canvas"
-          defaultHTML={seedHtml}
-          onChangeHTML={setHtml}
-          onReady={(h) => {
-            handleRef.current = h;
-          }}
-          placeholder="The document draft appears here — edit it freely."
-        />
+        {isCode ? (
+          <CodeEditor
+            key={doc.title}
+            value={code}
+            onValueChange={setCode}
+            language={doc.language ?? fileExt(doc.filename)}
+            ariaLabel="Code canvas"
+            className="min-h-full"
+          />
+        ) : (
+          <RichTextEditor
+            key={doc.title}
+            name="sable-canvas-body"
+            ariaLabel="Document canvas"
+            defaultHTML={seedHtml}
+            onChangeHTML={setHtml}
+            onReady={(h) => {
+              handleRef.current = h;
+            }}
+            placeholder="The document draft appears here — edit it freely."
+          />
+        )}
       </div>
 
       <footer className="flex flex-col gap-2 border-t px-3 py-2.5">
@@ -185,35 +249,124 @@ export function SableCanvas() {
             <MessageSquarePlus className="size-3.5" />
             Insert into chat
           </Button>
-          {sable.projectId ? (
+          <SaveToProjectMenu
+            filename={artifactFilename(doc)}
+            getContent={currentText}
+            defaultProjectId={sable.projectId}
+          />
+          {/* A script isn't a KB article — only offer publishing for prose docs. */}
+          {!isCode ? (
             <Button
               type="button"
-              variant="outline"
               size="sm"
-              className={cn("gap-1.5", saving && "opacity-70")}
-              disabled={saving}
-              onClick={saveToProject}
+              className={cn("gap-1.5 bg-sable text-sable-foreground hover:bg-sable/90", publishing && "opacity-70")}
+              onClick={() => setPublishing((p) => !p)}
             >
-              <FolderPlus className="size-3.5" />
-              {saving ? "Saving…" : "Save to project"}
+              <Save className="size-3.5" />
+              Save as KB article
             </Button>
           ) : null}
-          <Button
-            type="button"
-            size="sm"
-            className={cn("gap-1.5 bg-sable text-sable-foreground hover:bg-sable/90", publishing && "opacity-70")}
-            onClick={() => setPublishing((p) => !p)}
-          >
-            <Save className="size-3.5" />
-            Save as KB article
-          </Button>
         </div>
 
-        {publishing ? (
+        {publishing && !isCode ? (
           <SableCanvasPublish title={doc.title} html={html || seedHtml} />
         ) : null}
       </footer>
     </aside>
+  );
+}
+
+/**
+ * "Save to project" from the canvas: a project picker so an artifact can land in
+ * ANY of the user's projects — not only when the current chat is project-bound.
+ * The chat's own project (if any) is listed first and marked "current". Persists
+ * the currently-edited content (raw code, or the prose text) via
+ * `saveArtifactToProject`, which access-checks the target project server-side.
+ */
+function SaveToProjectMenu({
+  filename,
+  getContent,
+  defaultProjectId,
+}: {
+  filename: string;
+  getContent: () => string;
+  defaultProjectId: string | null;
+}) {
+  const [projects, setProjects] = useState<ProjectSummary[] | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [savingId, setSavingId] = useState<string | null>(null);
+
+  const load = useCallback(() => {
+    if (projects || loading) return;
+    setLoading(true);
+    listProjects()
+      .then((rows) => setProjects(rows.filter((p) => !p.archived)))
+      .catch(() => setProjects([]))
+      .finally(() => setLoading(false));
+  }, [projects, loading]);
+
+  const save = useCallback(
+    async (projectId: string, projectName: string) => {
+      const content = getContent();
+      if (!content.trim()) {
+        toast.error("Nothing to save.");
+        return;
+      }
+      setSavingId(projectId);
+      try {
+        const res = await saveArtifactToProject(projectId, { name: filename, content });
+        if (res.ok) toast.success(`Saved “${res.file.name}” to ${projectName}.`);
+        else toast.error(res.error || "Couldn't save to the project.");
+      } catch {
+        toast.error("Couldn't save to the project.");
+      } finally {
+        setSavingId(null);
+      }
+    },
+    [filename, getContent],
+  );
+
+  // The chat's bound project floats to the top (marked "current").
+  const ordered = useMemo(() => {
+    if (!projects) return [];
+    const rank = (p: ProjectSummary) => (p.id === defaultProjectId ? 0 : 1);
+    return [...projects].sort((a, b) => rank(a) - rank(b));
+  }, [projects, defaultProjectId]);
+
+  return (
+    <DropdownMenu onOpenChange={(open) => open && load()}>
+      <DropdownMenuTrigger
+        render={<Button type="button" variant="outline" size="sm" className="gap-1.5" />}
+      >
+        <FolderPlus className="size-3.5" />
+        Save to project
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="max-h-72 min-w-52">
+        {loading ? (
+          <DropdownMenuItem disabled>
+            <Loader2 className="size-3.5 animate-spin" /> Loading…
+          </DropdownMenuItem>
+        ) : null}
+        {!loading && ordered.length === 0 ? (
+          <DropdownMenuItem disabled>No projects yet</DropdownMenuItem>
+        ) : null}
+        {ordered.map((p) => (
+          <DropdownMenuItem
+            key={p.id}
+            disabled={savingId !== null}
+            onClick={() => save(p.id, p.name)}
+          >
+            <Boxes className="size-3.5" />
+            <span className="min-w-0 truncate">{p.name}</span>
+            {p.id === defaultProjectId ? (
+              <span className="ml-auto shrink-0 text-[10px] uppercase tracking-wide text-muted-foreground">
+                current
+              </span>
+            ) : null}
+          </DropdownMenuItem>
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 
