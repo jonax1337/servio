@@ -1,12 +1,11 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Boxes, Check, Copy, FolderPlus, Loader2, MessageSquarePlus, Save, X } from "lucide-react";
+import { useCallback, useMemo, useState } from "react";
+import { Boxes, Check, Copy, Download, FolderPlus, Loader2, MessageSquarePlus, Save, X } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { SableMark } from "@/components/sable-mark";
-import { CodeEditor } from "@/components/ui/code-editor";
-import { RichTextEditor, type RichTextEditorHandle } from "@/components/ui/rich-text-editor";
+import dynamic from "next/dynamic";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -16,6 +15,13 @@ import {
 import { renderMarkdown } from "@/lib/markdown";
 import { cn } from "@/lib/utils";
 import { useSable } from "./sable-provider";
+
+// The WASM-engine code highlighter is heavy; load it only when the canvas shows
+// code. Until it's ready, show the raw code in a plain <pre> (no layout jump).
+const CanvasCode = dynamic(() => import("./canvas-code"), {
+  ssr: false,
+  loading: () => null,
+});
 import { ProposalCard, type ProposalStatus } from "./proposal-card";
 import { saveArtifactToProject } from "@/lib/actions/ai-project-files";
 import { listProjects, type AssistantProposal, type ProjectSummary } from "@/lib/actions/ai-assistant";
@@ -122,13 +128,46 @@ function artifactFilename(doc: { title: string; filename?: string; language?: st
   return `${slugify(doc.title)}.${ext}`;
 }
 
+/** Map a language/extension hint → a Shiki grammar name for read-only render. */
+const SHIKI_LANG: Record<string, string> = {
+  sh: "bash", shell: "bash", bash: "bash",
+  ps1: "powershell", powershell: "powershell", pwsh: "powershell",
+  bat: "batch", cmd: "batch", batch: "batch",
+  py: "python", python: "python",
+  rb: "ruby", ruby: "ruby",
+  go: "go", rs: "rust", rust: "rust", java: "java",
+  c: "c", cpp: "cpp", "c++": "cpp", cc: "cpp",
+  js: "javascript", mjs: "javascript", cjs: "javascript", jsx: "jsx",
+  ts: "typescript", tsx: "tsx", javascript: "javascript", typescript: "typescript",
+  sql: "sql", json: "json", yaml: "yaml", yml: "yaml", toml: "toml", ini: "ini",
+  xml: "xml", html: "html", htm: "html", css: "css",
+  dockerfile: "docker", docker: "docker", md: "markdown", markdown: "markdown",
+};
+
+/** A human label for the artifact type badge (e.g. "PowerShell", "Markdown"). */
+const LANG_LABEL: Record<string, string> = {
+  bash: "Shell", powershell: "PowerShell", batch: "Batch", python: "Python",
+  ruby: "Ruby", go: "Go", rust: "Rust", java: "Java", c: "C", cpp: "C++",
+  javascript: "JavaScript", jsx: "JSX", typescript: "TypeScript", tsx: "TSX",
+  sql: "SQL", json: "JSON", yaml: "YAML", toml: "TOML", ini: "INI",
+  xml: "XML", html: "HTML", css: "CSS", docker: "Dockerfile", markdown: "Markdown",
+};
+
+function shikiLangFor(doc: { language?: string; filename?: string }): string {
+  const lang = (doc.language ?? "").trim().toLowerCase();
+  if (lang && SHIKI_LANG[lang]) return SHIKI_LANG[lang];
+  const ext = fileExt(doc.filename);
+  return SHIKI_LANG[ext] ?? "text";
+}
+
 /**
- * The Artifacts / Canvas side panel. Sable hands a long document draft (runbook,
- * RCA, change doc, KB draft) to this pane via `draft_document`; the human edits
- * it in a rich-text editor seeded from the draft markdown, then can copy it,
- * drop it into the chat composer, or publish it as a Knowledge Base article
- * (through the existing approve-first proposal path — nothing is written until
- * the human approves the card, re-validated server-side by applyAssistantProposal).
+ * The Artifacts / Canvas side panel — a clean, READ-ONLY view of what Sable
+ * drafted (like Claude's artifacts): a script or file renders as syntax-
+ * highlighted code, a prose document as rendered markdown. Nothing is edited in
+ * place; the user reads it, copies or downloads it, saves it into a project, or
+ * (for prose) publishes it as a Knowledge Base article — the latter through the
+ * approve-first proposal path (re-validated server-side by applyAssistantProposal).
+ * To change an artifact the user asks Sable, which re-drafts it.
  *
  * Session-only (no DB): the draft lives on the provider for the window session.
  */
@@ -137,55 +176,56 @@ export function SableCanvas() {
   const doc = sable.canvasDoc;
 
   const isCode = useMemo(() => (doc ? isCodeDoc(doc) : false), [doc]);
-
-  // Prose drafts → sanitised HTML for the rich editor. Keyed by title so a NEW
-  // draft re-seeds (a fresh RichTextEditor mount via the panel key).
-  const seedHtml = useMemo(
+  // Code → the runnable body (prose/fences stripped). Prose → rendered markdown.
+  const code = useMemo(() => (doc && isCode ? extractCode(doc.markdown) : ""), [doc, isCode]);
+  const proseHtml = useMemo(
     () => (doc && !isCode ? renderMarkdown(doc.markdown, "markdown") : ""),
     [doc, isCode],
   );
-  // Code drafts → the runnable code, with any surrounding prose/fences stripped.
-  const seedCode = useMemo(
-    () => (doc && isCode ? extractCode(doc.markdown) : ""),
-    [doc, isCode],
-  );
-
-  const handleRef = useRef<RichTextEditorHandle | null>(null);
-  // Live HTML mirror of the editor, for "Save as KB article" (article bodies are
-  // persisted as HTML). Seeded so a publish before any edit still has the draft.
-  const [html, setHtml] = useState(seedHtml);
-  // Editable code buffer for code drafts. Re-seeded when a new draft lands.
-  const [code, setCode] = useState(seedCode);
-  useEffect(() => {
-    setCode(seedCode);
-  }, [seedCode]);
+  const shikiLang = useMemo(() => (doc ? shikiLangFor(doc) : "text"), [doc]);
+  const badge = isCode ? LANG_LABEL[shikiLang] ?? "Code" : "Document";
 
   const [copied, setCopied] = useState(false);
   const [publishing, setPublishing] = useState(false);
 
-  // Current editable content, whichever editor is active.
-  const currentText = useCallback(
-    () => (isCode ? code : handleRef.current?.getText() ?? doc?.markdown ?? ""),
+  // The verbatim artifact content (raw code or the source markdown).
+  const rawContent = useCallback(
+    () => (isCode ? code : doc?.markdown ?? ""),
     [isCode, code, doc],
   );
 
   const copy = useCallback(async () => {
-    const text = currentText();
     try {
-      await navigator.clipboard.writeText(text);
+      await navigator.clipboard.writeText(rawContent());
       setCopied(true);
       window.setTimeout(() => setCopied(false), 1500);
     } catch {
       toast.error("Couldn't copy to the clipboard.");
     }
-  }, [currentText]);
+  }, [rawContent]);
 
   const insert = useCallback(() => {
-    const text = currentText();
+    const text = rawContent();
     if (!text.trim()) return;
     sable.insertIntoComposer(text);
     toast.success("Added to the chat composer.");
-  }, [sable, currentText]);
+  }, [sable, rawContent]);
+
+  // Download the artifact as its file (no server round-trip; the draft is local).
+  const download = useCallback(() => {
+    if (!doc) return;
+    const text = rawContent();
+    if (!text.trim()) return;
+    const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = artifactFilename(doc);
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  }, [doc, rawContent]);
 
   if (!doc) return null;
 
@@ -196,9 +236,14 @@ export function SableCanvas() {
           <SableMark className="size-4" />
         </span>
         <div className="min-w-0 flex-1">
-          <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-            {isCode ? artifactFilename(doc) : "Canvas"}
-          </p>
+          <div className="flex items-center gap-1.5">
+            <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+              {isCode ? artifactFilename(doc) : "Canvas"}
+            </p>
+            <span className="rounded bg-muted px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide text-muted-foreground">
+              {badge}
+            </span>
+          </div>
           <p className="truncate font-display text-sm font-semibold leading-tight tracking-tight text-foreground">
             {doc.title}
           </p>
@@ -214,27 +259,16 @@ export function SableCanvas() {
         </Button>
       </header>
 
-      <div className="min-h-0 flex-1 overflow-y-auto p-3">
+      <div className="min-h-0 flex-1 overflow-y-auto">
         {isCode ? (
-          <CodeEditor
-            key={doc.title}
-            value={code}
-            onValueChange={setCode}
-            language={doc.language ?? fileExt(doc.filename)}
-            ariaLabel="Code canvas"
-            className="min-h-full"
-          />
+          <div className="p-3 text-[13px]">
+            <CanvasCode code={code} language={shikiLang} showLineNumbers />
+          </div>
         ) : (
-          <RichTextEditor
-            key={doc.title}
-            name="sable-canvas-body"
-            ariaLabel="Document canvas"
-            defaultHTML={seedHtml}
-            onChangeHTML={setHtml}
-            onReady={(h) => {
-              handleRef.current = h;
-            }}
-            placeholder="The document draft appears here — edit it freely."
+          <div
+            className="prose prose-sm dark:prose-invert max-w-none px-4 py-3.5 prose-headings:font-display prose-pre:bg-muted/40"
+            // Sanitised by renderMarkdown (DOMPurify) before it reaches the DOM.
+            dangerouslySetInnerHTML={{ __html: proseHtml }}
           />
         )}
       </div>
@@ -245,13 +279,17 @@ export function SableCanvas() {
             {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
             {copied ? "Copied" : "Copy"}
           </Button>
+          <Button type="button" variant="outline" size="sm" className="gap-1.5" onClick={download}>
+            <Download className="size-3.5" />
+            Download
+          </Button>
           <Button type="button" variant="outline" size="sm" className="gap-1.5" onClick={insert}>
             <MessageSquarePlus className="size-3.5" />
             Insert into chat
           </Button>
           <SaveToProjectMenu
             filename={artifactFilename(doc)}
-            getContent={currentText}
+            getContent={rawContent}
             defaultProjectId={sable.projectId}
           />
           {/* A script isn't a KB article — only offer publishing for prose docs. */}
@@ -269,7 +307,7 @@ export function SableCanvas() {
         </div>
 
         {publishing && !isCode ? (
-          <SableCanvasPublish title={doc.title} html={html || seedHtml} />
+          <SableCanvasPublish title={doc.title} html={proseHtml} />
         ) : null}
       </footer>
     </aside>
