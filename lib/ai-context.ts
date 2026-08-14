@@ -58,9 +58,11 @@ export const getOrgDirectory = cache(async (): Promise<string> => {
       )
       .join("\n") || "(no services defined)";
 
+  // Leaf-first (the resolvable NAME first, parent as context) so the model sets
+  // e.g. "VPN", not the "Network > VPN" path that resolveCategoryId can't match head-on.
   const categoryLines =
     categories
-      .map((c) => `- ${c.parent?.name ? `${c.parent.name} > ` : ""}${c.name}${c.description ? `: ${c.description}` : ""}`)
+      .map((c) => `- ${c.name}${c.parent?.name ? ` (under ${c.parent.name})` : ""}${c.description ? ` — ${c.description}` : ""}`)
       .join("\n") || "(no categories defined)";
 
   return [

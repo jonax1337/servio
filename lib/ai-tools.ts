@@ -341,6 +341,46 @@ export async function resolveAgentId(name: string) {
     select: { id: true, name: true },
   });
 }
+
+/**
+ * Rank candidate names by rough closeness to a query (handles "Parent > Child"
+ * paths by matching the leaf): exact > substring > token-overlap. Used to turn a
+ * bare "X not found" into an actionable "did you mean …?" so Sable self-corrects.
+ */
+export function rankSuggestions(names: string[], q: string, n = 3): string[] {
+  const query = q.toLowerCase().trim();
+  const leaf = query.split(/\s*[>/›»]\s*/).pop()?.trim() || query;
+  const qTokens = new Set(leaf.split(/\W+/).filter(Boolean));
+  return names
+    .map((name) => {
+      const l = name.toLowerCase();
+      let score = 0;
+      if (l === leaf) score = 100;
+      else if (l.includes(leaf) || leaf.includes(l)) score = 60;
+      else score = 20 * l.split(/\W+/).filter((t) => qTokens.has(t)).length;
+      return { name, score };
+    })
+    .filter((s) => s.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, n)
+    .map((s) => s.name);
+}
+
+/** A "did you mean …? / available: …" suffix for a category-not-found error. */
+export async function categoryNotFoundHint(q: string): Promise<string> {
+  const names = (await db.category.findMany({ select: { name: true } })).map((c) => c.name);
+  const sug = rankSuggestions(names, q);
+  if (sug.length) return ` Did you mean: ${sug.join(", ")}?`;
+  return names.length ? ` Available categories: ${names.slice(0, 12).join(", ")}.` : "";
+}
+
+/** A "did you mean …? / available: …" suffix for a team/group-not-found error. */
+export async function groupNotFoundHint(q: string): Promise<string> {
+  const names = (await db.group.findMany({ select: { name: true } })).map((g) => g.name);
+  const sug = rankSuggestions(names, q);
+  if (sug.length) return ` Did you mean: ${sug.join(", ")}?`;
+  return names.length ? ` Available teams: ${names.slice(0, 12).join(", ")}.` : "";
+}
 export function parseTicketId(ref: string): number | null {
   const m = String(ref).match(/(\d+)/);
   return m ? Number(m[1]) : null;

@@ -13,7 +13,14 @@ import {
   toggleWatch,
   toggleMajorIncident,
 } from "@/lib/actions/tickets";
-import { resolveGroupId, resolveCategoryId, resolveAgentId, parseTicketId } from "@/lib/ai-tools";
+import {
+  resolveGroupId,
+  resolveCategoryId,
+  resolveAgentId,
+  parseTicketId,
+  categoryNotFoundHint,
+  groupNotFoundHint,
+} from "@/lib/ai-tools";
 import { linkStagedAttachments } from "@/lib/portal-tickets";
 import {
   TICKET_TYPES,
@@ -86,11 +93,13 @@ export const OPERATIONS: AiOperation[] = [
 
       const categoryName = str(a.category);
       const category = categoryName ? await resolveCategoryId(categoryName) : null;
-      if (categoryName && !category) return err(`Category not found: ${a.category}`);
+      if (categoryName && !category)
+        return err(`Category not found: ${a.category}.${await categoryNotFoundHint(categoryName)}`);
 
       const teamName = str(a.team);
       const team = teamName ? await resolveGroupId(teamName) : null;
-      if (teamName && !team) return err(`Team not found: ${a.team}`);
+      if (teamName && !team)
+        return err(`Team not found: ${a.team}.${await groupNotFoundHint(teamName)}`);
 
       let requesterId = ctx.userId;
       const email = str(a.requesterEmail);
@@ -157,12 +166,12 @@ export const OPERATIONS: AiOperation[] = [
 
       if (field === "team") {
         const g = await resolveGroupId(value);
-        if (!g) return err(`Team not found: ${value}`);
+        if (!g) return err(`Team not found: ${value}.${await groupNotFoundHint(value)}`);
         realField = "groupId";
         realValue = g.id;
       } else if (field === "category") {
         const c = await resolveCategoryId(value);
-        if (!c) return err(`Category not found: ${value}`);
+        if (!c) return err(`Category not found: ${value}.${await categoryNotFoundHint(value)}`);
         realField = "categoryId";
         realValue = c.id;
       } else if (field === "assignee") {
