@@ -18,6 +18,7 @@ import {
   File as FileIcon,
   FileUp,
   Folder,
+  FolderInput,
   FolderOpen,
   FolderPlus,
   FolderUp,
@@ -27,11 +28,12 @@ import {
   Trash2,
   Upload,
   Sparkles,
+  X,
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { ConfirmButton } from "@/components/confirm-dialog";
+import { ConfirmButton, ConfirmDialog } from "@/components/confirm-dialog";
 import { NameDialog } from "./name-dialog";
 import { FilePreview, useFilePreview, type PreviewFile } from "@/components/file-preview";
 import {
@@ -55,6 +57,8 @@ import {
   deleteProjectFolder,
   moveProjectFile,
   deleteProjectFile,
+  moveProjectFiles,
+  deleteProjectFiles,
   type ProjectFolderSummary,
   type ProjectFileSummary,
 } from "@/lib/actions/ai-project-files";
@@ -81,6 +85,9 @@ type TreeCtx = {
   onUpload: (files: FileList, folderId: string | null) => void;
   /** Open the shared preview lightbox for a file (navigable across all files). */
   onPreview: (file: ProjectFileSummary) => void;
+  /** Multi-select: whether a file id is selected + toggle it. */
+  isSelected: (id: string) => boolean;
+  toggleSelect: (id: string) => void;
 };
 
 /**
@@ -98,6 +105,18 @@ export function ProjectFileBrowser({ projectId }: { projectId: string }) {
   const [uploading, setUploading] = useState(false);
   const [progress, setProgress] = useState<{ done: number; total: number; name: string } | null>(null);
   const [dropActive, setDropActive] = useState(false);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
+
+  const toggleSelect = useCallback((id: string) => {
+    setSelected((s) => {
+      const next = new Set(s);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+  const clearSelection = useCallback(() => setSelected(new Set()), []);
   const [createFolderOpen, setCreateFolderOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const folderInputRef = useRef<HTMLInputElement>(null);
@@ -282,7 +301,41 @@ export function ProjectFileBrowser({ projectId }: { projectId: string }) {
     );
   }
 
-  const ctx: TreeCtx = { allFolders: folders, byFolder, expanded, toggle, onChanged: reload, onUpload: (fl, fid) => void uploadFiles(fl, fid), onPreview: openPreview };
+  async function bulkMove(folderId: string | null) {
+    const ids = [...selected];
+    if (!ids.length) return;
+    const res = await moveProjectFiles(ids, folderId);
+    if (res.ok) {
+      clearSelection();
+      await reload();
+      toast.success(`Moved ${res.count ?? ids.length} file${(res.count ?? ids.length) === 1 ? "" : "s"}`);
+    } else {
+      toast.error(res.error ?? "Could not move");
+    }
+  }
+  async function bulkDelete() {
+    const ids = [...selected];
+    if (!ids.length) return;
+    const res = await deleteProjectFiles(ids);
+    if (res.ok) {
+      clearSelection();
+      await reload();
+    } else {
+      toast.error(res.error ?? "Could not delete");
+    }
+  }
+
+  const ctx: TreeCtx = {
+    allFolders: folders,
+    byFolder,
+    expanded,
+    toggle,
+    onChanged: reload,
+    onUpload: (fl, fid) => void uploadFiles(fl, fid),
+    onPreview: openPreview,
+    isSelected: (id) => selected.has(id),
+    toggleSelect,
+  };
 
   return (
     <DndContext
@@ -357,6 +410,43 @@ export function ProjectFileBrowser({ projectId }: { projectId: string }) {
           </div>
         </div>
 
+        {/* Bulk-selection bar */}
+        {selected.size > 0 ? (
+          <div className="flex flex-wrap items-center gap-2 rounded-lg border border-sable/25 bg-sable-muted/30 px-2.5 py-1.5 text-xs">
+            <span className="font-medium">{selected.size} selected</span>
+            <div className="ml-auto flex items-center gap-1">
+              <DropdownMenu>
+                <DropdownMenuTrigger render={<Button type="button" size="xs" variant="ghost" />}>
+                  <FolderInput className="size-3.5" /> Move to <ChevronDown className="size-3 opacity-60" />
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem onClick={() => void bulkMove(null)}>
+                    <FolderOpen className="size-3.5" /> Project root
+                  </DropdownMenuItem>
+                  {folders.map((f) => (
+                    <DropdownMenuItem key={f.id} onClick={() => void bulkMove(f.id)}>
+                      <Folder className="size-3.5" /> {f.name}
+                    </DropdownMenuItem>
+                  ))}
+                  {folders.length === 0 ? <DropdownMenuItem disabled>No folders</DropdownMenuItem> : null}
+                </DropdownMenuContent>
+              </DropdownMenu>
+              <Button
+                type="button"
+                size="xs"
+                variant="ghost"
+                onClick={() => setBulkDeleteOpen(true)}
+                className="text-destructive hover:text-destructive"
+              >
+                <Trash2 className="size-3.5" /> Delete
+              </Button>
+              <Button type="button" size="icon-xs" variant="ghost" onClick={clearSelection} aria-label="Clear selection">
+                <X className="size-3.5" />
+              </Button>
+            </div>
+          </div>
+        ) : null}
+
         {/* Upload progress tracker */}
         {progress ? (
           <div className="space-y-1.5 rounded-lg border bg-muted/20 px-3 py-2">
@@ -402,7 +492,14 @@ export function ProjectFileBrowser({ projectId }: { projectId: string }) {
                 <FolderNode key={folder.id} folder={folder} ctx={ctx} depth={0} />
               ))}
               {rootFiles.map((file) => (
-                <FileRow key={file.id} file={file} onChanged={reload} onPreview={openPreview} />
+                <FileRow
+                  key={file.id}
+                  file={file}
+                  onChanged={reload}
+                  onPreview={openPreview}
+                  selected={selected.has(file.id)}
+                  onToggleSelect={() => toggleSelect(file.id)}
+                />
               ))}
             </div>
           )}
@@ -419,6 +516,15 @@ export function ProjectFileBrowser({ projectId }: { projectId: string }) {
       </DragOverlay>
 
       <FilePreview {...preview.props} />
+
+      <ConfirmDialog
+        open={bulkDeleteOpen}
+        onOpenChange={setBulkDeleteOpen}
+        onConfirm={bulkDelete}
+        title={`Delete ${selected.size} file${selected.size === 1 ? "" : "s"}?`}
+        description="The selected files and their indexed content are permanently removed."
+        confirmLabel="Delete files"
+      />
     </DndContext>
   );
 }
@@ -625,7 +731,14 @@ function FolderNode({
             </div>
           ) : (
             files.map((file) => (
-              <FileRow key={file.id} file={file} onChanged={ctx.onChanged} onPreview={ctx.onPreview} />
+              <FileRow
+                key={file.id}
+                file={file}
+                onChanged={ctx.onChanged}
+                onPreview={ctx.onPreview}
+                selected={ctx.isSelected(file.id)}
+                onToggleSelect={() => ctx.toggleSelect(file.id)}
+              />
             ))
           )}
         </div>
@@ -638,10 +751,14 @@ function FileRow({
   file,
   onChanged,
   onPreview,
+  selected,
+  onToggleSelect,
 }: {
   file: ProjectFileSummary;
   onChanged: () => void;
   onPreview: (file: ProjectFileSummary) => void;
+  selected: boolean;
+  onToggleSelect: () => void;
 }) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: file.id });
 
@@ -649,10 +766,20 @@ function FileRow({
     <div
       ref={setNodeRef}
       className={cn(
-        "group/file flex items-center gap-2 rounded-lg px-1.5 py-1 transition-colors hover:bg-muted/60",
+        "group/file flex items-center gap-2 rounded-lg px-1.5 py-1 transition-colors",
+        selected ? "bg-sable-muted/40" : "hover:bg-muted/60",
         isDragging && "opacity-40",
       )}
     >
+      <span
+        onClick={(e) => e.stopPropagation()}
+        className={cn(
+          "flex shrink-0 items-center transition-opacity",
+          selected ? "opacity-100" : "opacity-0 group-hover/file:opacity-100",
+        )}
+      >
+        <Checkbox checked={selected} onCheckedChange={() => onToggleSelect()} aria-label={`Select ${file.name}`} />
+      </span>
       {/*
         The drag listeners live on this button, but the PointerSensor's 6px
         activation distance means a plain click never starts a drag (and dnd-kit

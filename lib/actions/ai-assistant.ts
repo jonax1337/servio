@@ -696,6 +696,16 @@ export async function deleteProject(id: string): Promise<{ ok: boolean; error?: 
   return { ok: true };
 }
 
+/** Archive or restore a project (owner only). Archived projects hide from the rail. */
+export async function archiveProject(id: string, archived: boolean): Promise<{ ok: boolean; error?: string }> {
+  const me = await actingAgent();
+  if (!me) return { ok: false, error: "Not authorised" };
+  const guard = await requireManagedProject(me.id, id);
+  if (!guard.ok) return guard;
+  await db.aiProject.update({ where: { id }, data: { archived: Boolean(archived) } });
+  return { ok: true };
+}
+
 /** Pin one of the actor's own conversations to a project (or unpin when null). */
 export async function moveConversationToProject(
   conversationId: string,

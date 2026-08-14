@@ -469,6 +469,52 @@ export async function moveProjectFile(
   return { ok: true };
 }
 
+/** Move several files at once (bulk). Access-checked per file; returns how many moved. */
+export async function moveProjectFiles(
+  fileIds: string[],
+  folderId: string | null,
+): Promise<{ ok: boolean; error?: string; count?: number }> {
+  const me = await actingAgent();
+  if (!me) return { ok: false, error: "Not authorised" };
+  let count = 0;
+  for (const id of fileIds) {
+    const projectId = await fileProjectId(id);
+    if (!projectId) continue;
+    if (!(await loadAccessibleProject(me, projectId))) continue;
+    if (folderId) {
+      const pid = await folderProjectId(folderId);
+      if (pid !== projectId) continue;
+    }
+    await db.aiProjectFile.update({ where: { id }, data: { folderId: folderId ?? null } });
+    count++;
+  }
+  return { ok: true, count };
+}
+
+/** Delete several files at once (bulk). Access-checked per file; row → attachment → blob. */
+export async function deleteProjectFiles(
+  fileIds: string[],
+): Promise<{ ok: boolean; error?: string; count?: number }> {
+  const me = await actingAgent();
+  if (!me) return { ok: false, error: "Not authorised" };
+  let count = 0;
+  for (const id of fileIds) {
+    const file = await db.aiProjectFile.findUnique({
+      where: { id },
+      select: { id: true, projectId: true, attachmentId: true, attachment: { select: { storageKey: true } } },
+    });
+    if (!file) continue;
+    if (!(await loadAccessibleProject(me, file.projectId))) continue;
+    await db.aiProjectFile.delete({ where: { id: file.id } });
+    const delAtt = await db.attachment.deleteMany({ where: { id: file.attachmentId } });
+    if (delAtt.count > 0 && file.attachment?.storageKey) {
+      await storage.delete(file.attachment.storageKey).catch(() => {});
+    }
+    count++;
+  }
+  return { ok: true, count };
+}
+
 /**
  * Delete a project file: remove the AiProjectFile row (which cascade-deletes its
  * retrieval chunks) first, then delete the underlying Attachment row + its blob —

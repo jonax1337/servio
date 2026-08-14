@@ -3,7 +3,10 @@
 import { useCallback, useEffect, useState } from "react";
 import { useDroppable, useDraggable } from "@dnd-kit/core";
 import {
+  Archive,
+  ArchiveRestore,
   Boxes,
+  ChevronDown,
   ChevronRight,
   Loader2,
   MessageSquare,
@@ -27,6 +30,7 @@ import { ConfirmDialog } from "@/components/confirm-dialog";
 import {
   listProjects,
   createProject,
+  archiveProject,
   renameConversation,
   deleteConversation,
   type ProjectSummary,
@@ -73,15 +77,26 @@ export function ProjectRailSection({
   const [loading, setLoading] = useState(true);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [createOpen, setCreateOpen] = useState(false);
+  const [showArchived, setShowArchived] = useState(false);
 
   const apply = useCallback(
     (rows: ProjectSummary[]) => {
-      const active = rows.filter((p) => !p.archived);
-      setProjects(active);
-      onProjectsLoaded?.(active);
+      setProjects(rows);
+      onProjectsLoaded?.(rows);
     },
     [onProjectsLoaded],
   );
+
+  async function archive(id: string, archived: boolean) {
+    setProjects((ps) => ps.map((p) => (p.id === id ? { ...p, archived } : p)));
+    const res = await archiveProject(id, archived);
+    if (!res.ok) {
+      toast.error(res.error ?? "Could not update");
+      apply(await listProjects());
+    } else {
+      onProjectsChanged?.();
+    }
+  }
 
 
   useEffect(() => {
@@ -115,6 +130,26 @@ export function ProjectRailSection({
     if (!c.archived && c.projectId && byProject[c.projectId]) byProject[c.projectId].push(c);
   }
 
+  const activeProjects = projects.filter((p) => !p.archived);
+  const archivedProjects = projects.filter((p) => p.archived);
+
+  const projectRow = (project: ProjectSummary) => (
+    <ProjectRow
+      key={project.id}
+      project={project}
+      chats={byProject[project.id] ?? []}
+      open={expanded[project.id] ?? false}
+      onToggle={() => setExpanded((s) => ({ ...s, [project.id]: !s[project.id] }))}
+      isActive={project.id === activeProjectId}
+      activeConversationId={activeConversationId}
+      onSelectConversation={onSelectConversation}
+      onOpenProject={onOpenProject}
+      onNewChatInProject={onNewChatInProject}
+      onChanged={() => onProjectsChanged?.()}
+      onArchive={(a) => void archive(project.id, a)}
+    />
+  );
+
   return (
     <section className="space-y-0.5">
       <div className="flex items-center justify-between px-1.5 pb-0.5">
@@ -147,7 +182,7 @@ export function ProjectRailSection({
         <div className="px-1.5 py-1">
           <Loader2 className="size-3.5 animate-spin text-muted-foreground" />
         </div>
-      ) : projects.length === 0 ? (
+      ) : activeProjects.length === 0 && archivedProjects.length === 0 ? (
         <button
           type="button"
           onClick={() => setCreateOpen(true)}
@@ -160,21 +195,23 @@ export function ProjectRailSection({
           </span>
         </button>
       ) : (
-        projects.map((project) => (
-          <ProjectRow
-            key={project.id}
-            project={project}
-            chats={byProject[project.id] ?? []}
-            open={expanded[project.id] ?? false}
-            onToggle={() => setExpanded((s) => ({ ...s, [project.id]: !s[project.id] }))}
-            isActive={project.id === activeProjectId}
-            activeConversationId={activeConversationId}
-            onSelectConversation={onSelectConversation}
-            onOpenProject={onOpenProject}
-            onNewChatInProject={onNewChatInProject}
-            onChanged={() => onProjectsChanged?.()}
-          />
-        ))
+        <>
+          {activeProjects.map(projectRow)}
+          {archivedProjects.length > 0 ? (
+            <div className="pt-0.5">
+              <button
+                type="button"
+                onClick={() => setShowArchived((v) => !v)}
+                className="flex w-full items-center gap-1 rounded-lg px-1.5 py-1 text-[11px] font-medium uppercase tracking-wider text-muted-foreground transition-colors hover:text-foreground"
+              >
+                <ChevronDown className={cn("size-3 transition-transform", !showArchived && "-rotate-90")} />
+                Archived
+                <span className="tracking-normal">{archivedProjects.length}</span>
+              </button>
+              {showArchived ? archivedProjects.map(projectRow) : null}
+            </div>
+          ) : null}
+        </>
       )}
     </section>
   );
@@ -191,6 +228,7 @@ function ProjectRow({
   onOpenProject,
   onNewChatInProject,
   onChanged,
+  onArchive,
 }: {
   project: ProjectSummary;
   chats: ConversationSummary[];
@@ -202,6 +240,7 @@ function ProjectRow({
   onOpenProject: (id: string, name: string) => void;
   onNewChatInProject: (id: string, name: string) => void;
   onChanged: () => void;
+  onArchive: (archived: boolean) => void;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: `project:${project.id}` });
 
@@ -249,6 +288,30 @@ function ProjectRow({
         >
           <Plus className="size-3.5" />
         </Button>
+        <DropdownMenu>
+          <DropdownMenuTrigger
+            render={
+              <Button
+                type="button"
+                size="icon-xs"
+                variant="ghost"
+                aria-label="Project options"
+                className="shrink-0 opacity-0 transition-opacity group-hover/project:opacity-100 aria-expanded:opacity-100"
+              />
+            }
+          >
+            <MoreHorizontal className="size-3.5" />
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem onClick={() => onArchive(!project.archived)}>
+              {project.archived ? (
+                <><ArchiveRestore className="size-3.5" /> Unarchive</>
+              ) : (
+                <><Archive className="size-3.5" /> Archive</>
+              )}
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
 
       {open ? (
