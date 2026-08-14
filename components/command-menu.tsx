@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Search, Ticket, AlertTriangle, GitPullRequestArrow, Server, User, LifeBuoy, Loader2 } from "lucide-react";
+import { Search, Ticket, AlertTriangle, GitPullRequestArrow, Server, User, LifeBuoy, Loader2, MessageSquarePlus } from "lucide-react";
 import {
   Command,
   CommandDialog,
@@ -12,6 +12,9 @@ import {
   CommandItem,
   CommandList,
 } from "@/components/ui/command";
+import { SableMark } from "@/components/sable-mark";
+import { AI_ASSISTANT_NAME } from "@/lib/constants";
+import { useSable } from "@/components/assistant/sable-provider";
 import { consoleNav, filterNav } from "@/lib/nav";
 
 type Result = { group: string; href: string; title: string; sub: string };
@@ -21,14 +24,34 @@ const GROUP_ICON: Record<string, typeof Ticket> = {
   Assets: Server, People: User, Services: LifeBuoy,
 };
 
-export function CommandMenu({ role }: { role: string }) {
+export function CommandMenu({ role, sableEnabled = false }: { role: string; sableEnabled?: boolean }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<Result[]>([]);
   const [loading, setLoading] = useState(false);
   const router = useRouter();
+  const sable = useSable();
   const groups = filterNav(consoleNav, role);
   const reqId = useRef(0);
+
+  // Open Sable (docking it if closed), optionally starting a fresh chat and
+  // pre-filling the composer with `text`. The composer mounts a tick after the
+  // window opens, so retry the insert until the live textarea exists.
+  const askSable = (opts: { fresh?: boolean; text?: string }) => {
+    setOpen(false);
+    setQuery("");
+    if (sable.state === "closed") sable.open("min");
+    if (opts.fresh) sable.newChat();
+    const text = opts.text?.trim();
+    if (!text) return;
+    let tries = 0;
+    const tick = () => {
+      const el = document.querySelector('textarea[placeholder="Send a message..."]');
+      if (el) sable.insertIntoComposer(text);
+      else if (tries++ < 25) setTimeout(tick, 60);
+    };
+    setTimeout(tick, 60);
+  };
 
   useEffect(() => {
     const down = (e: KeyboardEvent) => {
@@ -95,6 +118,16 @@ export function CommandMenu({ role }: { role: string }) {
           <CommandList>
             {query.trim() ? (
               <>
+                {sableEnabled ? (
+                  <CommandGroup heading={AI_ASSISTANT_NAME}>
+                    <CommandItem value="ask-sable" onSelect={() => askSable({ fresh: true, text: query })}>
+                      <SableMark className="size-4 text-sable" />
+                      <span className="flex-1 truncate">
+                        Ask {AI_ASSISTANT_NAME}: <span className="text-muted-foreground">“{query.trim()}”</span>
+                      </span>
+                    </CommandItem>
+                  </CommandGroup>
+                ) : null}
                 {loading ? (
                   <div className="flex items-center gap-2 px-3 py-6 text-sm text-muted-foreground">
                     <Loader2 className="size-4 animate-spin" /> Searching…
@@ -120,6 +153,16 @@ export function CommandMenu({ role }: { role: string }) {
               </>
             ) : (
               <>
+                {sableEnabled ? (
+                  <CommandGroup heading={AI_ASSISTANT_NAME}>
+                    <CommandItem value="open-sable" onSelect={() => askSable({})}>
+                      <SableMark className="size-4 text-sable" /> Open {AI_ASSISTANT_NAME}
+                    </CommandItem>
+                    <CommandItem value="new-sable-chat" onSelect={() => askSable({ fresh: true })}>
+                      <MessageSquarePlus className="size-4" /> New {AI_ASSISTANT_NAME} chat
+                    </CommandItem>
+                  </CommandGroup>
+                ) : null}
                 <CommandGroup heading="Quick actions">
                   <CommandItem value="new-ticket" onSelect={() => go("/tickets/new")}>
                     <Ticket className="size-4" /> Create ticket
