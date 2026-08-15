@@ -18,8 +18,9 @@ clean REST API — with **Sable**, an AI agent that actually works your queue *w
 
 <p align="center">
   <code>Tickets</code> · <code>Problems</code> · <code>Changes</code> · <code>CMDB</code> ·
-  <code>Service Catalog</code> · <code>Self-Service Portal</code> · <code>Infra Syncs</code> ·
-  <code>SSO</code> · <code>REST API</code> · <code>AI Agent</code>
+  <code>Service Catalog</code> · <code>Self-Service Portal</code> · <code>Knowledge Base</code> ·
+  <code>Mail Engine</code> · <code>Infra Syncs</code> · <code>SSO</code> · <code>REST API</code> ·
+  <code>AI Agent</code>
 </p>
 
 ---
@@ -69,17 +70,26 @@ Deep dive → [docs/ai.md](docs/ai.md)
 
 ## Features
 
-- **Service desk** — incidents & requests with priority, impact/urgency, SLAs, inline-editable
+- **Service desk** — incidents & requests with priority, impact/urgency, **SLA targets with
+  escalation**, admin-configurable **workflow governance** (status-transition rules), inline-editable
   properties (type is switchable, its reference number stays stable), cross-entity linking to
   problems/changes/assets, and a threaded activity log with internal notes.
+- **Automations** — condition→action rules on ticket create/update and on SLA at-risk/breach
+  (assign, set fields, escalate, notify, webhook, declare a major incident…).
 - **Customizable dashboards** — a drag-and-drop, resizable widget grid: stats, bar/donut
   breakdowns, SLA gauges, trends and aging. Per-widget filters, accent colour and value
   **thresholds** (`< 15 → red`), each drilling into the matching ticket list. Personal + shared boards.
 - **Saved views** — save any set of ticket filters as a named, searchable view (personal or team).
 - **Problem & change management** — root-cause / known-error tracking; normal/standard/emergency
-  changes with approvals, implementation & rollback plans, and affected CIs.
-- **CMDB / Assets** — typed configuration items with a **dependency graph** and linked tickets.
+  changes with a **Change Advisory Board (CAB)** approval flow, implementation & rollback plans,
+  and affected CIs.
+- **CMDB / Assets** — typed configuration items with a **dependency graph**, **locations**, and linked tickets.
 - **Service catalog** — requestable services with live status (operational / degraded / outage) and SLAs.
+- **Knowledge base** — published how-to / troubleshooting articles with internal vs. public visibility,
+  surfaced in the console, the portal, and Sable's search.
+- **Mail engine** — a real two-way email bridge: outbound SMTP notifications and **inbound IMAP**
+  polling that turns replies into ticket comments, with RFC-2822 threading (message-id / references),
+  HTML + CC. No SMTP configured? It runs in outbox mode.
 - **Infrastructure Syncs** — pluggable connectors importing **users & assets** on a cron schedule
   or on demand, with run history: Active Directory / LDAP, Azure AD / Entra, CSV, and generic REST (e.g. NetBox).
 - **Self-Service Portal** — a redesigned help center: one **live search** across KB, catalog and

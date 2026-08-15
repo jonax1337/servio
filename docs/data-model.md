@@ -144,7 +144,7 @@ pauses while `PENDING`/`ON_HOLD`), `firstResponseAt`, `resolvedAt`, `closedAt`. 
 | Model | Purpose | Key fields / relations |
 | --- | --- | --- |
 | `SyncSource` | External system to import/export from | `name` (unique), `type` (8 values: LDAP … GLPI), `direction` (`IMPORT`/`EXPORT`/`BIDIRECTIONAL`), `scope` (`USERS`/`ASSETS`/`TICKETS`/`ALL`), `config` (JSON as TEXT), `schedule` (cron), `isActive`, `lastRunAt`, `lastStatus`; has runs, imported users & assets |
-| `SyncRun` | One execution of a sync source | `status`, `trigger` (`MANUAL`/`SCHEDULE`/`API`), counters `created`/`updated`/`failed`, `log`, `startedAt`/`finishedAt` |
+| `SyncRun` | One execution of a sync source | `status`, `trigger` (`MANUAL`/`SCHEDULE`; `API` is reserved — no code path yet, `sync-runner.ts` only ever writes `MANUAL` or `SCHEDULE`), counters `created`/`updated`/`failed`, `log`, `startedAt`/`finishedAt` |
 
 ### Attachments, audit, notifications, email
 
@@ -153,7 +153,7 @@ pauses while `PENDING`/`ON_HOLD`), `firstResponseAt`, `resolvedAt`, `closedAt`. 
 | `Attachment` | Uploaded blob (driver-agnostic) | `storageKey` (`YYYY/MM/<id>-<name>`), `checksum` (sha256), `mime`, `size`; nullable FKs to `ticket`/`comment`/`article`, plus `uploadedBy`; `url` kept for legacy/external only |
 | `AuditLog` | Immutable activity record | `action`, `entity` + `entityId`, `summary`, `meta` (JSON as TEXT), `ip`, optional `userId` |
 | `Notification` | Per-user in-app notification | `type`, `title`, `body`, `entity`/`entityId`, `read`; indexed `(userId, read)` |
-| `EmailMessage` | Outbound email record / queue | `toEmail`, `subject`, `body`, `template`, `status` (`QUEUED`/`SENT`/`FAILED`), `error`, `entity`/`entityId`, `sentAt` |
+| `EmailMessage` | Email record / queue (outbound + inbound) | `direction` (`OUTBOUND`/`INBOUND`), `toEmail`, `subject`, `body`, `template`, `status` (`QUEUED`/`SENT`/`FAILED`/`RECEIVED`), `error`, `entity`/`entityId`, `sentAt` |
 
 ### API tokens
 
@@ -165,7 +165,7 @@ pauses while `PENDING`/`ON_HOLD`), `firstResponseAt`, `resolvedAt`, `closedAt`. 
 
 | Model | Purpose | Key fields / relations |
 | --- | --- | --- |
-| `AutomationRule` | Condition→action rule run on ticket events | `trigger` (`TICKET_CREATED`/`TICKET_UPDATED`), `matchType` (`ALL`/`ANY`), `conditions` and `actions` (JSON arrays as TEXT), `isActive`, `order`, `runCount`, `lastRunAt` |
+| `AutomationRule` | Condition→action rule run on ticket events | `trigger` (`TICKET_CREATED`/`TICKET_UPDATED`/`TICKET_SLA_AT_RISK`/`TICKET_SLA_BREACHED`), `matchType` (`ALL`/`ANY`), `conditions` and `actions` (JSON arrays as TEXT), `isActive`, `order`, `runCount`, `lastRunAt` |
 
 ### AI assistant (Sable)
 
@@ -209,7 +209,7 @@ Every "enum" is a `String` column whose allowed values are declared as a `readon
 | `RESOLUTION_CODES` | `Ticket.resolutionCode` | `FIXED`, `WORKAROUND`, `NOT_REPRODUCIBLE`, `DUPLICATE`, `NO_ACTION` |
 | `PRIORITIES` | `*.priority` | `LOW`, `MEDIUM`, `HIGH`, `CRITICAL` |
 | `IMPACT_URGENCY` | `*.impact`, `*.urgency` | `LOW`, `MEDIUM`, `HIGH` |
-| `TICKET_SOURCES` | `Ticket.source` | `PORTAL`, `EMAIL`, `PHONE`, `API`, `AGENT` |
+| `TICKET_SOURCES` | `Ticket.source` | `PORTAL`, `SABLE`, `EMAIL`, `PHONE`, `API`, `AGENT` |
 | `PROBLEM_STATUSES` | `Problem.status` | `NEW`, `INVESTIGATING`, `KNOWN_ERROR`, `RESOLVED`, `CLOSED` |
 | `CHANGE_TYPES` | `Change.type` | `STANDARD`, `NORMAL`, `EMERGENCY` |
 | `CHANGE_STATUSES` | `Change.status` | `DRAFT`, `SUBMITTED`, `APPROVAL`, `APPROVED`, `SCHEDULED`, `IN_PROGRESS`, `REVIEW`, `CLOSED`, `REJECTED`, `FAILED` |

@@ -54,3 +54,6 @@ dev.db-journal
 
 # stray screenshots at the repo root (keep it clean; committed images live under docs/ or public/)
 /*.png
+
+# Claude Code: share settings/commands/hooks, keep personal overrides local
+.claude/settings.local.json

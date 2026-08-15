@@ -145,6 +145,26 @@ is the default export. There is no `output: "standalone"` or custom runtime conf
 deploy it like a standard `next start` app (or on a platform that supports the Next.js 16
 App Router). Node runtime is required — the app uses `node:fs`/`node:crypto` for storage.
 
+> ### ⚠️ Run a single app instance (the scheduler is not multi-instance safe)
+>
+> Servio is designed to run as a **single instance**. The background scheduler
+> ([`lib/scheduler.ts`](../lib/scheduler.ts)) is an in-process `setInterval` loop that starts
+> in **every** server process and its idempotency is **in-memory only**. If you run two or more
+> app instances (horizontal scaling, blue/green with overlap, a hot standby that also serves),
+> **each replica independently fires the same background work**:
+>
+> - **SLA escalation double-fires.** The AT_RISK "already notified" guard is a per-process
+>   `Set` (`sla-escalation.ts` `atRiskFired`), and breach escalation has no durable marker, so
+>   every replica escalates/notifies the same tickets → duplicate escalations and alert spam.
+> - **Inbound mail is polled by every replica.** Each instance runs its own IMAP poll, so
+>   messages can be processed more than once (dedupe is best-effort per process).
+> - **Scheduled syncs run on every replica** → duplicate `SyncRun` rows (imports are
+>   idempotent, so imported *data* stays correct, but the runs are duplicated).
+>
+> Until an external scheduler / durable at-most-once locking is added, **scale vertically, or
+> designate exactly one instance as the scheduler/worker** and disable the loop elsewhere. See
+> [Scheduled syncs](#-scheduled-syncs) below.
+
 ---
 
 ## 🐳 Docker
@@ -246,10 +266,14 @@ runs on an **in-process scheduler** started at server boot from
   shared by manual and scheduled runs, with a per-source in-process lock so the two never
   overlap.
 
-**Multi-instance caveat:** the scheduler runs in *every* server instance. If you scale
-horizontally, each replica fires due sources → duplicate runs (imports are idempotent, so
-data stays correct, but you get duplicate `SyncRun` rows). For multiple replicas, run the
-scheduler on a single instance/worker or add external locking.
+> **⚠️ Multi-instance caveat (applies to the whole scheduler, not just syncs).** The scheduler
+> — the sync tick **and** the inbound-mail poll **and** the SLA escalation sweep — runs in
+> *every* server instance, and its idempotency is in-memory only. If you scale horizontally,
+> each replica independently fires all three: duplicate `SyncRun` rows (imports are idempotent,
+> so data stays correct), re-polled inbound mail, and **double-fired SLA escalations/notifications**
+> (the AT_RISK marker is a per-process `Set` and breach escalation has no durable marker). For
+> multiple replicas, run the scheduler on a single instance/worker or add external locking. See
+> the [single-instance warning under Build & run](#-build--run).
 
 There is no external cron dependency to provision.
 

@@ -17,65 +17,65 @@ datasource db {
 // ---------------------------------------------------------------------------
 
 model User {
-  id            String    @id @default(cuid())
-  email         String    @unique
-  name          String?
-  passwordHash  String?
-  image         String?
-  role          String    @default("USER") // ADMIN | MANAGER | AGENT | USER
-  isVip         Boolean   @default(false)
-  jobTitle      String?
-  phone         String?
-  department    String?
-  timezone      String    @default("UTC")
-  locale        String    @default("en")
-  signature     String?   // sanitized rich-text HTML, appended to replies/emails
-  signatureEnabled Boolean @default(false)
-  isActive      Boolean   @default(true)
-  syncSourceId  String?
-  externalId    String?
-  lastLoginAt   DateTime?
-  emailVerified DateTime?
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  id               String    @id @default(cuid())
+  email            String    @unique
+  name             String?
+  passwordHash     String?
+  image            String?
+  role             String    @default("USER") // ADMIN | MANAGER | AGENT | USER
+  isVip            Boolean   @default(false)
+  jobTitle         String?
+  phone            String?
+  department       String?
+  timezone         String    @default("UTC")
+  locale           String    @default("en")
+  signature        String? // sanitized rich-text HTML, appended to replies/emails
+  signatureEnabled Boolean   @default(false)
+  isActive         Boolean   @default(true)
+  syncSourceId     String?
+  externalId       String?
+  lastLoginAt      DateTime?
+  emailVerified    DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
 
-  accounts        Account[]
-  sessions        Session[]
-  memberships     GroupMember[]
-  requestedTickets Ticket[]   @relation("TicketRequester")
-  requestedOnBehalf Ticket[]  @relation("TicketRequestedBy")
-  assignedTickets  Ticket[]   @relation("TicketAssignee")
-  comments        TicketComment[]
-  changeComments  ChangeComment[]
-  problemComments ProblemComment[]
-  watching        TicketWatcher[]
-  participating   TicketParticipant[] @relation("TicketParticipantUser")
-  notifiedOn      TicketNotifiedContact[] @relation("TicketNotifiedBy")
-  assignedTasks   Task[]
-  workLogs        WorkLog[]
-  assignedProblems Problem[]  @relation("ProblemAssignee")
-  assignedChanges  Change[]   @relation("ChangeAssignee")
-  approvals       ChangeApproval[]
-  entityApprovals    Approval[] @relation("ApprovalApprover")
-  requestedApprovals Approval[] @relation("ApprovalRequester")
-  ownedAssets     Asset[]     @relation("AssetOwner")
-  ownedServices   Service[]   @relation("ServiceOwner")
-  catalogApprovals CatalogItem[] @relation("CatalogApprover")
-  ticketApprovals TicketApproval[] @relation("TicketApprover")
-  managedGroups   Group[]     @relation("GroupManager")
-  apiTokens       ApiToken[]
-  auditLogs       AuditLog[]
-  appSettings     AppSetting[]
-  emailTemplates  EmailTemplate[]
-  notifications   Notification[]
-  aiConversations AiConversation[] @relation("AiConversationUser")
-  aiProjects      AiProject[] @relation("AiProjectOwner")
-  savedViews      SavedView[] @relation("SavedViewOwner")
-  dashboards      Dashboard[] @relation("DashboardOwner")
-  articles        Article[]
-  articleRevisions ArticleRevision[]
-  attachments     Attachment[] @relation("AttachmentUploader")
-  syncSource      SyncSource? @relation(fields: [syncSourceId], references: [id])
+  accounts           Account[]
+  sessions           Session[]
+  memberships        GroupMember[]
+  requestedTickets   Ticket[]                @relation("TicketRequester")
+  requestedOnBehalf  Ticket[]                @relation("TicketRequestedBy")
+  assignedTickets    Ticket[]                @relation("TicketAssignee")
+  comments           TicketComment[]
+  changeComments     ChangeComment[]
+  problemComments    ProblemComment[]
+  watching           TicketWatcher[]
+  participating      TicketParticipant[]     @relation("TicketParticipantUser")
+  notifiedOn         TicketNotifiedContact[] @relation("TicketNotifiedBy")
+  assignedTasks      Task[]
+  workLogs           WorkLog[]
+  assignedProblems   Problem[]               @relation("ProblemAssignee")
+  assignedChanges    Change[]                @relation("ChangeAssignee")
+  approvals          ChangeApproval[]
+  entityApprovals    Approval[]              @relation("ApprovalApprover")
+  requestedApprovals Approval[]              @relation("ApprovalRequester")
+  ownedAssets        Asset[]                 @relation("AssetOwner")
+  ownedServices      Service[]               @relation("ServiceOwner")
+  catalogApprovals   CatalogItem[]           @relation("CatalogApprover")
+  ticketApprovals    TicketApproval[]        @relation("TicketApprover")
+  managedGroups      Group[]                 @relation("GroupManager")
+  apiTokens          ApiToken[]
+  auditLogs          AuditLog[]
+  appSettings        AppSetting[]
+  emailTemplates     EmailTemplate[]
+  notifications      Notification[]
+  aiConversations    AiConversation[]        @relation("AiConversationUser")
+  aiProjects         AiProject[]             @relation("AiProjectOwner")
+  savedViews         SavedView[]             @relation("SavedViewOwner")
+  dashboards         Dashboard[]             @relation("DashboardOwner")
+  articles           Article[]
+  articleRevisions   ArticleRevision[]
+  attachments        Attachment[]            @relation("AttachmentUploader")
+  syncSource         SyncSource?             @relation(fields: [syncSourceId], references: [id])
 
   @@index([role])
   @@index([syncSourceId])
@@ -137,11 +137,11 @@ model AiFolder {
 model AiMessage {
   id             String   @id @default(cuid())
   conversationId String
-  role           String   // "user" | "assistant"
+  role           String // "user" | "assistant"
   content        String   @default("")
-  html           String?  // sanitized markdown HTML for assistant turns
-  toolCalls      String?  // JSON string: {name,input}[]
-  proposals      String?  // JSON string: AssistantProposal[]
+  html           String? // sanitized markdown HTML for assistant turns
+  toolCalls      String? // JSON string: {name,input}[]
+  proposals      String? // JSON string: AssistantProposal[]
   createdAt      DateTime @default(now())
 
   conversation AiConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
@@ -153,12 +153,12 @@ model AiMessage {
 /// custom instructions, and an optional ITSM binding (Change / Problem / Ticket).
 /// Personal by default; optionally shared with a team (mirrors SavedView sharing).
 model AiProject {
-  id           String   @id @default(cuid())
+  id           String  @id @default(cuid())
   userId       String // owner
-  name         String   @default("New project")
+  name         String  @default("New project")
   description  String?
   instructions String? // injected verbatim into every system prompt for this project
-  archived     Boolean  @default(false)
+  archived     Boolean @default(false)
 
   isShared Boolean @default(false) // visible to the shared group's members
   groupId  String? // optional team the project is shared with (SetNull on group delete)
@@ -257,7 +257,7 @@ model Account {
   scope             String?
   id_token          String?
   session_state     String?
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([provider, providerAccountId])
 }
@@ -267,7 +267,7 @@ model Session {
   sessionToken String   @unique
   userId       String
   expires      DateTime
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model VerificationToken {
@@ -283,29 +283,29 @@ model VerificationToken {
 // ---------------------------------------------------------------------------
 
 model Group {
-  id          String   @id @default(cuid())
-  name        String   @unique
-  description String?
-  type        String   @default("TEAM") // TEAM | DEPARTMENT | VENDOR
-  email       String?
-  color       String   @default("#6366f1")
-  managerId   String?
-  autoAssign         String  @default("OFF") // OFF | ROUND_ROBIN | LEAST_BUSY
+  id                 String   @id @default(cuid())
+  name               String   @unique
+  description        String?
+  type               String   @default("TEAM") // TEAM | DEPARTMENT | VENDOR
+  email              String?
+  color              String   @default("#6366f1")
+  managerId          String?
+  autoAssign         String   @default("OFF") // OFF | ROUND_ROBIN | LEAST_BUSY
   lastAssignedUserId String? // round-robin cursor
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
 
-  manager  User?         @relation("GroupManager", fields: [managerId], references: [id])
-  members  GroupMember[]
-  tickets  Ticket[]
-  problems Problem[]
-  changes  Change[]
-  assets   Asset[]
-  savedViews SavedView[]
-  dashboards Dashboard[]
-  ownedCategories Category[] @relation("CategoryTeam")
-  ownedServices   Service[]  @relation("ServiceTeam")
-  aiProjects AiProject[] @relation("AiProjectGroup")
+  manager         User?         @relation("GroupManager", fields: [managerId], references: [id])
+  members         GroupMember[]
+  tickets         Ticket[]
+  problems        Problem[]
+  changes         Change[]
+  assets          Asset[]
+  savedViews      SavedView[]
+  dashboards      Dashboard[]
+  ownedCategories Category[]    @relation("CategoryTeam")
+  ownedServices   Service[]     @relation("ServiceTeam")
+  aiProjects      AiProject[]   @relation("AiProjectGroup")
 }
 
 /// A named, saved set of list filters (per-user, optionally shared with a team).
@@ -314,10 +314,10 @@ model SavedView {
   id        String   @id @default(cuid())
   name      String
   entity    String   @default("ticket") // ticket | problem | change | asset
-  filters   String   // JSON map of filter params
+  filters   String // JSON map of filter params
   ownerId   String
   isShared  Boolean  @default(false) // visible to the owner's team(s)
-  groupId   String?  // optional: scope a shared view to one team
+  groupId   String? // optional: scope a shared view to one team
   order     Int      @default(0)
   createdAt DateTime @default(now())
 
@@ -348,12 +348,12 @@ model Dashboard {
 }
 
 model GroupMember {
-  id       String @id @default(cuid())
-  groupId  String
-  userId   String
-  role     String @default("MEMBER") // MEMBER | LEAD
-  group    Group  @relation(fields: [groupId], references: [id], onDelete: Cascade)
-  user     User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id      String @id @default(cuid())
+  groupId String
+  userId  String
+  role    String @default("MEMBER") // MEMBER | LEAD
+  group   Group  @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  user    User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([groupId, userId])
 }
@@ -363,23 +363,23 @@ model GroupMember {
 // ---------------------------------------------------------------------------
 
 model Category {
-  id       String  @id @default(cuid())
-  name     String
+  id          String  @id @default(cuid())
+  name        String
   description String?
-  icon     String?
-  color    String  @default("#64748b")
-  parentId String?
-  groupId  String? // team that handles this category (informational; NOT auto-routing)
-  archived Boolean @default(false) // hidden from pickers/portal; existing tickets keep it
+  icon        String?
+  color       String  @default("#64748b")
+  parentId    String?
+  groupId     String? // team that handles this category (informational; NOT auto-routing)
+  archived    Boolean @default(false) // hidden from pickers/portal; existing tickets keep it
 
-  parent   Category?  @relation("CategoryTree", fields: [parentId], references: [id])
-  children Category[] @relation("CategoryTree")
-  group    Group?     @relation("CategoryTeam", fields: [groupId], references: [id])
-  tickets  Ticket[]
-  problems Problem[]
-  changes  Change[]
-  services Service[]
-  articles Article[]
+  parent       Category?     @relation("CategoryTree", fields: [parentId], references: [id])
+  children     Category[]    @relation("CategoryTree")
+  group        Group?        @relation("CategoryTeam", fields: [groupId], references: [id])
+  tickets      Ticket[]
+  problems     Problem[]
+  changes      Change[]
+  services     Service[]
+  articles     Article[]
   catalogItems CatalogItem[]
 
   @@unique([name, parentId])
@@ -400,11 +400,11 @@ model SLA {
 }
 
 model Service {
-  id          String  @id @default(cuid())
-  name        String  @unique
+  id          String   @id @default(cuid())
+  name        String   @unique
   description String?
-  status      String  @default("OPERATIONAL") // OPERATIONAL | DEGRADED | OUTAGE | MAINTENANCE | RETIRED
-  criticality String  @default("MEDIUM") // LOW | MEDIUM | HIGH | CRITICAL
+  status      String   @default("OPERATIONAL") // OPERATIONAL | DEGRADED | OUTAGE | MAINTENANCE | RETIRED
+  criticality String   @default("MEDIUM") // LOW | MEDIUM | HIGH | CRITICAL
   icon        String?
   categoryId  String?
   ownerId     String?
@@ -413,11 +413,11 @@ model Service {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  category Category? @relation(fields: [categoryId], references: [id])
-  owner    User?     @relation("ServiceOwner", fields: [ownerId], references: [id])
-  sla      SLA?      @relation(fields: [slaId], references: [id])
-  group    Group?    @relation("ServiceTeam", fields: [groupId], references: [id])
-  tickets  Ticket[]
+  category     Category?     @relation(fields: [categoryId], references: [id])
+  owner        User?         @relation("ServiceOwner", fields: [ownerId], references: [id])
+  sla          SLA?          @relation(fields: [slaId], references: [id])
+  group        Group?        @relation("ServiceTeam", fields: [groupId], references: [id])
+  tickets      Ticket[]
   catalogItems CatalogItem[]
 }
 
@@ -428,7 +428,7 @@ model CatalogItem {
   shortDescription String?
   icon             String?
   categoryId       String?
-  serviceId        String?  // the service this request maps to (pre-routes the ticket)
+  serviceId        String? // the service this request maps to (pre-routes the ticket)
   formSchema       String   @default("[]") // JSON: array of form field definitions
   requiresApproval Boolean  @default(false)
   approverId       String?
@@ -451,81 +451,81 @@ model CatalogItem {
 // ---------------------------------------------------------------------------
 
 model Ticket {
-  id          Int      @id @default(autoincrement())
-  title       String
-  description String   @default("") // plaintext twin
+  id              Int     @id @default(autoincrement())
+  title           String
+  description     String  @default("") // plaintext twin
   descriptionHtml String? // sanitized rich-text HTML; null = plaintext-only
-  type        String   @default("INCIDENT") // INCIDENT | REQUEST — freely switchable
-  prefix      String   @default("INC") // human-ref prefix (INC/REQ), fixed at creation; stays stable when `type` changes
-  status      String   @default("NEW") // NEW | OPEN | PENDING | ON_HOLD | RESOLVED | CLOSED | CANCELLED
-  priority    String   @default("MEDIUM") // LOW | MEDIUM | HIGH | CRITICAL
-  impact      String   @default("MEDIUM") // LOW | MEDIUM | HIGH
-  urgency     String   @default("MEDIUM") // LOW | MEDIUM | HIGH
-  source      String   @default("PORTAL") // PORTAL | EMAIL | PHONE | API | AGENT
+  type            String  @default("INCIDENT") // INCIDENT | REQUEST — freely switchable
+  prefix          String  @default("INC") // human-ref prefix (INC/REQ), fixed at creation; stays stable when `type` changes
+  status          String  @default("NEW") // NEW | OPEN | PENDING | ON_HOLD | RESOLVED | CLOSED | CANCELLED
+  priority        String  @default("MEDIUM") // LOW | MEDIUM | HIGH | CRITICAL
+  impact          String  @default("MEDIUM") // LOW | MEDIUM | HIGH
+  urgency         String  @default("MEDIUM") // LOW | MEDIUM | HIGH
+  source          String  @default("PORTAL") // PORTAL | SABLE | EMAIL | PHONE | API | AGENT
   isMajorIncident Boolean @default(false)
-  pendingReason String? // AWAITING_CUSTOMER | AWAITING_VENDOR | AWAITING_CHANGE | AWAITING_PARTS | SCHEDULED
-  pendingNote   String?
-  resolutionCode String? // FIXED | WORKAROUND | NOT_REPRODUCIBLE | DUPLICATE | NO_ACTION
-  resolutionNote String?
-  mergedIntoId Int?
+  pendingReason   String? // AWAITING_CUSTOMER | AWAITING_VENDOR | AWAITING_CHANGE | AWAITING_PARTS | SCHEDULED
+  pendingNote     String?
+  resolutionCode  String? // FIXED | WORKAROUND | NOT_REPRODUCIBLE | DUPLICATE | NO_ACTION
+  resolutionNote  String?
+  mergedIntoId    Int?
 
-  requesterId String
+  requesterId       String
   requestedByUserId String?
-  assigneeId  String?
-  groupId     String?
-  categoryId  String?
-  serviceId   String?
-  catalogItemId String?
-  slaId       String?
-  problemId   Int?
-  changeId    Int?
+  assigneeId        String?
+  groupId           String?
+  categoryId        String?
+  serviceId         String?
+  catalogItemId     String?
+  slaId             String?
+  problemId         Int?
+  changeId          Int?
 
-  formData       String?   // JSON answers when submitted from a catalog form
-  formSchema     String?   // snapshot of the catalog form schema at submit time (survives item deletion)
-  customFields   String   @default("{}") // JSON object of custom-field key -> value (CustomFieldDef, entityType=TICKET)
-  approvalState  String?   // null | PENDING | APPROVED | REJECTED
-  dueDate        DateTime? // manual due date set by an agent (distinct from the SLA clock)
+  formData         String? // JSON answers when submitted from a catalog form
+  formSchema       String? // snapshot of the catalog form schema at submit time (survives item deletion)
+  customFields     String    @default("{}") // JSON object of custom-field key -> value (CustomFieldDef, entityType=TICKET)
+  approvalState    String? // null | PENDING | APPROVED | REJECTED
+  dueDate          DateTime? // manual due date set by an agent (distinct from the SLA clock)
   // ---- SLA clock (resolved from SLA/service/priority at create) ----
-  dueAt          DateTime? // mirror of resolveDueAt (kept for existing views)
-  responseDueAt  DateTime?
-  resolveDueAt   DateTime?
-  responseBreached Boolean @default(false)
-  resolveBreached  Boolean @default(false)
-  pendingSince   DateTime? // set while PENDING/ON_HOLD so the clock can pause
-  pausedMs       Int       @default(0) // accumulated paused time
-  escalatedAt    DateTime? // set when SLA-breach escalation has fired (marker so it fires once)
-  firstResponseAt DateTime?
-  resolvedAt     DateTime?
-  closedAt       DateTime?
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
+  dueAt            DateTime? // mirror of resolveDueAt (kept for existing views)
+  responseDueAt    DateTime?
+  resolveDueAt     DateTime?
+  responseBreached Boolean   @default(false)
+  resolveBreached  Boolean   @default(false)
+  pendingSince     DateTime? // set while PENDING/ON_HOLD so the clock can pause
+  pausedMs         Int       @default(0) // accumulated paused time
+  escalatedAt      DateTime? // set when SLA-breach escalation has fired (marker so it fires once)
+  firstResponseAt  DateTime?
+  resolvedAt       DateTime?
+  closedAt         DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
 
-  requester User      @relation("TicketRequester", fields: [requesterId], references: [id])
-  requestedBy User?   @relation("TicketRequestedBy", fields: [requestedByUserId], references: [id])
-  assignee  User?     @relation("TicketAssignee", fields: [assigneeId], references: [id])
-  group     Group?    @relation(fields: [groupId], references: [id])
-  category  Category? @relation(fields: [categoryId], references: [id])
-  service   Service?  @relation(fields: [serviceId], references: [id])
+  requester   User         @relation("TicketRequester", fields: [requesterId], references: [id])
+  requestedBy User?        @relation("TicketRequestedBy", fields: [requestedByUserId], references: [id])
+  assignee    User?        @relation("TicketAssignee", fields: [assigneeId], references: [id])
+  group       Group?       @relation(fields: [groupId], references: [id])
+  category    Category?    @relation(fields: [categoryId], references: [id])
+  service     Service?     @relation(fields: [serviceId], references: [id])
   catalogItem CatalogItem? @relation(fields: [catalogItemId], references: [id])
-  sla       SLA?      @relation(fields: [slaId], references: [id])
-  problem   Problem?  @relation(fields: [problemId], references: [id])
-  change    Change?   @relation(fields: [changeId], references: [id])
+  sla         SLA?         @relation(fields: [slaId], references: [id])
+  problem     Problem?     @relation(fields: [problemId], references: [id])
+  change      Change?      @relation(fields: [changeId], references: [id])
 
-  comments    TicketComment[]
-  watchers    TicketWatcher[]
+  comments         TicketComment[]
+  watchers         TicketWatcher[]
   participants     TicketParticipant[]
   notifiedContacts TicketNotifiedContact[]
-  emails      EmailMessage[]
-  attachments Attachment[]
-  assets      TicketAsset[]
-  tasks       Task[]
-  worklogs    WorkLog[]
-  approvals   TicketApproval[]
-  mergedInto    Ticket?      @relation("TicketMerge", fields: [mergedIntoId], references: [id])
-  mergedTickets Ticket[]     @relation("TicketMerge")
-  linksFrom     TicketLink[] @relation("LinkSource")
-  linksTo       TicketLink[] @relation("LinkTarget")
-  aiProjects    AiProject[]
+  emails           EmailMessage[]
+  attachments      Attachment[]
+  assets           TicketAsset[]
+  tasks            Task[]
+  worklogs         WorkLog[]
+  approvals        TicketApproval[]
+  mergedInto       Ticket?                 @relation("TicketMerge", fields: [mergedIntoId], references: [id])
+  mergedTickets    Ticket[]                @relation("TicketMerge")
+  linksFrom        TicketLink[]            @relation("LinkSource")
+  linksTo          TicketLink[]            @relation("LinkTarget")
+  aiProjects       AiProject[]
 
   @@index([status])
   @@index([priority])
@@ -535,16 +535,16 @@ model Ticket {
 }
 
 model TicketComment {
-  id         String   @id @default(cuid())
-  ticketId   Int
-  authorId   String
-  body       String   // plaintext twin (search / notifications / mentions)
-  bodyHtml   String?  // sanitized rich-text HTML; null = legacy plaintext row
-  isInternal Boolean  @default(false)
-  channel    String   @default("WEB") // WEB | EMAIL — how this reply arrived
-  fromEmail  String?  // external sender address when it came in via email
+  id             String   @id @default(cuid())
+  ticketId       Int
+  authorId       String
+  body           String // plaintext twin (search / notifications / mentions)
+  bodyHtml       String? // sanitized rich-text HTML; null = legacy plaintext row
+  isInternal     Boolean  @default(false)
+  channel        String   @default("WEB") // WEB | EMAIL — how this reply arrived
+  fromEmail      String? // external sender address when it came in via email
   emailMessageId String? // link to the inbound EmailMessage that produced it
-  createdAt  DateTime @default(now())
+  createdAt      DateTime @default(now())
 
   ticket      Ticket       @relation(fields: [ticketId], references: [id], onDelete: Cascade)
   author      User         @relation(fields: [authorId], references: [id])
@@ -631,8 +631,8 @@ model TicketParticipant {
   userId    String
   addedById String?
   createdAt DateTime @default(now())
-  ticket    Ticket  @relation(fields: [ticketId], references: [id], onDelete: Cascade)
-  user      User    @relation("TicketParticipantUser", fields: [userId], references: [id], onDelete: Cascade)
+  ticket    Ticket   @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  user      User     @relation("TicketParticipantUser", fields: [userId], references: [id], onDelete: Cascade)
 
   @@id([ticketId, userId])
   @@index([userId])
@@ -654,35 +654,34 @@ model TicketNotifiedContact {
   @@index([ticketId])
 }
 
-
 // ---------------------------------------------------------------------------
 // Problem management
 // ---------------------------------------------------------------------------
 
 model Problem {
-  id          Int      @id @default(autoincrement())
-  title       String
-  description String   @default("") // plaintext twin
+  id              Int       @id @default(autoincrement())
+  title           String
+  description     String    @default("") // plaintext twin
   descriptionHtml String? // sanitized rich-text HTML
-  status      String   @default("NEW") // NEW | INVESTIGATING | KNOWN_ERROR | RESOLVED | CLOSED
-  priority    String   @default("MEDIUM")
-  impact      String   @default("MEDIUM")
-  rootCause   String?
-  workaround  String?
-  customFields String  @default("{}") // JSON object of custom-field key -> value (CustomFieldDef, entityType=PROBLEM)
-  assigneeId  String?
-  groupId     String?
-  categoryId  String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  resolvedAt  DateTime?
+  status          String    @default("NEW") // NEW | INVESTIGATING | KNOWN_ERROR | RESOLVED | CLOSED
+  priority        String    @default("MEDIUM")
+  impact          String    @default("MEDIUM")
+  rootCause       String?
+  workaround      String?
+  customFields    String    @default("{}") // JSON object of custom-field key -> value (CustomFieldDef, entityType=PROBLEM)
+  assigneeId      String?
+  groupId         String?
+  categoryId      String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  resolvedAt      DateTime?
 
-  assignee User?     @relation("ProblemAssignee", fields: [assigneeId], references: [id])
-  group    Group?    @relation(fields: [groupId], references: [id])
-  category Category? @relation(fields: [categoryId], references: [id])
-  tickets  Ticket[]
-  changes  Change[]
-  comments ProblemComment[]
+  assignee   User?            @relation("ProblemAssignee", fields: [assigneeId], references: [id])
+  group      Group?           @relation(fields: [groupId], references: [id])
+  category   Category?        @relation(fields: [categoryId], references: [id])
+  tickets    Ticket[]
+  changes    Change[]
+  comments   ProblemComment[]
   aiProjects AiProject[]
 
   @@index([status])
@@ -708,38 +707,38 @@ model ProblemComment {
 // ---------------------------------------------------------------------------
 
 model Change {
-  id          Int      @id @default(autoincrement())
-  title       String
-  description String   @default("") // plaintext twin
-  descriptionHtml String? // sanitized rich-text HTML
-  type        String   @default("NORMAL") // STANDARD | NORMAL | EMERGENCY
-  status      String   @default("DRAFT") // DRAFT | SUBMITTED | APPROVAL | APPROVED | SCHEDULED | IN_PROGRESS | REVIEW | CLOSED | REJECTED | FAILED
-  risk        String   @default("MEDIUM") // LOW | MEDIUM | HIGH
-  priority    String   @default("MEDIUM")
-  impact      String   @default("MEDIUM")
+  id                 Int       @id @default(autoincrement())
+  title              String
+  description        String    @default("") // plaintext twin
+  descriptionHtml    String? // sanitized rich-text HTML
+  type               String    @default("NORMAL") // STANDARD | NORMAL | EMERGENCY
+  status             String    @default("DRAFT") // DRAFT | SUBMITTED | APPROVAL | APPROVED | SCHEDULED | IN_PROGRESS | REVIEW | CLOSED | REJECTED | FAILED
+  risk               String    @default("MEDIUM") // LOW | MEDIUM | HIGH
+  priority           String    @default("MEDIUM")
+  impact             String    @default("MEDIUM")
   reason             String?
   implementationPlan String?
   rollbackPlan       String?
-  customFields String  @default("{}") // JSON object of custom-field key -> value (CustomFieldDef, entityType=CHANGE)
-  assigneeId  String?
-  groupId     String?
-  categoryId  String?
-  problemId   Int?
-  plannedStart DateTime?
-  plannedEnd   DateTime?
-  actualStart  DateTime?
-  actualEnd    DateTime?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  customFields       String    @default("{}") // JSON object of custom-field key -> value (CustomFieldDef, entityType=CHANGE)
+  assigneeId         String?
+  groupId            String?
+  categoryId         String?
+  problemId          Int?
+  plannedStart       DateTime?
+  plannedEnd         DateTime?
+  actualStart        DateTime?
+  actualEnd          DateTime?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
 
-  assignee  User?     @relation("ChangeAssignee", fields: [assigneeId], references: [id])
-  group     Group?    @relation(fields: [groupId], references: [id])
-  category  Category? @relation(fields: [categoryId], references: [id])
-  problem   Problem?  @relation(fields: [problemId], references: [id])
-  approvals ChangeApproval[]
-  assets    ChangeAsset[]
-  tickets   Ticket[]
-  comments  ChangeComment[]
+  assignee   User?            @relation("ChangeAssignee", fields: [assigneeId], references: [id])
+  group      Group?           @relation(fields: [groupId], references: [id])
+  category   Category?        @relation(fields: [categoryId], references: [id])
+  problem    Problem?         @relation(fields: [problemId], references: [id])
+  approvals  ChangeApproval[]
+  assets     ChangeAsset[]
+  tickets    Ticket[]
+  comments   ChangeComment[]
   aiProjects AiProject[]
 
   @@index([status])
@@ -783,10 +782,10 @@ model ChangeApproval {
 
 model CustomFieldDef {
   id          String   @id @default(cuid())
-  entityType  String   // TICKET | PROBLEM | CHANGE
-  key         String   // stable key used inside the entity's customFields JSON
+  entityType  String // TICKET | PROBLEM | CHANGE
+  key         String // stable key used inside the entity's customFields JSON
   label       String
-  type        String   // text | textarea | select | number | date | checkbox
+  type        String // text | textarea | select | number | date | checkbox
   options     String   @default("[]") // JSON array of choice strings (for select)
   required    Boolean  @default(false)
   placeholder String?
@@ -794,7 +793,7 @@ model CustomFieldDef {
   matchType   String   @default("ALL") // ALL | ANY — how visibility conditions combine
   visibility  String   @default("[]") // JSON array of {field,op,value} conditions (automation shape)
   order       Int      @default(0)
-  active       Boolean  @default(true)
+  active      Boolean  @default(true)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
@@ -808,11 +807,11 @@ model CustomFieldDef {
 /// built-in default (allowed, any agent). See lib/workflow.ts.
 model StatusTransition {
   id           String   @id @default(cuid())
-  entityType   String   // TICKET | PROBLEM | CHANGE
+  entityType   String // TICKET | PROBLEM | CHANGE
   fromStatus   String
   toStatus     String
   allowed      Boolean  @default(true)
-  requiredRole String?  // null = any agent | MANAGER | ADMIN
+  requiredRole String? // null = any agent | MANAGER | ADMIN
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
@@ -831,8 +830,8 @@ model StatusTransition {
 /// notifies, and drops an audit trail, but never drives the entity lifecycle.
 model Approval {
   id            String    @id @default(cuid())
-  entityType    String    // TICKET | PROBLEM | CHANGE | SERVICE
-  entityId      String    // stringified entity id (Int entities stored as text)
+  entityType    String // TICKET | PROBLEM | CHANGE | SERVICE
+  entityId      String // stringified entity id (Int entities stored as text)
   title         String    @default("") // what is being approved (free text)
   approverId    String
   requestedById String?
@@ -854,11 +853,11 @@ model Approval {
 // ---------------------------------------------------------------------------
 
 model Asset {
-  id           String   @id @default(cuid())
-  assetTag     String?  @unique
+  id           String    @id @default(cuid())
+  assetTag     String?   @unique
   name         String
-  type         String   @default("SERVER") // SERVER | WORKSTATION | LAPTOP | NETWORK | SOFTWARE | MOBILE | PRINTER | VM | CLOUD | SERVICE | MONITOR | PHONE
-  status       String   @default("IN_USE") // IN_USE | IN_STOCK | MAINTENANCE | RETIRED | DISPOSED
+  type         String    @default("SERVER") // SERVER | WORKSTATION | LAPTOP | NETWORK | SOFTWARE | MOBILE | PRINTER | VM | CLOUD | SERVICE | MONITOR | PHONE
+  status       String    @default("IN_USE") // IN_USE | IN_STOCK | MAINTENANCE | RETIRED | DISPOSED
   serial       String?
   model        String?
   manufacturer String?
@@ -879,17 +878,17 @@ model Asset {
   syncSourceId String?
   externalId   String?
   lastSeenAt   DateTime?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
 
-  owner      User?       @relation("AssetOwner", fields: [ownerId], references: [id])
-  group      Group?      @relation(fields: [groupId], references: [id])
-  locationRef Location?  @relation(fields: [locationId], references: [id])
-  syncSource SyncSource? @relation(fields: [syncSourceId], references: [id])
+  owner         User?           @relation("AssetOwner", fields: [ownerId], references: [id])
+  group         Group?          @relation(fields: [groupId], references: [id])
+  locationRef   Location?       @relation(fields: [locationId], references: [id])
+  syncSource    SyncSource?     @relation(fields: [syncSourceId], references: [id])
   relationsFrom AssetRelation[] @relation("RelationSource")
   relationsTo   AssetRelation[] @relation("RelationTarget")
-  tickets    TicketAsset[]
-  changes    ChangeAsset[]
+  tickets       TicketAsset[]
+  changes       ChangeAsset[]
 
   @@index([type])
   @@index([status])
@@ -952,9 +951,9 @@ model ChangeAsset {
 model Attachment {
   id           String   @id @default(cuid())
   filename     String
-  url          String?  // legacy/external only; new uploads use storageKey
-  storageKey   String?  // driver-agnostic blob key (YYYY/MM/<id>-<name>)
-  checksum     String?  // hex sha256 of the blob
+  url          String? // legacy/external only; new uploads use storageKey
+  storageKey   String? // driver-agnostic blob key (YYYY/MM/<id>-<name>)
+  checksum     String? // hex sha256 of the blob
   mime         String   @default("application/octet-stream")
   size         Int      @default(0)
   ticketId     Int?
@@ -963,10 +962,10 @@ model Attachment {
   uploadedById String?
   createdAt    DateTime @default(now())
 
-  ticket     Ticket?        @relation(fields: [ticketId], references: [id], onDelete: Cascade)
-  comment    TicketComment? @relation(fields: [commentId], references: [id], onDelete: Cascade)
-  article    Article?       @relation(fields: [articleId], references: [id], onDelete: Cascade)
-  uploadedBy User?          @relation("AttachmentUploader", fields: [uploadedById], references: [id])
+  ticket        Ticket?        @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  comment       TicketComment? @relation(fields: [commentId], references: [id], onDelete: Cascade)
+  article       Article?       @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  uploadedBy    User?          @relation("AttachmentUploader", fields: [uploadedById], references: [id])
   aiProjectFile AiProjectFile? @relation("AiProjectFileBlob")
 
   @@index([ticketId])
@@ -981,18 +980,18 @@ model Attachment {
 // ---------------------------------------------------------------------------
 
 model SyncSource {
-  id         String   @id @default(cuid())
-  name       String   @unique
-  type       String   @default("LDAP") // LDAP | ACTIVE_DIRECTORY | AZURE_AD | INTUNE | CSV | SNOW | REST_API | GLPI
-  direction  String   @default("IMPORT") // IMPORT | EXPORT | BIDIRECTIONAL
-  scope      String   @default("ASSETS") // USERS | ASSETS | TICKETS | ALL
-  config     String   @default("{}") // JSON blob (host, baseDN, mapping, etc.)
-  schedule   String?  // cron expression
-  isActive   Boolean  @default(true)
+  id         String    @id @default(cuid())
+  name       String    @unique
+  type       String    @default("LDAP") // LDAP | ACTIVE_DIRECTORY | AZURE_AD | INTUNE | CSV | SNOW | REST_API | GLPI
+  direction  String    @default("IMPORT") // IMPORT | EXPORT | BIDIRECTIONAL
+  scope      String    @default("ASSETS") // USERS | ASSETS | TICKETS | ALL
+  config     String    @default("{}") // JSON blob (host, baseDN, mapping, etc.)
+  schedule   String? // cron expression
+  isActive   Boolean   @default(true)
   lastRunAt  DateTime?
-  lastStatus String?  // SUCCESS | FAILED | PARTIAL | RUNNING
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  lastStatus String? // SUCCESS | FAILED | PARTIAL | RUNNING
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
 
   runs   SyncRun[]
   users  User[]
@@ -1038,14 +1037,14 @@ model ApiToken {
 }
 
 model AuditLog {
-  id       String   @id @default(cuid())
-  userId   String?
-  action   String   // CREATE | UPDATE | DELETE | LOGIN | SYNC | ...
-  entity   String   // Ticket | Asset | ...
-  entityId String
-  summary  String?
-  meta     String   @default("{}")
-  ip       String?
+  id        String   @id @default(cuid())
+  userId    String?
+  action    String // CREATE | UPDATE | DELETE | LOGIN | SYNC | ...
+  entity    String // Ticket | Asset | ...
+  entityId  String
+  summary   String?
+  meta      String   @default("{}")
+  ip        String?
   createdAt DateTime @default(now())
 
   user User? @relation(fields: [userId], references: [id])
@@ -1075,30 +1074,30 @@ model EmailMessage {
   direction  String    @default("OUTBOUND") // OUTBOUND | INBOUND
   toEmail    String
   toName     String?
-  fromEmail  String?   // inbound sender; outbound falls back to SMTP_FROM
+  fromEmail  String? // inbound sender; outbound falls back to SMTP_FROM
   fromName   String?
-  cc         String?   // JSON array of addresses
-  bcc        String?   // JSON array of addresses
+  cc         String? // JSON array of addresses
+  bcc        String? // JSON array of addresses
   replyTo    String?
   subject    String
-  body       String    // plaintext twin
-  bodyHtml   String?   // HTML variant (multipart/alternative)
+  body       String // plaintext twin
+  bodyHtml   String? // HTML variant (multipart/alternative)
   template   String    @default("generic")
   status     String    @default("QUEUED") // QUEUED | SENT | FAILED | RECEIVED
   error      String?
   // ── RFC 2822 threading metadata (the load-bearing part of a real mail thread) ──
   messageId  String?   @unique // generated on send, captured on receive
   inReplyTo  String?
-  references String?   // full thread chain
-  headers    String?   // JSON: selected raw headers (debug / replay / loop-detection)
+  references String? // full thread chain
+  headers    String? // JSON: selected raw headers (debug / replay / loop-detection)
   entity     String?
   entityId   String?
-  ticketId   Int?      // direct FK (in addition to generic entity/entityId)
-  commentId  String?   // the TicketComment created from/for this mail
+  ticketId   Int? // direct FK (in addition to generic entity/entityId)
+  commentId  String? // the TicketComment created from/for this mail
   createdAt  DateTime  @default(now())
   sentAt     DateTime?
 
-  ticket     Ticket?   @relation(fields: [ticketId], references: [id], onDelete: SetNull)
+  ticket Ticket? @relation(fields: [ticketId], references: [id], onDelete: SetNull)
 
   @@index([status])
   @@index([createdAt])
@@ -1121,19 +1120,19 @@ model EmailTemplate {
 }
 
 model AutomationRule {
-  id          String   @id @default(cuid())
+  id          String    @id @default(cuid())
   name        String
   description String?
-  trigger     String   @default("TICKET_CREATED") // TICKET_CREATED | TICKET_UPDATED
-  matchType   String   @default("ALL") // ALL | ANY
-  conditions  String   @default("[]") // JSON: [{ field, op, value }]
-  actions     String   @default("[]") // JSON: [{ type, value }]
-  isActive    Boolean  @default(true)
-  order       Int      @default(0)
-  runCount    Int      @default(0)
+  trigger     String    @default("TICKET_CREATED") // TICKET_CREATED | TICKET_UPDATED | TICKET_SLA_AT_RISK | TICKET_SLA_BREACHED
+  matchType   String    @default("ALL") // ALL | ANY
+  conditions  String    @default("[]") // JSON: [{ field, op, value }]
+  actions     String    @default("[]") // JSON: [{ type, value }]
+  isActive    Boolean   @default(true)
+  order       Int       @default(0)
+  runCount    Int       @default(0)
   lastRunAt   DateTime?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
 
   @@index([trigger, isActive])
 }
@@ -1145,9 +1144,9 @@ model Article {
   excerpt     String?
   body        String
   bodyFormat  String    @default("markdown") // markdown | plain
-  status      String    @default("DRAFT")    // DRAFT | REVIEW | PUBLISHED | RETIRED
+  status      String    @default("DRAFT") // DRAFT | REVIEW | PUBLISHED | RETIRED
   visibility  String    @default("INTERNAL") // INTERNAL (agents only) | PUBLIC (end-user portal)
-  published   Boolean   @default(false)      // denormalized mirror of (status === PUBLISHED)
+  published   Boolean   @default(false) // denormalized mirror of (status === PUBLISHED)
   categoryId  String?
   authorId    String?
   views       Int       @default(0)

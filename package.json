@@ -13,7 +13,9 @@
     "db:seed": "prisma db seed",
     "db:reset": "prisma migrate reset --force",
     "db:studio": "prisma studio",
-    "setup": "prisma migrate deploy && prisma db seed"
+    "setup": "prisma migrate deploy && prisma db seed",
+    "docs:check": "node scripts/check-doc-drift.mjs --working",
+    "hooks:install": "git config core.hooksPath .githooks"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts && tsx prisma/seed-extras.ts"

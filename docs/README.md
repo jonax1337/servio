@@ -34,6 +34,7 @@ against the code and kept in sync with the repository. New here? Start with
 | Doc | What it covers |
 | --- | --- |
 | [../CONTRIBUTING.md](../CONTRIBUTING.md) | Workflow, canonical reference files, the "add a module" recipe, gotchas, and PR expectations. |
+| [maintaining-docs.md](./maintaining-docs.md) | How the docs stay in sync with the code: the `/sync-docs` command, the session-stop reminder, and the commit-time drift gate. |
 
 ---
 

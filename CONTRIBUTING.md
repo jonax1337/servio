@@ -216,6 +216,10 @@ Add your route to the correct `NavGroup` in [`lib/nav.ts`](lib/nav.ts), with a l
 
 If your forms/filters need dropdowns of other entities (agents, groups, categories…), extend `getFormOptions()` in [`lib/data/options.ts`](lib/data/options.ts) — it is a `cache()`-wrapped batch query returning the `FormOptions` type.
 
+### 8. Documentation → `docs/**` + the drift map
+
+Docs are part of the change, not a follow-up. Add your module to [docs/modules.md](docs/modules.md) (and any other doc your code touches), then register its ownership in the `DOC_MAP` in [`scripts/check-doc-drift.mjs`](scripts/check-doc-drift.mjs) so future edits to it are gated. Run `/sync-docs` (or `pnpm run docs:check`) before committing. See [docs/maintaining-docs.md](docs/maintaining-docs.md) for how the three doc-sync layers work.
+
 See [docs/modules.md](docs/modules.md) for the full catalog of existing modules and how they fit together.
 
 ---

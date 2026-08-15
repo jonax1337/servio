@@ -130,7 +130,12 @@ General scope (`lib/assistant-tools.ts` + `lib/ai-tools.ts`):
 - `list_tickets` — structured filters (assignee / status / priority / team).
 - `get_ticket` — full detail of one ticket: SLA due dates & breaches, impact/urgency, comments.
 - `search_tickets`, `search_problems`, `search_changes` — free-text search.
-- `search_knowledge_base` — internal KB articles.
+- `search_knowledge_base` — KB articles (`knowledgeSearchTool`, `lib/ai-tools.ts`). **Trust boundary:**
+  it filters on `status: "PUBLISHED"` only — **no `visibility` filter** — so it returns **INTERNAL**
+  articles as well as public ones. This is safe *only* because the tool is **AGENT-only** (console
+  Sable). It must **never** be reused in the USER/portal context; the portal has its own
+  `search_knowledge` (`portalKnowledgeTool`, `lib/portal-assistant.ts`) that additionally filters
+  `visibility: "PUBLIC"`. Do not swap one for the other.
 - `category_list`, `group_list` — the **real** category / team names, so the model sets an existing
   one instead of inventing a `Parent > Child` path (`resolveCategoryId` also tolerates that path by
   falling back to the leaf name; a "not found" reply suggests the closest matches).
@@ -175,8 +180,17 @@ Coverage by module:
 
 Authority is **the app's real RBAC**. Each operation's `minRole` mirrors the underlying UI
 action, so Sable can do exactly what the acting user could do by hand — no more. Operations flagged
-`adminOnly` are only offered in the Admin scope. `setting.update` refuses any key that looks
+`adminOnly` require the **ADMIN role**. `setting.update` refuses any key that looks
 secret (contains `KEY`/`PASS`/`SECRET`/`TOKEN`).
+
+> **Gating is role-only — the chat `scope` does not enforce anything.** `availableOperations` /
+> `buildOperationTools` / `runOperation` (`lib/ai-operations/tools.ts`) all *accept* a `scope`
+> (`GENERAL`/`ADMIN`) argument, but it is **plumbed through unused**: an operation is offered — and,
+> on approve, re-checked — purely against the acting user's role (`minRole`, plus `adminOnly` ⇒
+> ADMIN). The General/Admin scope is a **UI convenience** (which tab you're on, the system prompt you
+> get), *not* a security boundary. An ADMIN chatting in the General scope is still offered every
+> operation their role allows — so never rely on `scope` to hide or refuse an operation; only `minRole`
+> / `adminOnly` do that.
 
 ---
 
@@ -192,8 +206,9 @@ Nothing Sable "decides" to change is applied automatically. The path is:
    (`components/assistant/proposal-card.tsx`) with **Approve** and **Dismiss** buttons. (Proposals
    are also collected into message metadata and persisted, so the cards survive a re-hydrate.)
 3. **Approve.** Clicking Approve calls the `applyAssistantProposal` server action, which
-   **re-resolves the operation, re-checks RBAC** (fresh DB role vs. `minRole`, conversation scope
-   vs. `adminOnly`), **re-validates the args** (via `runOperation`), then runs the real mutation —
+   **re-resolves the operation, re-checks RBAC** (fresh DB role vs. `minRole`, plus `adminOnly` ⇒
+   ADMIN — the check is **role-only**; the conversation `scope` is passed but not enforced),
+   **re-validates the args** (via `runOperation`), then runs the real mutation —
    reusing existing server actions where possible, else a guarded Prisma write plus an audit entry.
 
 Client-supplied args are never trusted: they are re-validated at apply time. The underlying

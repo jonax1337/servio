@@ -1,0 +1,8 @@
+#!/bin/sh
+# Servio documentation-drift gate (commit-msg stage so `[skip-docs]` works).
+# Enabled via: pnpm run hooks:install  (sets core.hooksPath=.githooks)
+#
+# Warns when code changed but its owning doc did not. Non-blocking by default;
+# set DOCS_STRICT=1 to block the commit. Escape hatches: `[skip-docs]` in the
+# message, SKIP_DOCS_CHECK=1, or `git commit --no-verify`.
+node scripts/check-doc-drift.mjs --staged --msg-file "$1"
