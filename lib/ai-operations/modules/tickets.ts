@@ -1,6 +1,5 @@
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { writeAudit } from "@/lib/audit";
 import {
   createTicketCore,
   updateTicketField,
@@ -154,7 +153,7 @@ export const OPERATIONS: AiOperation[] = [
       value: z.string().describe("target value or name"),
     }),
     label: (a) => `Set ${a.field} = “${a.value}” on ${a.ref}`,
-    run: async (a, ctx) => {
+    run: async (a, _ctx) => {
       const ticket = await resolveTicket(a.ref);
       if (!ticket) return err(`Ticket not found: ${a.ref}`);
       const field = String(a.field);

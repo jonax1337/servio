@@ -2,7 +2,7 @@
 
 import { useRef } from "react";
 import { useFormStatus } from "react-dom";
-import { Check, Plus, X, Square, CheckSquare } from "lucide-react";
+import { Plus, X, Square, CheckSquare } from "lucide-react";
 import { addTask, toggleTask, deleteTask } from "@/lib/actions/tickets";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";

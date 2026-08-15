@@ -171,7 +171,7 @@ export const OPERATIONS: AiOperation[] = [
       notes: z.string().optional(),
     }),
     label: (a) => `Create location “${String(a.name)}”`,
-    run: async (a, ctx) => {
+    run: async (a, _ctx) => {
       const name = str(a.name);
       if (!name || name.length < 2) return err("Location name is too short.");
       const type = coerceEnum(a.type, LOCATION_TYPES);
@@ -220,7 +220,7 @@ export const OPERATIONS: AiOperation[] = [
       notes: z.string().optional(),
     }),
     label: (a) => `Update location “${String(a.current)}”`,
-    run: async (a, ctx) => {
+    run: async (a, _ctx) => {
       const currentName = str(a.current);
       if (!currentName) return err("The location's current name is required.");
       const target = await findLocation(currentName);

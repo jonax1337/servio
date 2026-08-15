@@ -69,7 +69,6 @@ export function SableRail({
   onSelect,
   onNewChat,
   refreshKey,
-  isAdmin = false,
   activeProjectId = null,
   onOpenProject,
   onNewChatInProject,

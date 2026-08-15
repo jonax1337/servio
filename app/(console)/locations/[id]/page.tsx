@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
-import { ArrowLeft, MapPin, Server, ChevronRight } from "lucide-react";
+import { ArrowLeft, Server, ChevronRight } from "lucide-react";
 import { db } from "@/lib/db";
 import { LinkButton } from "@/components/link-button";
 import { StatusBadge } from "@/components/status-badge";

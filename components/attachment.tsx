@@ -82,6 +82,7 @@ type AttachmentPreviewProps = {
 const AttachmentPreview: FC<AttachmentPreviewProps> = ({ src }) => {
   const [isLoaded, setIsLoaded] = useState(false);
   return (
+    // eslint-disable-next-line @next/next/no-img-element -- attachment previews use runtime object/data URLs with unknown dimensions; next/image doesn't apply
     <img
       src={src}
       alt="Attachment preview"

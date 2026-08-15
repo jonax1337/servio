@@ -164,7 +164,7 @@ export const OPERATIONS: AiOperation[] = [
       status: z.string().describe("DRAFT, REVIEW, PUBLISHED or RETIRED"),
     }),
     label: (a) => `Set article “${str(a.title) ?? str(a.slug) ?? str(a.id) ?? ""}” → ${String(a.status ?? "").toUpperCase()}`,
-    run: async (a, ctx) => {
+    run: async (a, _ctx) => {
       const status = coerceEnum(a.status, ARTICLE_STATUSES);
       if (!status) return err(`Invalid status. Allowed: ${ARTICLE_STATUSES.join(", ")}.`);
 

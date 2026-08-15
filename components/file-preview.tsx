@@ -265,7 +265,6 @@ export function FilePreview({ open, onOpenChange, file, files, onNavigate }: Fil
               </div>
             ) : kind === "video" ? (
               <div className="flex h-[calc(90vh-3.25rem)] items-center justify-center bg-black p-2">
-                {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
                 <video
                   src={inlineUrl(file.id)}
                   controls
