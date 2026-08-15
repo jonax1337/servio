@@ -3,10 +3,10 @@ import { Workflow } from "lucide-react";
 import { requireRole } from "@/lib/session";
 import { PageHeader, PageBody } from "@/components/page-header";
 import { Card, CardAction, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { WorkflowEditor } from "@/components/settings/workflow-editor";
+import { WorkflowList } from "@/components/settings/workflow-list";
 import { WorkflowGraph } from "@/components/settings/workflow-graph";
 import {
-  WORKFLOW_ENTITY_TYPES, defaultTransitionPairs, getOverrides, type WorkflowEntityType,
+  WORKFLOW_ENTITY_TYPES, getEffectiveTransitions, type WorkflowEntityType,
 } from "@/lib/workflow";
 import {
   TICKET_STATUSES, PROBLEM_STATUSES, CHANGE_STATUSES,
@@ -56,8 +56,8 @@ export default async function WorkflowsSettingsPage() {
   const data = await Promise.all(
     WORKFLOW_ENTITY_TYPES.map(async (entityType) => ({
       entityType,
-      pairs: defaultTransitionPairs(entityType),
-      overrides: await getOverrides(entityType),
+      statuses: statusList(entityType),
+      transitions: await getEffectiveTransitions(entityType),
     })),
   );
 
@@ -66,10 +66,10 @@ export default async function WorkflowsSettingsPage() {
       <PageHeader
         icon={Workflow}
         title="Status workflows"
-        description="Control which status changes are allowed, and gate specific transitions behind a role. Turn a transition off to forbid it entirely."
+        description="Define which status changes are allowed for each entity — add or remove transitions freehand and gate any of them behind a role. Empty falls back to sensible defaults."
       />
       <PageBody className="grid gap-6">
-        {data.map(({ entityType, pairs, overrides }) => (
+        {data.map(({ entityType, statuses, transitions }) => (
           <Card key={entityType}>
             <CardHeader>
               <CardTitle className="text-sm">{ENTITY_LABEL[entityType]}</CardTitle>
@@ -77,21 +77,19 @@ export default async function WorkflowsSettingsPage() {
                 <WorkflowGraph
                   entityType={entityType}
                   entityLabel={ENTITY_LABEL[entityType]}
-                  statuses={statusList(entityType)}
-                  pairs={pairs}
-                  overrides={overrides}
+                  statuses={statuses}
+                  transitions={transitions}
                 />
               </CardAction>
             </CardHeader>
             <CardContent>
-              <WorkflowEditor
-                // Remount when the persisted overrides change (after save/reset)
-                // so the editor reseeds from server state instead of stale local state.
-                key={JSON.stringify(overrides)}
+              <WorkflowList
+                // Remount when persisted transitions change (after save/reset) so
+                // the editor reseeds from server state instead of stale local state.
+                key={JSON.stringify(transitions)}
                 entityType={entityType}
-                pairs={pairs}
-                statusMeta={META[entityType]}
-                overrides={overrides}
+                statuses={statuses}
+                transitions={transitions}
               />
             </CardContent>
           </Card>

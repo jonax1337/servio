@@ -19,7 +19,7 @@ import {
 import type { Tone } from "@/lib/constants";
 
 type StatusDef = { value: string; label: string; tone: Tone };
-type Override = { fromStatus: string; toStatus: string; allowed: boolean; requiredRole: string | null };
+type Transition = { from: string; to: string; requiredRole: string | null };
 type EdgeData = { role: string }; // "none" | "MANAGER" | "ADMIN"
 
 const ROLE_OPTS: ComboOption[] = [
@@ -67,14 +67,12 @@ export function WorkflowGraph({
   entityType,
   entityLabel,
   statuses,
-  pairs,
-  overrides,
+  transitions,
 }: {
   entityType: string;
   entityLabel: string;
   statuses: StatusDef[];
-  pairs: { from: string; to: string }[];
-  overrides: Override[];
+  transitions: Transition[];
 }) {
   const [open, setOpen] = useState(false);
 
@@ -94,8 +92,7 @@ export function WorkflowGraph({
           <GraphCanvas
             entityType={entityType}
             statuses={statuses}
-            pairs={pairs}
-            overrides={overrides}
+            transitions={transitions}
             onClose={() => setOpen(false)}
           />
         ) : null}
@@ -107,17 +104,14 @@ export function WorkflowGraph({
 function GraphCanvas({
   entityType,
   statuses,
-  pairs,
-  overrides,
+  transitions,
   onClose,
 }: {
   entityType: string;
   statuses: StatusDef[];
-  pairs: { from: string; to: string }[];
-  overrides: Override[];
+  transitions: Transition[];
   onClose: () => void;
 }) {
-  const validPairs = useMemo(() => new Set(pairs.map((p) => pairKey(p.from, p.to))), [pairs]);
   const [pending, start] = useTransition();
   const [selected, setSelected] = useState<string | null>(null); // selected edge id
   const [activeNode, setActiveNode] = useState<string | null>(null); // focused node id
@@ -134,16 +128,16 @@ function GraphCanvas({
     }));
   }, [statuses]);
 
-  const initialEdges: Edge[] = useMemo(() => {
-    const disabled = new Set(overrides.filter((o) => !o.allowed).map((o) => pairKey(o.fromStatus, o.toStatus)));
-    const roles = new Map(overrides.filter((o) => o.requiredRole).map((o) => [pairKey(o.fromStatus, o.toStatus), o.requiredRole!]));
-    return pairs
-      .filter((p) => !disabled.has(pairKey(p.from, p.to)))
-      .map((p) => {
-        const role = roles.get(pairKey(p.from, p.to)) ?? "none";
-        return { id: pairKey(p.from, p.to), source: p.from, target: p.to, data: { role } } as Edge;
-      });
-  }, [pairs, overrides]);
+  const initialEdges: Edge[] = useMemo(
+    () =>
+      transitions.map((t) => ({
+        id: pairKey(t.from, t.to),
+        source: t.from,
+        target: t.to,
+        data: { role: t.requiredRole ?? "none" },
+      }) as Edge),
+    [transitions],
+  );
 
   const [nodes, , onNodesChange] = useNodesState(initialNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
@@ -165,19 +159,15 @@ function GraphCanvas({
 
   const onConnect = useCallback(
     (c: Connection) => {
-      if (!c.source || !c.target) return;
-      if (c.source === c.target) return;
+      // Freehand: any status → any other status is allowed (no built-in floor).
+      if (!c.source || !c.target || c.source === c.target) return;
       const k = pairKey(c.source, c.target);
-      if (!validPairs.has(k)) {
-        toast.error("That transition isn't part of this lifecycle.");
-        return;
-      }
       setEdges((eds) => {
-        if (eds.some((e) => e.id === k)) return eds; // already enabled
+        if (eds.some((e) => e.id === k)) return eds; // already present
         return addEdge({ id: k, source: c.source!, target: c.target!, data: { role: "none" } }, eds);
       });
     },
-    [validPairs, setEdges],
+    [setEdges],
   );
 
   const setEdgeRole = (id: string, role: string) =>
@@ -190,26 +180,20 @@ function GraphCanvas({
 
   const selectedEdge = edges.find((e) => e.id === selected) ?? null;
 
-  function persist(action: (fd: FormData) => Promise<void>, withOverrides: boolean) {
+  function persist(action: (fd: FormData) => Promise<void>, withTransitions: boolean) {
     const fd = new FormData();
     fd.set("entityType", entityType);
-    if (withOverrides) {
-      const edgeIds = new Set(edges.map((e) => e.id));
-      const out: Override[] = [];
-      for (const p of pairs) {
-        const k = pairKey(p.from, p.to);
-        if (!edgeIds.has(k)) {
-          out.push({ fromStatus: p.from, toStatus: p.to, allowed: false, requiredRole: null });
-        } else {
-          const role = (edges.find((e) => e.id === k)?.data as EdgeData | undefined)?.role ?? "none";
-          if (role !== "none") out.push({ fromStatus: p.from, toStatus: p.to, allowed: true, requiredRole: role });
-        }
-      }
-      fd.set("overrides", JSON.stringify(out));
+    if (withTransitions) {
+      // The current edge set IS the complete allowed lifecycle.
+      const out = edges.map((e) => {
+        const role = (e.data as EdgeData | undefined)?.role ?? "none";
+        return { fromStatus: e.source, toStatus: e.target, requiredRole: role === "none" ? null : role };
+      });
+      fd.set("transitions", JSON.stringify(out));
     }
     start(async () => {
       await action(fd);
-      toast.success(withOverrides ? "Workflow saved" : "Reset to defaults");
+      toast.success(withTransitions ? "Workflow saved" : "Reset to defaults");
       onClose();
     });
   }

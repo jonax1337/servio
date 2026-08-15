@@ -31,22 +31,11 @@ export type ComboOption = {
   disabledReason?: string;
 };
 
-function OptionInner({ o, stacked }: { o: ComboOption; stacked?: boolean }) {
+function OptionInner({ o }: { o: ComboOption }) {
   const Icon = o.icon;
-  // People options get a taller two-line row: name on top, email/hint below.
-  if (stacked && o.avatar) {
-    return (
-      <span className="flex min-w-0 items-center gap-2.5 py-0.5 text-left">
-        <UserAvatar name={o.label} email={o.hint} size="default" />
-        <span className="flex min-w-0 flex-col text-left leading-tight">
-          <span className="truncate text-sm font-medium">{o.label}</span>
-          {o.hint ? (
-            <span className="truncate text-xs text-muted-foreground">{o.hint}</span>
-          ) : null}
-        </span>
-      </span>
-    );
-  }
+  // Single-line row for everything, incl. people (avatar + name) — same height as
+  // a plain option. The email/hint stays for search matching but isn't shown for
+  // people, so user pickers are as compact as the group/status ones.
   return (
     <span className="flex min-w-0 items-center gap-2 text-left">
       {o.avatar ? (
@@ -55,7 +44,7 @@ function OptionInner({ o, stacked }: { o: ComboOption; stacked?: boolean }) {
         <Icon className="size-4 text-muted-foreground" />
       ) : null}
       <span className="truncate">{o.label}</span>
-      {o.hint ? (
+      {!o.avatar && o.hint ? (
         <span className="truncate text-xs text-muted-foreground">{o.hint}</span>
       ) : null}
     </span>
@@ -119,7 +108,7 @@ export function Combobox({
                 className="border-0 bg-transparent px-0"
               />
             ) : (
-              <OptionInner o={selected} stacked />
+              <OptionInner o={selected} />
             )
           ) : (
             <span className="truncate">{placeholder}</span>
@@ -151,7 +140,7 @@ export function Combobox({
                         className="border-0 bg-transparent px-0"
                       />
                     ) : (
-                      <OptionInner o={o} stacked />
+                      <OptionInner o={o} />
                     )}
                   </CommandItem>
                 ))}
