@@ -184,6 +184,9 @@ function LinkedRecords({
   }, [project.id]);
 
   useEffect(() => {
+    // intentional: load linked records from the server on mount; the setState
+    // happens only after the async fetch resolves inside reload().
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     void reload();
   }, [reload]);
 

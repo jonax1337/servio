@@ -42,6 +42,37 @@ const FIELD_OPTS: ComboOption[] = [
 // Bulk status is limited to transitions that don't need a reason/note.
 const BULK_STATUSES = ["OPEN", "IN_PROGRESS", "RESOLVED", "CLOSED"];
 
+function SortHead({
+  k,
+  label,
+  className,
+  sort,
+  dir,
+  onToggle,
+}: {
+  k: string;
+  label: string;
+  className?: string;
+  sort: string;
+  dir: "asc" | "desc";
+  onToggle: (k: string) => void;
+}) {
+  const active = sort === k;
+  const Icon = active ? (dir === "asc" ? ArrowUp : ArrowDown) : ChevronsUpDown;
+  return (
+    <TableHead className={className}>
+      <button
+        type="button"
+        onClick={() => onToggle(k)}
+        className={cn("inline-flex items-center gap-1 hover:text-foreground", active ? "text-foreground" : "")}
+      >
+        {label}
+        <Icon className={cn("size-3.5", active ? "opacity-80" : "opacity-40")} />
+      </button>
+    </TableHead>
+  );
+}
+
 export function TicketsTable({
   rows,
   sort,
@@ -117,22 +148,7 @@ export function TicketsTable({
     });
   }
 
-  const SortHead = ({ k, label, className }: { k: string; label: string; className?: string }) => {
-    const active = sort === k;
-    const Icon = active ? (dir === "asc" ? ArrowUp : ArrowDown) : ChevronsUpDown;
-    return (
-      <TableHead className={className}>
-        <button
-          type="button"
-          onClick={() => toggleSort(k)}
-          className={cn("inline-flex items-center gap-1 hover:text-foreground", active ? "text-foreground" : "")}
-        >
-          {label}
-          <Icon className={cn("size-3.5", active ? "opacity-80" : "opacity-40")} />
-        </button>
-      </TableHead>
-    );
-  };
+  const sortHead = { sort, dir, onToggle: toggleSort };
 
   return (
     <div className="grid gap-2">
@@ -166,14 +182,14 @@ export function TicketsTable({
                   />
                 </TableHead>
               ) : null}
-              <SortHead k="id" label="Ref" className="w-[92px]" />
-              <SortHead k="title" label="Subject" />
-              <SortHead k="requester" label="Requester" className="hidden lg:table-cell" />
+              <SortHead {...sortHead} k="id" label="Ref" className="w-[92px]" />
+              <SortHead {...sortHead} k="title" label="Subject" />
+              <SortHead {...sortHead} k="requester" label="Requester" className="hidden lg:table-cell" />
               <TableHead>Priority</TableHead>
-              <SortHead k="status" label="Status" />
-              <SortHead k="assignee" label="Assignee" className="hidden md:table-cell" />
-              <SortHead k="createdAt" label="Created" className="hidden 2xl:table-cell text-right" />
-              <SortHead k="updatedAt" label="Updated" className="hidden xl:table-cell text-right" />
+              <SortHead {...sortHead} k="status" label="Status" />
+              <SortHead {...sortHead} k="assignee" label="Assignee" className="hidden md:table-cell" />
+              <SortHead {...sortHead} k="createdAt" label="Created" className="hidden 2xl:table-cell text-right" />
+              <SortHead {...sortHead} k="updatedAt" label="Updated" className="hidden xl:table-cell text-right" />
             </TableRow>
           </TableHeader>
           <TableBody>

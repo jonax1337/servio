@@ -68,6 +68,8 @@ export function CommandMenu({ role, sableEnabled = false }: { role: string; sabl
   // debounced server search
   useEffect(() => {
     const q = query.trim();
+    // intentional: clear results / enter loading state before the debounced fetch.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (!q) { setResults([]); setLoading(false); return; }
     setLoading(true);
     const id = ++reqId.current;

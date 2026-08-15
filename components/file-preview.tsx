@@ -39,6 +39,13 @@ const DOC_MIME =
 const DOC_EXT =
   /\.(txt|text|md|markdown|mdown|mkd|csv|tsv|json|log|ya?ml|toml|ini|conf|env|xml|eml|html?|css|scss|less|jsx?|mjs|cjs|tsx?|py|rb|go|rs|java|kt|c|h|cpp|hpp|cc|cs|php|sh|bash|zsh|ps1|sql|graphql|gql|diff|patch|docx?|xlsx?|xlsm|xlsb|pptx?|od[tps])$/i;
 
+// iconForMime returns one of a few stable module-level lucide components; use
+// React.createElement so we don't assign it to a capitalized local (which the
+// static-components rule reads as creating a component during render).
+function MimeIcon({ mime, className }: { mime: string; className?: string }) {
+  return React.createElement(iconForMime(mime), { className });
+}
+
 function classify(file: PreviewFile): PreviewKind {
   const mime = file.mime || "";
   // Guard: html/svg/xml-as-html blobs are never rendered inline (route forces
@@ -87,6 +94,8 @@ function useDocumentHtml(file: PreviewFile, kind: PreviewKind, open: boolean): D
 
   React.useEffect(() => {
     if (!open || kind !== "document") {
+      // intentional: reset the async preview state when closed / not a document.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setState({ loading: false, html: null, pdfUrl: null, fallbackText: null, error: null });
       return;
     }
@@ -169,7 +178,6 @@ export function FilePreview({ open, onOpenChange, file, files, onNavigate }: Fil
   );
 
   const kind = file ? classify(file) : "none";
-  const Icon = file ? iconForMime(file.mime) : null;
   const doc = useDocumentHtml(file ?? { id: "", name: "", mime: "" }, kind, open && !!file);
 
   return (
@@ -184,7 +192,7 @@ export function FilePreview({ open, onOpenChange, file, files, onNavigate }: Fil
         >
           {/* Header */}
           <div className="flex items-center gap-3 border-b px-4 py-2.5">
-            {Icon ? <Icon className="size-4.5 shrink-0 text-sable" /> : null}
+            {file ? <MimeIcon mime={file.mime} className="size-4.5 shrink-0 text-sable" /> : null}
             <div className="min-w-0 flex-1">
               <DialogPrimitive.Title className="truncate font-heading text-sm font-medium leading-tight">
                 {file?.name ?? "Preview"}
@@ -339,10 +347,9 @@ function ExtractedView({ text }: { text: string }) {
 }
 
 function NoPreview({ file }: { file: PreviewFile }) {
-  const Icon = iconForMime(file.mime);
   return (
     <div className="flex h-[calc(90vh-3.25rem)] flex-col items-center justify-center gap-4 p-8 text-center">
-      <Icon className="size-12 text-muted-foreground/70" />
+      <MimeIcon mime={file.mime} className="size-12 text-muted-foreground/70" />
       <div className="space-y-1">
         <p className="font-medium">No inline preview for this type</p>
         <p className="text-sm text-muted-foreground">{file.mime || "unknown type"}</p>

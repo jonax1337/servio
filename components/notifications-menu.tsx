@@ -47,6 +47,9 @@ export function NotificationsMenu({
 
   // Keep the badge in sync with the server-rendered seed on navigation.
   useEffect(() => {
+    // intentional: re-seed the badge from the server-rendered prop on navigation
+    // (unread is also mutated locally, so it cannot be derived during render).
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setUnread(initialUnread);
   }, [initialUnread]);
 
@@ -54,6 +57,8 @@ export function NotificationsMenu({
   useEffect(() => {
     if (!open) return;
     let active = true;
+    // intentional: enter the loading state before fetching the list on open.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setLoading(true);
     listNotifications().then((res) => {
       if (!active) return;

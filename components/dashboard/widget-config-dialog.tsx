@@ -107,6 +107,9 @@ export function WidgetConfigDialog({
   // Re-seed the form whenever the dialog opens for a new/different widget.
   useEffect(() => {
     if (!open) return;
+    // intentional: re-seed the editable form fields from the incoming widget
+    // whenever the dialog opens for a new/different widget.
+    /* eslint-disable react-hooks/set-state-in-effect */
     setType(initial?.type ?? "stat");
     setTitle(initial?.title ?? "");
     setGroupBy((initial?.options?.groupBy as BreakdownField) ?? "priority");
@@ -114,6 +117,7 @@ export function WidgetConfigDialog({
     setAccent(initial?.options?.accent ?? "");
     setThresholds(initial?.options?.thresholds ?? []);
     setFilters(initial?.filters ?? {});
+    /* eslint-enable react-hooks/set-state-in-effect */
   }, [open, initial]);
 
   const addThreshold = () =>

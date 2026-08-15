@@ -42,8 +42,11 @@ export function AccountSettingsDialog({
   useEffect(() => {
     if (!open) return;
     let active = true;
+    // intentional: reset to a clean loading state before fetching fresh account data on open.
+    /* eslint-disable react-hooks/set-state-in-effect */
     setUser(null);
     setSection("profile");
+    /* eslint-enable react-hooks/set-state-in-effect */
     getMyAccount().then((data) => {
       if (active) setUser(data);
     });
