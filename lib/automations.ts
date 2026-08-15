@@ -2,6 +2,7 @@ import { db } from "@/lib/db";
 import { writeAudit, notify } from "@/lib/audit";
 import { getAutomationUserId } from "@/lib/system-user";
 import { statusChangeData } from "@/lib/sla";
+import { safeWebhookFetch } from "@/lib/safe-fetch";
 import { TICKET_STATUSES, ticketRef } from "@/lib/constants";
 import { parseJson, type Condition, type AutomationAction } from "@/lib/automation-defs";
 
@@ -109,28 +110,22 @@ export async function runAutomations(trigger: Trigger, ticketId: number) {
           break;
         }
         case "webhook": {
-          // Best-effort outbound POST. Never let a bad URL / slow endpoint break
-          // the rule run — swallow every error and cap the wait with a timeout.
+          // Best-effort outbound POST through the SSRF guard (rejects private /
+          // loopback / link-local / metadata hosts and refuses redirects). Never
+          // let a bad/blocked/slow URL break the rule run — swallow all errors.
           if (a.value) {
             try {
-              const ctrl = new AbortController();
-              const to = setTimeout(() => ctrl.abort(), 5000);
-              await fetch(a.value, {
-                method: "POST",
-                headers: { "content-type": "application/json" },
-                body: JSON.stringify({
-                  ticketId: t.id,
-                  ref: ticketRef(t.id, t.prefix || t.type),
-                  title: t.title,
-                  status: t.status,
-                  priority: t.priority,
-                  group: t.group?.name ?? null,
-                  assignee: t.assignee?.name ?? null,
-                }),
-                signal: ctrl.signal,
-              }).finally(() => clearTimeout(to));
+              await safeWebhookFetch(a.value, {
+                ticketId: t.id,
+                ref: ticketRef(t.id, t.prefix || t.type),
+                title: t.title,
+                status: t.status,
+                priority: t.priority,
+                group: t.group?.name ?? null,
+                assignee: t.assignee?.name ?? null,
+              });
             } catch {
-              /* best-effort — ignore network/timeout errors */
+              /* best-effort — ignore SSRF-block / network / timeout errors */
             }
           }
           break;
