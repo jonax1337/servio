@@ -10,6 +10,7 @@ import { isGroupMember, autoAssignTicket } from "@/lib/assignment";
 import { statusChangeData } from "@/lib/sla";
 import { canTransitionConfigured } from "@/lib/workflow";
 import { sanitizeCommentHtml, htmlToText } from "@/lib/markdown";
+import { deliverTicketReply } from "@/lib/actions/tickets";
 import { TICKET_STATUSES, PRIORITIES } from "@/lib/constants";
 
 /**
@@ -218,7 +219,8 @@ export async function applyMacro(formData: FormData) {
     // The clock fields (responseDueAt … pausedMs) are needed by statusChangeData
     // so a status action pauses/resumes the SLA correctly.
     select: {
-      id: true, assigneeId: true, groupId: true, status: true,
+      id: true, title: true, type: true, requesterId: true,
+      assigneeId: true, groupId: true, status: true,
       responseDueAt: true, resolveDueAt: true, dueAt: true, pendingSince: true, pausedMs: true,
     },
   });
@@ -239,6 +241,10 @@ export async function applyMacro(formData: FormData) {
   const patch: Record<string, unknown> = {};
   let touchedGroup = false;
   const summaryParts: string[] = [];
+  // Public replies created by this macro. Their outbound email + notifications are
+  // fired AFTER the ticket field patch lands (so first-response stamping sees the
+  // final state), via the same deliverTicketReply pipeline as addTicketComment.
+  const publicReplies: { id: string; body: string; bodyHtml: string }[] = [];
 
   for (const a of actions) {
     switch (a.type) {
@@ -291,9 +297,12 @@ export async function applyMacro(formData: FormData) {
         const bodyHtml = sanitizeCommentHtml(a.value);
         const body = htmlToText(bodyHtml).trim() || a.value.trim();
         if (!body) break;
-        await db.ticketComment.create({
+        const comment = await db.ticketComment.create({
           data: { ticketId, authorId: me.id, body, bodyHtml, isInternal },
         });
+        // Internal notes stay internal (no requester email). Public replies are
+        // delivered after the ticket update below so each one emails exactly once.
+        if (!isInternal) publicReplies.push({ id: comment.id, body, bodyHtml });
         summaryParts.push(isInternal ? "added a note" : "added a reply");
         break;
       }
@@ -311,6 +320,30 @@ export async function applyMacro(formData: FormData) {
   // If the macro re-grouped and left the ticket unassigned, let auto-assign route it.
   if (touchedGroup && patch.groupId && !patch.assigneeId) {
     await autoAssignTicket(ticketId);
+  }
+
+  // A public `add_reply` must go out exactly like a hand-typed public reply:
+  // requester email (+ Cc participants), watcher/mention notifications and
+  // first-response SLA stamping — the shared deliverTicketReply pipeline. The
+  // macro has no composer To/Cc/Bcc, so recipients fall back to requester +
+  // participants. Fetch the (updated) requester once for all replies.
+  if (publicReplies.length) {
+    const full = await db.ticket.findUnique({
+      where: { id: ticketId },
+      select: { id: true, title: true, type: true, status: true, requesterId: true, requester: { select: { email: true, name: true } } },
+    });
+    if (full) {
+      for (const r of publicReplies) {
+        await deliverTicketReply({
+          ticket: full,
+          comment: { id: r.id },
+          author: { id: me.id, email: me.email, name: me.name ?? me.email, role: me.role },
+          body: r.body,
+          bodyHtml: r.bodyHtml,
+          isInternal: false,
+        });
+      }
+    }
   }
 
   await writeAudit({

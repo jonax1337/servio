@@ -8,6 +8,7 @@ import {
 import { db } from "@/lib/db";
 import { getFormOptions } from "@/lib/data/options";
 import { getEntityApprovals } from "@/lib/data/approvals";
+import { loadBusinessCalendar, slaSnapshot } from "@/lib/sla";
 import { allowedTransitions } from "@/lib/workflow";
 import { getSessionUser, isAgent, hasRole, type Role } from "@/lib/session";
 import { LinkButton } from "@/components/link-button";
@@ -116,6 +117,14 @@ export default async function TicketDetailPage({
     db.customFieldDef.findMany({ where: { entityType: "TICKET", active: true }, orderBy: { order: "asc" } }),
   ]);
   if (!ticket) notFound();
+
+  // SLA badge in BUSINESS time: when the ticket's SLA carries a business
+  // calendar, compute the live state against working hours so the badge agrees
+  // with the escalation sweep (lib/sla-escalation.ts). `loadBusinessCalendar`
+  // returns null for no/always-open calendars, so `slaSnapshot` transparently
+  // falls back to wall-clock in that case.
+  const slaCalendar = await loadBusinessCalendar(ticket.sla?.businessCalendarId);
+  const slaState = slaSnapshot(ticket, undefined, slaCalendar).state;
 
   // Macros the current agent may apply here: any shared macro + their own personal
   // ones. Non-agents get none (the picker is agent-only anyway).
@@ -421,7 +430,7 @@ export default async function TicketDetailPage({
           <CardContent className="grid gap-2.5 text-sm">
             <div className="flex items-center justify-between">
               <span className="text-muted-foreground">SLA status</span>
-              <SlaBadge ticket={ticket} />
+              <SlaBadge ticket={ticket} state={slaState} />
             </div>
             <Meta label="Created" value={format(ticket.createdAt, "PP p")} />
             {ticket.responseDueAt && !ticket.firstResponseAt ? <Meta label="Respond by" value={format(ticket.responseDueAt, "PP p")} /> : null}

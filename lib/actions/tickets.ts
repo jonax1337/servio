@@ -386,21 +386,71 @@ export async function addTicketComment(formData: FormData) {
     return c;
   });
 
-  // Stamp first response on the first PUBLIC agent reply (drives the response SLA).
-  // Conditional updateMany(firstResponseAt: null) so only the first writer wins
-  // even if two agents reply concurrently.
-  const isPublicAgentReply = !isInternal && me.role !== "USER";
-  const before = await db.ticket.findUnique({ where: { id }, select: { firstResponseAt: true, responseDueAt: true } });
-  if (isPublicAgentReply && before && !before.firstResponseAt) {
-    await db.ticket.updateMany({ where: { id, firstResponseAt: null }, data: firstResponseData(before) });
-  }
-
   const ticket = await db.ticket.update({
     where: { id },
     data: { updatedAt: new Date() },
     include: { requester: true },
   });
   await writeAudit({ userId: me.id, action: "UPDATE", entity: "Ticket", entityId: id, summary: "Added a comment" });
+
+  // First-response stamping + mention/watcher notifications + the outbound reply
+  // email are the single source of truth for "a reply went out" — shared with
+  // applyMacro so a macro's public reply behaves exactly like a hand-typed one.
+  await deliverTicketReply({
+    ticket,
+    comment,
+    author: me,
+    body,
+    bodyHtml,
+    isInternal,
+    hasAttachments: attachmentIds.length > 0,
+    toRecipients: formData.get("toRecipients"),
+    ccRecipients: formData.get("ccRecipients"),
+    bccRecipients: formData.get("bccRecipients"),
+    quoteFromCommentId: String(formData.get("quoteFromCommentId") ?? ""),
+  });
+
+  revalidatePath(`/tickets/${id}`);
+}
+
+/**
+ * The full "a ticket reply went out" side-effect pipeline for a *just-created*
+ * comment: first-response SLA stamping, @mention + watcher notifications, and —
+ * for a PUBLIC agent reply — the outbound email to the requester (+ Cc
+ * participants) with signature, thread headers and quoted trail. Internal notes
+ * only stamp/notify and never email.
+ *
+ * Exported so both addTicketComment (composer) and applyMacro (macro `add_reply`)
+ * drive identical behaviour from one source of truth. Composer-only inputs
+ * (explicit To/Cc/Bcc, quote anchor) are optional; when omitted the email falls
+ * back to requester + participants, exactly as the composer does with JS off.
+ */
+export async function deliverTicketReply(opts: {
+  ticket: { id: number; title: string; type: string; status: string; requesterId: string; requester?: { email: string | null; name: string | null } | null };
+  comment: { id: string };
+  author: { id: string; email: string; name: string; role: string };
+  body: string;
+  bodyHtml: string | null;
+  isInternal: boolean;
+  hasAttachments?: boolean;
+  toRecipients?: FormDataEntryValue | null;
+  ccRecipients?: FormDataEntryValue | null;
+  bccRecipients?: FormDataEntryValue | null;
+  quoteFromCommentId?: string;
+}) {
+  const { ticket, comment, author: me, body, bodyHtml, isInternal } = opts;
+  const id = ticket.id;
+  const isPublicAgentReply = !isInternal && me.role !== "USER";
+
+  // Stamp first response on the first PUBLIC agent reply (drives the response SLA).
+  // Conditional updateMany(firstResponseAt: null) so only the first writer wins
+  // even if two agents reply concurrently.
+  if (isPublicAgentReply) {
+    const before = await db.ticket.findUnique({ where: { id }, select: { firstResponseAt: true, responseDueAt: true } });
+    if (before && !before.firstResponseAt) {
+      await db.ticket.updateMany({ where: { id, firstResponseAt: null }, data: firstResponseData(before) });
+    }
+  }
 
   const snippet = body.length > 160 ? `${body.slice(0, 157)}…` : body;
 
@@ -418,57 +468,55 @@ export async function addTicketComment(formData: FormData) {
   // Notify watchers of the new activity
   await notifyWatchers(id, me.id, { type: "COMMENT", title: `New comment on ${ticketRef(ticket.id, ticket.type)}`, body: snippet, entity: "Ticket", entityId: String(id) });
 
+  if (!isPublicAgentReply) return;
+
   const messageHtml = bodyHtml ?? textToHtmlParagraphs(body);
 
   // Public agent reply → email it. Recipients come from the composer's visible
   // To / Cc / Bcc fields (Freshservice-style); fall back to requester + participants
-  // when they aren't provided (non-ticket threads / JS off).
-  if (!isInternal && me.role !== "USER") {
-    const toList = parseEmails(formData.get("toRecipients"));
-    const ccList = parseEmails(formData.get("ccRecipients"));
-    const bccList = parseEmails(formData.get("bccRecipients"));
-    const explicit = toList.length > 0;
-    const primaryTo = toList[0] ?? ticket.requester?.email ?? null;
-    if (primaryTo) {
-      const drop = new Set([primaryTo.toLowerCase(), me.email.toLowerCase()]);
-      const rawCc = explicit ? [...toList.slice(1), ...ccList] : await ticketCcEmails(ticket.id, [ticket.requester?.email, me.email]);
-      const cc = [...new Set(rawCc.map((e) => e.toLowerCase()))].filter((e) => !drop.has(e));
-      const bcc = [...new Set(bccList.map((e) => e.toLowerCase()))].filter((e) => !drop.has(e) && !cc.includes(e));
+  // when they aren't provided (macros / non-ticket threads / JS off).
+  const toList = parseEmails(opts.toRecipients ?? null);
+  const ccList = parseEmails(opts.ccRecipients ?? null);
+  const bccList = parseEmails(opts.bccRecipients ?? null);
+  const explicit = toList.length > 0;
+  const primaryTo = toList[0] ?? ticket.requester?.email ?? null;
+  if (!primaryTo) return;
 
-      // Everyone on To/Cc (except the requester) becomes a portal participant so the
-      // thread is shared + the recipient list is remembered. Skips forward-only
-      // "notified" contacts to preserve their privacy.
-      await addReplyParticipants(ticket.id, [primaryTo, ...cc], me.id, ticket.requesterId);
+  const drop = new Set([primaryTo.toLowerCase(), me.email.toLowerCase()]);
+  const rawCc = explicit ? [...toList.slice(1), ...ccList] : await ticketCcEmails(ticket.id, [ticket.requester?.email, me.email]);
+  const cc = [...new Set(rawCc.map((e) => e.toLowerCase()))].filter((e) => !drop.has(e));
+  const bcc = [...new Set(bccList.map((e) => e.toLowerCase()))].filter((e) => !drop.has(e) && !cc.includes(e));
 
-      const atts = attachmentIds.length
-        ? await db.attachment.findMany({ where: { commentId: comment.id }, select: { filename: true, storageKey: true } })
-        : [];
-      // Append the agent's signature to the OUTGOING email only.
-      const author = await db.user.findUnique({ where: { id: me.id }, select: { signature: true, signatureEnabled: true } });
-      const signatureText = author?.signatureEnabled && author.signature ? htmlToText(author.signature) : undefined;
-      const sigHtml = signatureText ? signatureHtml(textToHtmlParagraphs(signatureText)) : "";
-      const threadHeaders = await ticketThreadHeaders(ticket.id);
-      const brand = await mailBrand();
-      // Quoted conversation trail for the OUTGOING email only (mail-client style) —
-      // the stored comment stays clean since the thread is visible in the ticket.
-      const quoteHtml = await buildReplyQuote(ticket.id, String(formData.get("quoteFromCommentId") ?? ""), comment.id);
-      await sendMail({
-        to: primaryTo,
-        toName: primaryTo.toLowerCase() === (ticket.requester?.email ?? "").toLowerCase() ? ticket.requester?.name : null,
-        cc,
-        bcc,
-        entity: "Ticket",
-        entityId: ticket.id,
-        ticketId: ticket.id,
-        commentId: comment.id,
-        ...threadHeaders,
-        ...(await tplTicketReply(ticket, { requesterName: ticket.requester?.name ?? "", messageHtml, signatureHtml: sigHtml, quoteHtml, snippet }, brand)),
-        attachments: atts.flatMap((a) => (a.storageKey ? [{ filename: a.filename, storageKey: a.storageKey }] : [])),
-      });
-    }
-  }
+  // Everyone on To/Cc (except the requester) becomes a portal participant so the
+  // thread is shared + the recipient list is remembered. Skips forward-only
+  // "notified" contacts to preserve their privacy.
+  await addReplyParticipants(ticket.id, [primaryTo, ...cc], me.id, ticket.requesterId);
 
-  revalidatePath(`/tickets/${id}`);
+  const atts = opts.hasAttachments
+    ? await db.attachment.findMany({ where: { commentId: comment.id }, select: { filename: true, storageKey: true } })
+    : [];
+  // Append the agent's signature to the OUTGOING email only.
+  const author = await db.user.findUnique({ where: { id: me.id }, select: { signature: true, signatureEnabled: true } });
+  const signatureText = author?.signatureEnabled && author.signature ? htmlToText(author.signature) : undefined;
+  const sigHtml = signatureText ? signatureHtml(textToHtmlParagraphs(signatureText)) : "";
+  const threadHeaders = await ticketThreadHeaders(ticket.id);
+  const brand = await mailBrand();
+  // Quoted conversation trail for the OUTGOING email only (mail-client style) —
+  // the stored comment stays clean since the thread is visible in the ticket.
+  const quoteHtml = await buildReplyQuote(ticket.id, opts.quoteFromCommentId ?? "", comment.id);
+  await sendMail({
+    to: primaryTo,
+    toName: primaryTo.toLowerCase() === (ticket.requester?.email ?? "").toLowerCase() ? ticket.requester?.name : null,
+    cc,
+    bcc,
+    entity: "Ticket",
+    entityId: ticket.id,
+    ticketId: ticket.id,
+    commentId: comment.id,
+    ...threadHeaders,
+    ...(await tplTicketReply(ticket, { requesterName: ticket.requester?.name ?? "", messageHtml, signatureHtml: sigHtml, quoteHtml, snippet }, brand)),
+    attachments: atts.flatMap((a) => (a.storageKey ? [{ filename: a.filename, storageKey: a.storageKey }] : [])),
+  });
 }
 
 // ── Collaboration helpers ──────────────────────────────────────────────────
