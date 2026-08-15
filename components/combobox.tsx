@@ -39,7 +39,7 @@ function OptionInner({ o }: { o: ComboOption }) {
   return (
     <span className="flex min-w-0 items-center gap-2 text-left">
       {o.avatar ? (
-        <UserAvatar name={o.label} email={o.hint} size="sm" />
+        <UserAvatar name={o.label} email={o.hint} size="xs" />
       ) : Icon ? (
         <Icon className="size-4 text-muted-foreground" />
       ) : null}
