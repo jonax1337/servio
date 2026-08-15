@@ -7,6 +7,7 @@ import { db } from "@/lib/db";
 import { getSessionUser, isAgent, hasRole, type Role } from "@/lib/session";
 import { writeAudit, notify } from "@/lib/audit";
 import { canTransition, CHANGE_TRANSITIONS } from "@/lib/transitions";
+import { canTransitionConfigured } from "@/lib/workflow";
 import { selectApprovers, isEligibleApprover } from "@/lib/cab";
 import { readRichBody, readRichField } from "@/lib/markdown";
 import {
@@ -116,9 +117,9 @@ export async function updateChangeField(formData: FormData) {
     if (!current) return;
     // Guard the lifecycle: no jumping straight to APPROVED/SCHEDULED/etc.
     // Freigabe happens only through the CAB approval flow (decideApproval).
-    // Governed lifecycle → fail closed on an unknown status (never accept an
-    // arbitrary jump from a corrupt/renamed value).
-    if (!canTransition(CHANGE_TRANSITIONS, current.status, value, true)) return;
+    // Governed lifecycle (built-in map + admin overrides + role gate). Fails
+    // closed on an unknown status (never accept an arbitrary corrupt jump).
+    if (!(await canTransitionConfigured("CHANGE", current.status, value, me.role as Role))) return;
     // Back to DRAFT wipes the old CAB so the next submit builds a fresh one
     // (and stale REJECTED rows don't instantly re-reject).
     if (value === "DRAFT") await db.changeApproval.deleteMany({ where: { changeId: id } });

@@ -771,6 +771,24 @@ model ChangeApproval {
   @@unique([changeId, approverId])
 }
 
+/// An admin override on the built-in status lifecycle. A row exists ONLY to
+/// change the default for one (entityType, from → to) transition: disable it
+/// (`allowed=false`) or gate it behind a role (`requiredRole`). No row ⇒ the
+/// built-in default (allowed, any agent). See lib/workflow.ts.
+model StatusTransition {
+  id           String   @id @default(cuid())
+  entityType   String   // TICKET | PROBLEM | CHANGE
+  fromStatus   String
+  toStatus     String
+  allowed      Boolean  @default(true)
+  requiredRole String?  // null = any agent | MANAGER | ADMIN
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([entityType, fromStatus, toStatus])
+  @@index([entityType])
+}
+
 // ---------------------------------------------------------------------------
 // Generic ad-hoc approvals
 // ---------------------------------------------------------------------------

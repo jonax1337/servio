@@ -25,7 +25,7 @@ import { autoAssignTicket } from "@/lib/assignment";
 import {
   slaCreateData, pauseData, resumeData, firstResponseData, statusChangeData,
 } from "@/lib/sla";
-import { canTransition, TICKET_TRANSITIONS } from "@/lib/transitions";
+import { canTransitionConfigured } from "@/lib/workflow";
 import {
   TICKET_TYPES,
   PRIORITIES,
@@ -162,8 +162,8 @@ export async function updateTicketField(formData: FormData) {
   if (field === "status") {
     const current = await db.ticket.findUnique({ where: { id } });
     if (!current) return;
-    // Enforce the allowed lifecycle — reject illegal jumps silently.
-    if (!canTransition(TICKET_TRANSITIONS, current.status, value)) return;
+    // Enforce the configured lifecycle (built-in map + admin overrides + role).
+    if (!(await canTransitionConfigured("TICKET", current.status, value, me.role as Role))) return;
     // Shared with the automation engine so both keep the SLA clock consistent.
     Object.assign(patch, statusChangeData(current, value));
   }
@@ -616,7 +616,7 @@ export async function setTicketResolution(formData: FormData) {
 
   const current = await db.ticket.findUnique({ where: { id } });
   if (!current) return;
-  if (!canTransition(TICKET_TRANSITIONS, current.status, status)) return;
+  if (!(await canTransitionConfigured("TICKET", current.status, status, me.role as Role))) return;
 
   const now = new Date();
   const clock: Record<string, unknown> = {};
@@ -1028,7 +1028,7 @@ export async function setTicketPending(formData: FormData) {
 
   const current = await db.ticket.findUnique({ where: { id }, select: { status: true, pendingSince: true } });
   if (!current) return;
-  if (!canTransition(TICKET_TRANSITIONS, current.status, status)) return;
+  if (!(await canTransitionConfigured("TICKET", current.status, status, me.role as Role))) return;
 
   await db.ticket.update({
     where: { id },

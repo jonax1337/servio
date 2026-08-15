@@ -7,6 +7,7 @@ import { db } from "@/lib/db";
 import { getSessionUser, isAgent, type Role } from "@/lib/session";
 import { writeAudit, notify } from "@/lib/audit";
 import { readRichBody, readRichField } from "@/lib/markdown";
+import { canTransitionConfigured } from "@/lib/workflow";
 import {
   PROBLEM_STATUSES,
   PRIORITIES,
@@ -73,6 +74,10 @@ export async function updateProblemField(formData: FormData) {
 
   const patch: Record<string, unknown> = { [field]: v };
   if (field === "status") {
+    const current = await db.problem.findUnique({ where: { id }, select: { status: true } });
+    if (!current) return;
+    // Enforce the configured lifecycle (built-in map + admin overrides + role).
+    if (!(await canTransitionConfigured("PROBLEM", current.status, value, me.role as Role))) return;
     if (value === "RESOLVED" || value === "CLOSED") patch.resolvedAt = new Date();
     if (value === "NEW" || value === "INVESTIGATING" || value === "KNOWN_ERROR") patch.resolvedAt = null;
   }
