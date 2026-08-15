@@ -44,6 +44,7 @@
     "@tiptap/react": "3.29.2",
     "@tiptap/starter-kit": "3.29.2",
     "@tiptap/suggestion": "3.29.2",
+    "@xyflow/react": "^12.11.3",
     "ai": "^7.0.58",
     "bcryptjs": "^3.0.3",
     "class-variance-authority": "^0.7.1",

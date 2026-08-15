@@ -26,6 +26,9 @@ export type ComboOption = {
   /** show a small avatar with these initials (for people) */
   avatar?: string;
   hint?: string;
+  /** greyed out and non-selectable (e.g. a status the workflow forbids) */
+  disabled?: boolean;
+  disabledReason?: string;
 };
 
 function OptionInner({ o, stacked }: { o: ComboOption; stacked?: boolean }) {
@@ -134,7 +137,10 @@ export function Combobox({
                     key={o.value}
                     value={`${o.label} ${o.hint ?? ""}`}
                     data-checked={o.value === value}
+                    disabled={o.disabled}
+                    title={o.disabled ? o.disabledReason : undefined}
                     onSelect={() => {
+                      if (o.disabled) return;
                       onChange(o.value);
                       setOpen(false);
                     }}

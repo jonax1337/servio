@@ -8,6 +8,7 @@ import {
 import { db } from "@/lib/db";
 import { getFormOptions } from "@/lib/data/options";
 import { getEntityApprovals } from "@/lib/data/approvals";
+import { allowedTransitions } from "@/lib/workflow";
 import { getSessionUser, isAgent, hasRole, type Role } from "@/lib/session";
 import { LinkButton } from "@/components/link-button";
 import { StatusBadge } from "@/components/status-badge";
@@ -83,6 +84,7 @@ export default async function ChangeDetailPage({
   const ticketOpts = linkableTickets.map((t) => ({ value: String(t.id), label: `${ticketRef(t.id, t.prefix)} · ${t.title}` }));
 
   const me = await getSessionUser();
+  const allowedStatuses = me ? [...await allowedTransitions("CHANGE", change.status, me.role as Role)] : undefined;
   // Manager+ curate the approval board (not the owner — SoD, matches the server).
   const canManage = !!me && hasRole(me.role as Role, "MANAGER");
   const isAgentUser = !!me && isAgent(me.role as Role);
@@ -317,7 +319,7 @@ export default async function ChangeDetailPage({
         <Card>
           <CardHeader><CardTitle className="text-sm">Properties</CardTitle></CardHeader>
           <CardContent>
-            <ChangeProperties change={change} options={options} />
+            <ChangeProperties change={change} options={options} allowedStatuses={allowedStatuses} />
           </CardContent>
         </Card>
 

@@ -92,6 +92,7 @@ export function TicketProperties({
   aiEnabled = false,
   aiTeaser = false,
   triageEnabled = false,
+  allowedStatuses,
 }: {
   ticket: {
     id: number;
@@ -110,10 +111,15 @@ export function TicketProperties({
   aiEnabled?: boolean;
   aiTeaser?: boolean;
   triageEnabled?: boolean;
+  /** Statuses reachable from the current one under the workflow; others grey out. */
+  allowedStatuses?: string[];
 }) {
   // ── Options ──
+  const allowedSet = allowedStatuses ? new Set(allowedStatuses) : null;
   const statusOpts: ComboOption[] = TICKET_STATUSES.map((s) => ({
     value: s, label: TICKET_STATUS_META[s].label, tone: TICKET_STATUS_META[s].tone, icon: TICKET_STATUS_META[s].icon,
+    disabled: allowedSet ? !allowedSet.has(s) : false,
+    disabledReason: "Not allowed from the current status by the workflow.",
   }));
   const prioOpts: ComboOption[] = PRIORITIES.map((p) => ({
     value: p, label: PRIORITY_META[p].label, tone: PRIORITY_META[p].tone, icon: PRIORITY_META[p].icon,

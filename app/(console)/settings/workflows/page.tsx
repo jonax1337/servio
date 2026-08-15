@@ -2,12 +2,14 @@ import type { Metadata } from "next";
 import { Workflow } from "lucide-react";
 import { requireRole } from "@/lib/session";
 import { PageHeader, PageBody } from "@/components/page-header";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardAction, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { WorkflowEditor } from "@/components/settings/workflow-editor";
+import { WorkflowGraph } from "@/components/settings/workflow-graph";
 import {
   WORKFLOW_ENTITY_TYPES, defaultTransitionPairs, getOverrides, type WorkflowEntityType,
 } from "@/lib/workflow";
 import {
+  TICKET_STATUSES, PROBLEM_STATUSES, CHANGE_STATUSES,
   TICKET_STATUS_META, PROBLEM_STATUS_META, CHANGE_STATUS_META, type Meta, type Tone,
 } from "@/lib/constants";
 
@@ -33,6 +35,21 @@ const META: Record<WorkflowEntityType, Record<string, { label: string; tone: Ton
   CHANGE: stripMeta(CHANGE_STATUS_META),
 };
 
+const STATUS_ORDER: Record<WorkflowEntityType, readonly string[]> = {
+  TICKET: TICKET_STATUSES,
+  PROBLEM: PROBLEM_STATUSES,
+  CHANGE: CHANGE_STATUSES,
+};
+
+function statusList(entityType: WorkflowEntityType) {
+  const meta = META[entityType];
+  return STATUS_ORDER[entityType].map((value) => ({
+    value,
+    label: meta[value]?.label ?? value,
+    tone: meta[value]?.tone ?? ("neutral" as Tone),
+  }));
+}
+
 export default async function WorkflowsSettingsPage() {
   await requireRole("MANAGER");
 
@@ -56,6 +73,15 @@ export default async function WorkflowsSettingsPage() {
           <Card key={entityType}>
             <CardHeader>
               <CardTitle className="text-sm">{ENTITY_LABEL[entityType]}</CardTitle>
+              <CardAction>
+                <WorkflowGraph
+                  entityType={entityType}
+                  entityLabel={ENTITY_LABEL[entityType]}
+                  statuses={statusList(entityType)}
+                  pairs={pairs}
+                  overrides={overrides}
+                />
+              </CardAction>
             </CardHeader>
             <CardContent>
               <WorkflowEditor

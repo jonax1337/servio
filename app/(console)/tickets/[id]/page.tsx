@@ -8,6 +8,7 @@ import {
 import { db } from "@/lib/db";
 import { getFormOptions } from "@/lib/data/options";
 import { getEntityApprovals } from "@/lib/data/approvals";
+import { allowedTransitions } from "@/lib/workflow";
 import { getSessionUser, isAgent, hasRole, type Role } from "@/lib/session";
 import { LinkButton } from "@/components/link-button";
 import { StatusBadge, VipBadge, ToneBadge } from "@/components/status-badge";
@@ -120,6 +121,7 @@ export default async function TicketDetailPage({
   const isWatching = !!me && ticket.watchers.some((w) => w.userId === me.id);
   const isAgentUser = !!me && isAgent(me.role as Role);
   const canManage = !!me && hasRole(me.role as Role, "MANAGER");
+  const allowedStatuses = me ? [...await allowedTransitions("TICKET", ticket.status, me.role as Role)] : undefined;
   const candidateOpts = candidates.map((c) => ({
     value: String(c.id),
     label: `${ticketRef(c.id, c.prefix)} — ${c.title}`,
@@ -404,7 +406,7 @@ export default async function TicketDetailPage({
         <Card className="mt-4">
           <CardHeader><CardTitle className="text-sm">Properties</CardTitle></CardHeader>
           <CardContent>
-            <TicketProperties ticket={ticket} options={options} aiEnabled={aiVisible} aiTeaser={aiTeaser} triageEnabled={triageEnabled} />
+            <TicketProperties ticket={ticket} options={options} aiEnabled={aiVisible} aiTeaser={aiTeaser} triageEnabled={triageEnabled} allowedStatuses={allowedStatuses} />
           </CardContent>
         </Card>
 

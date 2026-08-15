@@ -57,6 +57,7 @@ function Prop({
 export function ProblemProperties({
   problem,
   options,
+  allowedStatuses,
 }: {
   problem: {
     id: number;
@@ -68,9 +69,14 @@ export function ProblemProperties({
     categoryId: string | null;
   };
   options: FormOptions;
+  /** Statuses reachable from the current one under the workflow; others grey out. */
+  allowedStatuses?: string[];
 }) {
+  const allowed = allowedStatuses ? new Set(allowedStatuses) : null;
   const statusOpts: ComboOption[] = PROBLEM_STATUSES.map((s) => ({
     value: s, label: PROBLEM_STATUS_META[s].label, tone: PROBLEM_STATUS_META[s].tone, icon: PROBLEM_STATUS_META[s].icon,
+    disabled: allowed ? !allowed.has(s) : false,
+    disabledReason: "Not allowed from the current status by the workflow.",
   }));
   const prioOpts: ComboOption[] = PRIORITIES.map((p) => ({
     value: p, label: PRIORITY_META[p].label, tone: PRIORITY_META[p].tone, icon: PRIORITY_META[p].icon,

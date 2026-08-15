@@ -49,6 +49,31 @@ export type TransitionOverride = {
   requiredRole: string | null;
 };
 
+/**
+ * The set of statuses reachable from `from` for a given role, under the current
+ * config. Includes `from` itself (staying put is always fine). Used to grey out
+ * forbidden options in the status dropdowns. One query, not one-per-candidate.
+ */
+export async function allowedTransitions(
+  entityType: WorkflowEntityType,
+  from: string,
+  role: Role,
+): Promise<Set<string>> {
+  const targets = MAPS[entityType][from] ?? [];
+  const overrides = await getOverrides(entityType);
+  const byPair = new Map(overrides.map((o) => [`${o.fromStatus}>${o.toStatus}`, o]));
+  const out = new Set<string>([from]);
+  for (const to of targets) {
+    const o = byPair.get(`${from}>${to}`);
+    if (o) {
+      if (!o.allowed) continue;
+      if (o.requiredRole && !hasRole(role, o.requiredRole as Role)) continue;
+    }
+    out.add(to);
+  }
+  return out;
+}
+
 export async function getOverrides(entityType: WorkflowEntityType): Promise<TransitionOverride[]> {
   const rows = await db.statusTransition.findMany({
     where: { entityType },

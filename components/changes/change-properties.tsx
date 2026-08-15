@@ -57,6 +57,7 @@ function Prop({
 export function ChangeProperties({
   change,
   options,
+  allowedStatuses,
 }: {
   change: {
     id: number;
@@ -69,9 +70,14 @@ export function ChangeProperties({
     categoryId: string | null;
   };
   options: FormOptions;
+  /** Statuses reachable from the current one under the workflow; others grey out. */
+  allowedStatuses?: string[];
 }) {
+  const allowed = allowedStatuses ? new Set(allowedStatuses) : null;
   const statusOpts: ComboOption[] = CHANGE_STATUSES.map((s) => ({
     value: s, label: CHANGE_STATUS_META[s].label, tone: CHANGE_STATUS_META[s].tone, icon: CHANGE_STATUS_META[s].icon,
+    disabled: allowed ? !allowed.has(s) : false,
+    disabledReason: "Not allowed from the current status by the workflow.",
   }));
   const typeOpts: ComboOption[] = CHANGE_TYPES.map((t) => ({
     value: t, label: CHANGE_TYPE_META[t].label, tone: CHANGE_TYPE_META[t].tone, icon: CHANGE_TYPE_META[t].icon,
