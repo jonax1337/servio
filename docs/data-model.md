@@ -80,17 +80,22 @@ Roles are a `String` on `User` (`role`), not a separate table. Allowed values: `
 
 | Model | Purpose | Key fields / relations |
 | --- | --- | --- |
-| `Ticket` | An incident or service request | `id` (Int, autoincrement); `prefix` (stored `INC`/`REQ`, fixed at creation so the ref stays stable when `type` is switched); `type`, `status`, `priority`, `impact`, `urgency`, `source`, `isMajorIncident`, `pendingReason`/`pendingNote`, `resolutionCode`/`resolutionNote`, `mergedIntoId`; `description` (plaintext twin) + `descriptionHtml` (sanitized rich text); routing FKs `requesterId`, `requestedByUserId` (nullable — who raised it *on behalf of* the requester), `assigneeId`, `groupId`, `categoryId`, `serviceId`, `catalogItemId`, `slaId`, `problemId`, `changeId`; catalog `formData`/`formSchema` snapshot; **SLA clock** fields (see below); relations to comments, watchers, attachments, assets, tasks, worklogs, approvals, links, merges |
+| `Ticket` | An incident or service request | `id` (Int, autoincrement); `prefix` (stored `INC`/`REQ`, fixed at creation so the ref stays stable when `type` is switched); `type`, `status`, `priority`, `impact`, `urgency`, `source`, `isMajorIncident`, `pendingReason`/`pendingNote`, `resolutionCode`/`resolutionNote`, `mergedIntoId`; `description` (plaintext twin) + `descriptionHtml` (sanitized rich text); routing FKs `requesterId`, `requestedByUserId` (nullable — who raised it *on behalf of* the requester), `assigneeId`, `groupId`, `categoryId`, `serviceId`, `catalogItemId`, `slaId`, `problemId`, `changeId`; catalog `formData`/`formSchema` snapshot; **SLA clock** fields (see below); relations to comments, watchers, attachments, assets, tasks, worklogs, approvals, links, merges, and a one-to-one `survey` (CSAT) |
 | `TicketComment` | Reply or internal note on a ticket | `body` (plaintext) + `bodyHtml`, `isInternal`, `authorId`; has attachments |
 | `Task` | Checklist item / subtask on a ticket | `title`, `done`, `order`, `assigneeId` |
 | `WorkLog` | Time logged against a ticket (effort reporting) | `minutes`, `note`, `billable`, `loggedAt`, `userId` |
 | `TicketLink` | Typed relationship between two tickets | `(ticketId, linkedTicketId)` unique; `type` (`RELATED`/`DUPLICATE`/`BLOCKS`/`CAUSED_BY`) |
-| `TicketApproval` | Approval request on a ticket (catalog approvals) | `approverId`, `status` (`PENDING`/`APPROVED`/`REJECTED`), `decidedAt` |
+| `TicketApproval` | Approval request on a ticket (catalog approvals) | `approverId`, `status` (`PENDING`/`APPROVED`/`REJECTED`), `stage` (Int, default 0 — multi-stage catalog approvals), `decidedAt` |
+| `SurveyResponse` | Post-resolution CSAT survey (one per ticket) | `ticketId` (unique), `token` (unique — gates the public rating link), `rating` (`SURVEY_RATING_MIN`..`MAX`, i.e. 1–5), `comment`, `sentAt`, `respondedAt`; `onDelete: Cascade` |
+| `Macro` | Reusable, ordered set of ticket actions an agent applies in one click | `name`, `description`, `actions` (JSON as TEXT: ordered `{type,value}[]`), `ownerId`, `isShared` |
 | `TicketWatcher` | Users following a ticket | composite PK `(ticketId, userId)` |
 
 **SLA clock fields on `Ticket`:** `dueDate` (manual agent due date), `dueAt`/`responseDueAt`/`resolveDueAt`
 (computed from the SLA at create), `responseBreached`/`resolveBreached`, `pendingSince` + `pausedMs` (clock
-pauses while `PENDING`/`ON_HOLD`), `firstResponseAt`, `resolvedAt`, `closedAt`. The derived clock state
+pauses while `PENDING`/`ON_HOLD`), `escalatedAt` / `slaAtRiskNotifiedAt` (at-most-once markers so breach
+escalation and at-risk notification each fire once), `firstResponseAt`, `resolvedAt`, `closedAt`. When the
+SLA carries a `businessCalendar`, deadlines are computed in business time; otherwise the clock is wall-clock.
+The derived clock state
 (`ON_TRACK`, `AT_RISK`, `BREACHED`, `MET`, `PAUSED`, `NONE`) is computed in app code from these columns — see
 `SLA_STATES` in [`lib/constants.ts`](../lib/constants.ts).
 
@@ -105,7 +110,7 @@ pauses while `PENDING`/`ON_HOLD`), `firstResponseAt`, `resolvedAt`, `closedAt`. 
 
 | Model | Purpose | Key fields / relations |
 | --- | --- | --- |
-| `Change` | Change request with a workflow lifecycle | `id` (Int → `CHG-`), `type` (`STANDARD`/`NORMAL`/`EMERGENCY`), `status` (10-state lifecycle), `risk`, `priority`, `impact`, `reason`, `implementationPlan`, `rollbackPlan`, `plannedStart`/`plannedEnd`/`actualStart`/`actualEnd`, `problemId`; has approvals, affected assets, tickets, comments |
+| `Change` | Change request with a workflow lifecycle | `id` (Int → `CHG-`), `type` (`STANDARD`/`NORMAL`/`EMERGENCY`), `status` (10-state lifecycle), `risk`, `priority`, `impact`, `reason`, `implementationPlan`, `rollbackPlan`, `approvalRule` (`UNANIMOUS`/`QUORUM`/`PERCENT` — how CAB approvals resolve) + `approvalThreshold` (N for `QUORUM`, percent for `PERCENT`), `plannedStart`/`plannedEnd`/`actualStart`/`actualEnd`, `problemId`; has approvals, affected assets (CIs), tickets, comments |
 | `ChangeComment` | Comment on a change | `body`/`bodyHtml`, `isInternal`, `authorId` |
 | `ChangeApproval` | Per-approver decision on a change | `(changeId, approverId)` unique; `status`, `comment`, `decidedAt` |
 
@@ -116,7 +121,7 @@ pauses while `PENDING`/`ON_HOLD`), `firstResponseAt`, `resolvedAt`, `closedAt`. 
 | `Asset` | Configuration item (hardware, VM, cloud, software) | `assetTag` (unique), `name`, `type` (12 values), `status`, hardware detail (`serial`, `model`, `manufacturer`, `ipAddress`, `macAddress`, `os`, `cpu`, `ramGb`, `storageGb`), lifecycle (`cost`, `purchaseDate`, `warrantyEnd`), `ownerId`, `groupId`, `locationId`, `syncSourceId`/`externalId`, `lastSeenAt`; relations to tickets, changes, and asset-to-asset relations |
 | `AssetRelation` | Directed dependency edge between two assets | `(sourceId, targetId, type)` unique; `type` (`DEPENDS_ON`/`CONNECTS_TO`/`RUNS_ON`/`HOSTS`/`PART_OF`/`BACKS_UP`) |
 | `TicketAsset` | Ticket ↔ affected-asset join | composite PK `(ticketId, assetId)` |
-| `ChangeAsset` | Change ↔ affected-asset join | composite PK `(changeId, assetId)` |
+| `ChangeAsset` | Change ↔ affected-CI join (attach/detach via `lib/actions/change-assets.ts`; feeds automated impact/risk) | composite PK `(changeId, assetId)` |
 
 ### Locations
 
@@ -129,7 +134,7 @@ pauses while `PENDING`/`ON_HOLD`), `firstResponseAt`, `resolvedAt`, `closedAt`. 
 | Model | Purpose | Key fields / relations |
 | --- | --- | --- |
 | `Category` | Self-referencing taxonomy tree | `parentId` (self relation `CategoryTree`), `(name, parentId)` unique; shared by tickets, problems, changes, services, articles, catalog items |
-| `SLA` | Response/resolution targets | `name` (unique), `priority` (for auto-match), `responseMins`, `resolveMins`, `isActive` |
+| `SLA` | Response/resolution targets | `name` (unique), `priority` (for auto-match), `responseMins`, `resolveMins`, `isActive`; optional `businessCalendarId` (working-hours clock; null = 24/7) and `escalationPolicyId` (tiered escalation) |
 | `Service` | Operational business service (service health) | `name` (unique), `status` (`OPERATIONAL`/`DEGRADED`/`OUTAGE`/`MAINTENANCE`/`RETIRED`), `criticality`, `categoryId`, `ownerId`, `slaId` |
 | `CatalogItem` | Requestable self-service catalog entry (portal form) | `name`, `formSchema` (JSON field defs as TEXT), `requiresApproval` + `approverId`, `estimatedDays`, `isPublished`, `order`; spawns tickets |
 | `Article` | Knowledge-base article | `slug` (unique), `body` + `bodyFormat` (`markdown`/`plain`), `status` (`DRAFT`/`REVIEW`/`PUBLISHED`/`RETIRED`), `visibility` (`INTERNAL`/`PUBLIC`), `published` (denormalized mirror), `views`, `categoryId`, `authorId`; has revisions & attachments |
@@ -138,6 +143,24 @@ pauses while `PENDING`/`ON_HOLD`), `firstResponseAt`, `resolvedAt`, `closedAt`. 
 > **Note:** `Service` (operational health) and `CatalogItem` (requestable form) are distinct models. The seed
 > creates operational services in [`prisma/seed.ts`](../prisma/seed.ts) and catalog items in
 > [`prisma/seed-extras.ts`](../prisma/seed-extras.ts).
+
+`CatalogItem.approvalStages` (JSON as TEXT) holds an ordered array of stage descriptors (each an
+`approverId` **or** a `groupId`) for multi-stage / group catalog approvals; `approverId` remains the
+single-stage-0 fallback. See [modules.md](./modules.md#service-catalog-admin).
+
+### SLA calendars & escalation
+
+Business-hours SLA calendars and tiered escalation. An `SLA` optionally points at a `BusinessCalendar`
+(so its clock counts only working hours) and an `EscalationPolicy` (staged actions as the clock elapses).
+The business-time math lives in [`lib/business-hours.ts`](../lib/business-hours.ts) /
+[`lib/sla.ts`](../lib/sla.ts) and escalation firing in [`lib/sla-escalation.ts`](../lib/sla-escalation.ts).
+
+| Model | Purpose | Key fields / relations |
+| --- | --- | --- |
+| `BusinessCalendar` | A named working-hours calendar the SLA clock honours | `name`, `timezone` (default `UTC`), `weeklyHours` (JSON as TEXT: per-weekday open/close windows); has `holidays`, `slas` |
+| `Holiday` | A non-working day on a calendar (the clock pauses on it) | `(calendarId, date, name)`; `onDelete: Cascade` with its calendar |
+| `EscalationPolicy` | A named, ordered set of escalation steps | `name`; has `steps`, `slas` |
+| `EscalationStep` | One step: at `thresholdPercent` of SLA elapsed, run `action` | `order`, `thresholdPercent` (e.g. 50/75/100), `action` (`NOTIFY`/`REASSIGN`/`BUMP_PRIORITY`), `targetGroupId`/`targetUserId` (reassign/notify target), `bumpToPriority` (for `BUMP_PRIORITY`); `onDelete: Cascade` with its policy |
 
 ### Sync / integrations
 
@@ -214,7 +237,9 @@ Every "enum" is a `String` column whose allowed values are declared as a `readon
 | `CHANGE_TYPES` | `Change.type` | `STANDARD`, `NORMAL`, `EMERGENCY` |
 | `CHANGE_STATUSES` | `Change.status` | `DRAFT`, `SUBMITTED`, `APPROVAL`, `APPROVED`, `SCHEDULED`, `IN_PROGRESS`, `REVIEW`, `CLOSED`, `REJECTED`, `FAILED` |
 | `RISKS` | `Change.risk` | `LOW`, `MEDIUM`, `HIGH` |
-| `APPROVAL_STATUSES` | `TicketApproval.status`, `ChangeApproval.status`, `Ticket.approvalState` | `PENDING`, `APPROVED`, `REJECTED` |
+| `CAB_APPROVAL_RULES` | `Change.approvalRule` | `UNANIMOUS`, `QUORUM`, `PERCENT` |
+| `ESCALATION_ACTIONS` | `EscalationStep.action` | `NOTIFY`, `REASSIGN`, `BUMP_PRIORITY` |
+| `APPROVAL_STATUSES` | `TicketApproval.status`, `ChangeApproval.status`, `Approval.status`, `Ticket.approvalState` | `PENDING`, `APPROVED`, `REJECTED` |
 | `SERVICE_STATUSES` | `Service.status` | `OPERATIONAL`, `DEGRADED`, `OUTAGE`, `MAINTENANCE`, `RETIRED` |
 | `CRITICALITIES` | `Service.criticality` | `LOW`, `MEDIUM`, `HIGH`, `CRITICAL` |
 | `AUTO_ASSIGN_STRATEGIES` | `Group.autoAssign` | `OFF`, `ROUND_ROBIN`, `LEAST_BUSY` |

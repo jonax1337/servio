@@ -37,7 +37,7 @@ Enums, status/priority metadata, and reference helpers (`ticketRef`, `problemRef
 | Catalog | Services, Service Catalog (MANAGER+) |
 | CMDB | Assets, Locations |
 | Organisation | Groups, People, Categories |
-| Administration | Automations (MANAGER+), Syncs (MANAGER+), Settings (MANAGER+) |
+| Administration | Automations (MANAGER+), Macros (MANAGER+), Syncs (MANAGER+), Audit Log (ADMIN), Settings (MANAGER+) |
 
 ---
 
@@ -83,7 +83,9 @@ The core incident/request module and the richest one in the codebase.
 | Actions | `lib/actions/tickets.ts` |
 | Components | `components/tickets/` |
 
-Actions include `createTicket`, `updateTicketField` (incl. switching `type` — the ref prefix stays fixed), `updateTicketDetails`, `addTicketComment`, `escalateTicket`, `toggleMajorIncident`, `toggleWatch`, `addParticipant`, `linkTicket`/`unlinkTicket`, `mergeTicket`, cross-entity linking (`setTicketProblem`, `setTicketChange`, `linkAsset`/`unlinkAsset`, `unlinkRelation`), `setTicketResolution`, `setTicketPending`, `setTicketDueDate`, `forwardTicketExternal`, and work-log entries (`addWorkLog`, `deleteWorkLog`). Key components: `ticket-form`, `ticket-properties` (staged edits incl. type + due date), `ticket-actions`, `comment-composer`, `work-log`, `resolution-dialog`, `pending-reason-dialog`, `due-date-picker`, `sla-badge`, `form-answers`, plus the reusable `link-picker` (attach problems/changes/assets) and `saved-views-bar`.
+Actions include `createTicket`, `updateTicketField` (incl. switching `type` — the ref prefix stays fixed), `updateTicketDetails`, `addTicketComment`, `escalateTicket`, `toggleMajorIncident`, `toggleWatch`, `addParticipant`, `linkTicket`/`unlinkTicket`, `mergeTicket`, cross-entity linking (`setTicketProblem`, `setTicketChange`, `linkAsset`/`unlinkAsset`, `unlinkRelation`), `setTicketResolution`, `setTicketPending`, `setTicketDueDate`, `forwardTicketExternal`, and work-log entries (`addWorkLog`, `deleteWorkLog`). Key components: `ticket-form`, `ticket-properties` (staged edits incl. type + due date), `ticket-actions`, `comment-composer`, `work-log`, `resolution-dialog`, `pending-reason-dialog`, `due-date-picker`, `sla-badge`, `form-answers`, `macro-picker` (apply a canned macro in one click), plus the reusable `link-picker` (attach problems/changes/assets) and `saved-views-bar`.
+
+**Cross-field search & CSV export:** the tickets list uses `lib/search.ts` (`ticketSearchWhere`/`applyTicketSearch`) for a free-text `q` that spans title, description, comment bodies, requester name/email, and custom-field values (plus a bare-number match on the ticket id) — SQLite-portable, ANDed onto the existing filters. The same helper backs the global `/api/search` route. An **Export CSV** button on the list (and dashboard) hits `GET /api/export?type=tickets` (AGENT+), built on the shared `lib/csv.ts` (`toCsv`/`csvResponse`).
 
 **Saved views:** `/tickets` carries a searchable list of saved filter sets (`SavedView`) — apply/save/delete named filters, personal or (MANAGER+) shared with a team. Actions in `lib/actions/saved-views.ts`.
 
@@ -103,8 +105,10 @@ Includes a built-in approval workflow.
 | | |
 | --- | --- |
 | Routes | `app/(console)/changes/page.tsx`, `[id]/page.tsx`, `new/page.tsx` |
-| Actions | `lib/actions/changes.ts` — `createChange`, `updateChangeField`, `updateChangeDetails`, `addChangeComment`, `submitChangeForApproval`, `addChangeApprover`, `removeChangeApprover`, `decideApproval` |
-| Components | `components/changes/` — `change-form`, `change-properties`, `approval-panel`, `approval-actions`, `add-approver`, `remove-approver`, `submit-for-approval` |
+| Actions | `lib/actions/changes.ts` — `createChange`, `updateChangeField`, `updateChangeDetails`, `addChangeComment`, `submitChangeForApproval`, `addChangeApprover`, `removeChangeApprover`, `decideApproval`, `setCabRule` (CAB quorum/percent rule); `lib/actions/change-assets.ts` — `attachAffectedCi`/`detachAffectedCi` |
+| Components | `components/changes/` — `change-form`, `change-properties`, `approval-panel`, `approval-actions`, `add-approver`, `remove-approver`, `submit-for-approval`; affected-CI panel with automated impact/risk |
+
+**CAB quorum & affected CIs:** a change carries an `approvalRule` (`UNANIMOUS` / `QUORUM` / `PERCENT`) + `approvalThreshold`; `lib/cab.ts` (`evaluateCab`) tallies seated approvals against the rule and reports whether the board is satisfied, and `setCabRule` (MANAGER+) can lower the bar mid-flight. The affected-CI panel attaches `ChangeAsset` rows and surfaces blast-radius impact from `lib/cmdb-graph.ts` (`computeImpact`).
 
 ### Approvals
 A cross-cutting inbox for the current user's pending approvals (currently backed by change approvals).
@@ -112,8 +116,10 @@ A cross-cutting inbox for the current user's pending approvals (currently backed
 | | |
 | --- | --- |
 | Route | `app/(console)/approvals/page.tsx` (list only — no detail/new) |
-| Actions | `lib/actions/approvals.ts` — `decideApproval` |
+| Actions | `lib/actions/approvals.ts` — `decideApproval` (advances multi-stage catalog approvals), `seatCatalogStage`/`seatCatalogApprovalStages` (seat the ordered stages), plus the generic ad-hoc `requestApproval`/`decideEntityApproval`/`cancelApproval` |
 | Components | `components/approvals/approval-decision` |
+
+**Multi-stage / group catalog approvals:** a `CatalogItem` can define ordered `approvalStages` (each an approver *or* a group) via `lib/actions/catalog-admin.ts` → `updateApprovalStages` (editor UI in the catalog admin page). New requests seat stage 0; approving a stage advances to the next (`seatCatalogStage`), and a rejected/cancelled request can be re-raised with the saved answers via `lib/actions/catalog.ts` → `reRequestCatalogItem`. The portal shows a stage-progress timeline.
 
 ---
 
@@ -134,7 +140,7 @@ The requestable-item catalog editor (MANAGER+; `requireRole("MANAGER")`). List-s
 | | |
 | --- | --- |
 | Route | `app/(console)/catalog/page.tsx` |
-| Actions | `lib/actions/catalog-admin.ts` — `createCatalogItem`, `updateCatalogItem`, `toggleCatalogPublished`, `deleteCatalogItem` |
+| Actions | `lib/actions/catalog-admin.ts` — `createCatalogItem`, `updateCatalogItem`, `toggleCatalogPublished`, `deleteCatalogItem`, `updateApprovalStages` (ordered multi-stage / group approvals) |
 | Components | `components/catalog/` — `catalog-editor`, `catalog-browser`, `catalog-icon`, `publish-toggle` |
 
 Catalog request forms are defined via `lib/service-forms.ts` (`parseFormSchema`). The requester-facing catalog lives in the portal (below); `lib/actions/catalog.ts` (`createCatalogRequest`) is the request-submission action shared with the portal.
@@ -145,7 +151,9 @@ Catalog request forms are defined via `lib/service-forms.ts` (`parseFormSchema`)
 | --- | --- |
 | Routes | `app/(console)/assets/page.tsx`, `[id]/page.tsx`, `new/page.tsx` |
 | Actions | `lib/actions/assets.ts` — `createAsset`, `updateAssetField`, `updateAsset` |
-| Components | `components/assets/` — `asset-form`, `asset-properties`, `asset-edit-dialog` |
+| Components | `components/assets/` — `asset-form`, `asset-properties`, `asset-edit-dialog`, `impact-graph` (blast-radius panel) |
+
+**Impact analysis:** `lib/cmdb-graph.ts` (`computeImpact`) walks `AssetRelation` edges from a root CI (up/downstream, depth-bounded) to compute a blast radius; the asset detail page renders it via `impact-graph`, and Changes reuse it for affected-CI impact/risk.
 
 ### Locations
 Created/edited via dialog (no `new/` route).
@@ -207,7 +215,7 @@ Customizable widget dashboards on the home page (`/`). Every user gets a persona
 | Engine / types | `lib/dashboard/compute.ts` (server metric engine), `lib/dashboard/types.ts` (`Widget`, `DEFAULT_LAYOUT`) |
 | Components | `dashboard-picker`, `dashboard-grid-view`, `dashboard-canvas` (editor), `widget-card`, `widget-config-dialog`; charts in `components/charts` |
 
-Widget types: **stat**, **breakdown** (bar or donut; group by priority/status/type/assignee/team/category/service/source/impact/urgency), **volume** trend, **SLA & MTTR** gauge, **aging**, and **ticket list**. Each widget carries its own filters and an optional accent colour; stat widgets support value **thresholds** (e.g. `< 15 → red`) that tint the whole card. Stat/SLA cards and every breakdown segment drill into the matching `/tickets` filter URL.
+Widget types: **stat**, **breakdown** (bar or donut; group by priority/status/type/assignee/team/category/service/source/impact/urgency), **volume** trend, **SLA & MTTR** gauge, **aging**, **CSAT** (average survey rating + response count), and **ticket list**. Each widget carries its own filters and an optional accent colour; stat widgets support value **thresholds** (e.g. `< 15 → red`) that tint the whole card. Stat/SLA cards and every breakdown segment drill into the matching `/tickets` filter URL.
 
 ---
 
@@ -243,7 +251,19 @@ A hub page (`app/(console)/settings/page.tsx`, MANAGER+) linking to sub-pages:
 | --- | --- | --- | --- |
 | API tokens | `settings/api/page.tsx` | Create/revoke API tokens | `lib/actions/tokens.ts` (`createApiToken`, `revokeApiToken`); `components/settings/token-manager` |
 | Mail | `settings/mail/page.tsx` | SMTP status + mail queue (`lib/mail.ts`, `smtpConfigured`) | Read-only view of the mail log |
-| SLA | `settings/sla/page.tsx` | Manage SLA policies | `lib/actions/sla-admin.ts` (`createSla`, `updateSla`, `toggleSla`, `deleteSla`); `components/settings/sla-manager` |
+| SLA | `settings/sla/page.tsx` | Tabbed: **SLAs**, **Calendars** (business hours), **Escalation** (staged policies) | `lib/actions/sla-admin.ts` (SLA CRUD `createSla`/`updateSla`/`toggleSla`/`deleteSla`; calendar CRUD `createCalendar`/`updateCalendar`/`deleteCalendar`/`addHoliday`/`deleteHoliday`; policy CRUD `createPolicy`/`updatePolicy`/`deletePolicy`/`addStep`/`deleteStep`); `components/settings/sla-manager`, `calendar-manager`, `escalation-manager`; tabs in `settings/sla/tabs.tsx` |
+| Macros | `settings/macros/page.tsx` (MANAGER+) | Manage canned-response macros (ordered ticket actions) | `lib/actions/macros.ts` (`createMacro`, `updateMacro`, `deleteMacro`, `applyMacro`) |
+
+**Business-hours SLA & escalation:** when an `SLA` references a `BusinessCalendar`, deadlines are computed in working time (`lib/business-hours.ts` `elapsedBusinessMs`/`addBusinessMs`, wired through `lib/sla.ts`; wall-clock when no calendar is set). `lib/sla-escalation.ts` (`runSlaEscalation`, swept by the scheduler) fires each `EscalationStep` (`NOTIFY`/`REASSIGN`/`BUMP_PRIORITY`) at its `thresholdPercent`, durably at-most-once, and handles first-response breach.
+
+### Audit Log
+Read-only viewer over the existing `AuditLog` model, ADMIN-only (also gated in `lib/route-guard.ts`).
+
+| | |
+| --- | --- |
+| Route | `app/(console)/audit/page.tsx` (list only) |
+| Actions | `lib/actions/audit-log.ts` — `queryAuditLog` (paginated, filter by user/entity/action/date-range/free-text) + `fetchAuditLogForExport` (CSV) |
+| Components | `app/(console)/audit/audit-toolbar.tsx` — filters + **Export CSV** button (`GET /api/export?type=audit`, ADMIN) |
 
 See [configuration.md](./configuration.md) for the environment/config side of Mail, SLA, and tokens.
 
@@ -266,7 +286,16 @@ Global command palette (`Cmd/Ctrl+K` or `/`), not a route.
 | | |
 | --- | --- |
 | Component | `components/command-menu.tsx` (mounted in the console layout) |
-| Backend | `app/api/search/route.ts` — a Node route handler that fans out across tickets, problems, changes, assets, people, and services, returning grouped `{ group, href, title, sub }` results. Auth-gated via `getSessionUser`. |
+| Backend | `app/api/search/route.ts` — a Node route handler that fans out across tickets, problems, changes, assets, people, and services, returning grouped `{ group, href, title, sub }` results. Auth-gated via `getSessionUser`. Ticket matching reuses the shared cross-field helper in `lib/search.ts` (`ticketSearchWhere`). |
+
+### CSAT surveys
+A post-resolution satisfaction survey. On a ticket's resolution, `lib/actions/tickets.ts` mints a `SurveyResponse` row and the resolution email ([`lib/email-templates.ts`](../lib/email-templates.ts)) carries a token link. The rating page is **public and unauthenticated** (the token is the credential) — `proxy.ts` whitelists `/survey`.
+
+| | |
+| --- | --- |
+| Public page | `app/survey/[token]/page.tsx` + `survey-form.tsx` (whitelisted in `proxy.ts`) |
+| Actions | `lib/actions/survey.ts` — `ensureSurvey`, `surveyUrl` (builds the absolute link from `APP_URL`), `getSurveyByToken`, `submitSurvey` (one-time, gated by `respondedAt`) |
+| Dashboard | the **csat** widget (`lib/dashboard/types.ts` + `compute.ts` + `components/dashboard/widget-card.tsx`) reports average rating + response count |
 
 ### Shared building blocks
 Reused across every module, worth knowing before building UI:

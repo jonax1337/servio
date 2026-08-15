@@ -70,10 +70,19 @@ Deep dive → [docs/ai.md](docs/ai.md)
 
 ## Features
 
-- **Service desk** — incidents & requests with priority, impact/urgency, **SLA targets with
-  escalation**, admin-configurable **workflow governance** (status-transition rules), inline-editable
-  properties (type is switchable, its reference number stays stable), cross-entity linking to
-  problems/changes/assets, and a threaded activity log with internal notes.
+- **Service desk** — incidents & requests with priority, impact/urgency, **business-hours SLA targets
+  with tiered escalation** (working-hours calendars, holidays, and staged notify/reassign/bump policies),
+  admin-configurable **workflow governance** (status-transition rules), inline-editable properties (type
+  is switchable, its reference number stays stable), cross-entity linking to problems/changes/assets, and
+  a threaded activity log with internal notes.
+- **Agent macros** — reusable canned responses / one-click bundles of ticket actions, personal or
+  team-shared, applied from the ticket detail (transitions & RBAC re-validated on apply).
+- **Cross-field search & CSV export** — free-text ticket search spanning title, description, comments,
+  requester, and custom fields; export the ticket list (or, for admins, the audit log) to CSV.
+- **CSAT surveys** — a public, one-time satisfaction rating minted on resolution and linked from the
+  resolution email, with an average-score dashboard widget.
+- **Admin audit log** — an ADMIN-only viewer over every recorded action, with user/entity/action/date
+  filters and CSV export.
 - **Automations** — condition→action rules on ticket create/update and on SLA at-risk/breach
   (assign, set fields, escalate, notify, webhook, declare a major incident…).
 - **Customizable dashboards** — a drag-and-drop, resizable widget grid: stats, bar/donut
@@ -81,10 +90,12 @@ Deep dive → [docs/ai.md](docs/ai.md)
   **thresholds** (`< 15 → red`), each drilling into the matching ticket list. Personal + shared boards.
 - **Saved views** — save any set of ticket filters as a named, searchable view (personal or team).
 - **Problem & change management** — root-cause / known-error tracking; normal/standard/emergency
-  changes with a **Change Advisory Board (CAB)** approval flow, implementation & rollback plans,
-  and affected CIs.
-- **CMDB / Assets** — typed configuration items with a **dependency graph**, **locations**, and linked tickets.
-- **Service catalog** — requestable services with live status (operational / degraded / outage) and SLAs.
+  changes with a **Change Advisory Board (CAB)** approval flow (**unanimous, quorum, or percentage**
+  approval rules), implementation & rollback plans, and affected CIs with automated impact/risk.
+- **CMDB / Assets** — typed configuration items with a **dependency graph**, **blast-radius impact
+  analysis**, **locations**, and linked tickets.
+- **Service catalog** — requestable services with live status (operational / degraded / outage) and SLAs,
+  plus **multi-stage / group approval** workflows and re-request after rejection.
 - **Knowledge base** — published how-to / troubleshooting articles with internal vs. public visibility,
   surfaced in the console, the portal, and Sable's search.
 - **Mail engine** — a real two-way email bridge: outbound SMTP notifications and **inbound IMAP**

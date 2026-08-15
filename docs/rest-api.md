@@ -47,9 +47,10 @@ Under the hood ([`createApiToken`](../lib/actions/tokens.ts)):
 
 [`authenticateApi`](../lib/api.ts) parses `Authorization: Bearer <token>`, then:
 
-1. Looks up non-revoked tokens whose `prefix` equals the first 18 chars of the
-   presented token (fast path). If none match, it falls back to scanning all
-   non-revoked tokens (so tokens stored with a different prefix length still work).
+1. Looks up the non-revoked token whose `prefix` equals the first 18 chars of the
+   presented token. On a prefix miss it **fails immediately** — a constant-work
+   `bcrypt.compare` against a dummy hash keeps timing uniform, and it no longer
+   scans every token (that O(N) bcrypt fallback was removed to prevent CPU-DoS).
 2. Skips any token past its `expiresAt`.
 3. Confirms the candidate with `bcrypt.compare(raw, tokenHash)`.
 4. Loads the owning user and **rejects the request if the user is missing or
@@ -377,6 +378,7 @@ versioned or guaranteed stable:
 | Route | Purpose | File |
 | --- | --- | --- |
 | `GET /api/search?q=…` | Global spotlight search across tickets, problems, changes, assets, people, services | [`app/api/search/route.ts`](../app/api/search/route.ts) |
+| `GET /api/export?type=…` | CSV export. `type=tickets` (AGENT+) exports the ticket list; `type=audit` (ADMIN, honours the viewer's filters) exports the audit log. Returns a `text/csv` download. | [`app/api/export/route.ts`](../app/api/export/route.ts) |
 | `POST /api/files/upload` | Attachment upload | [`app/api/files/upload/route.ts`](../app/api/files/upload/route.ts) |
 | `GET /api/files/{id}` | Attachment download | [`app/api/files/[id]/route.ts`](../app/api/files/[id]/route.ts) |
 | `POST /api/assistant/chat` | Console **Sable** streaming chat turn (`AGENT`+). Consumes the assistant-ui / `useChat` `messages[]` body (plus `conversationId` and optional `context`), rebuilds history server-side from the DB, and streams the reply as an AI SDK UI message stream (`toUIMessageStreamResponse`; the `claude-code` provider is buffered into one uniform stream). `propose_*` tool calls ride back as message metadata for the approve-first cards. | [`app/api/assistant/chat/route.ts`](../app/api/assistant/chat/route.ts) |
