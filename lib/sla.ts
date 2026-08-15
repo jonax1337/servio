@@ -1,10 +1,22 @@
 import { db } from "@/lib/db";
+import {
+  addBusinessMs,
+  elapsedBusinessMs,
+  isAlwaysOpen,
+  type BusinessCalendarLike,
+} from "@/lib/business-hours";
 
 // ---------------------------------------------------------------------------
 // SLA clock. Deadlines are stored as absolute timestamps on the ticket and
 // shifted forward whenever the ticket is paused (PENDING/ON_HOLD), so elapsed
-// paused time never counts against the SLA. Business-hours calendars are a
-// later refinement — today the clock runs on wall-clock time.
+// paused time never counts against the SLA.
+//
+// Business-hours calendars: when an SLA carries a `businessCalendarId`, the
+// response/resolve deadlines are computed by ADDING the target duration in
+// BUSINESS time (see lib/business-hours.ts) instead of wall-clock, and the
+// live "at-risk"/"breached" snapshot measures elapsed BUSINESS time against the
+// business budget. Without a calendar the original 24/7 wall-clock path runs
+// unchanged.
 // ---------------------------------------------------------------------------
 
 export type SlaState = "ON_TRACK" | "AT_RISK" | "BREACHED" | "MET" | "PAUSED" | "NONE";
@@ -35,14 +47,54 @@ export async function resolveSla(input: SlaInput) {
 }
 
 /**
+ * Load a business calendar (+holidays) by id, returned in the shape the pure
+ * business-hours helpers expect. Returns null when the id is missing, unknown,
+ * or the schedule is effectively 24/7 (so callers transparently fall back to
+ * the wall-clock path). Kept internal to this module — the only DB access the
+ * business-hours logic needs.
+ */
+export async function loadBusinessCalendar(
+  businessCalendarId: string | null | undefined,
+): Promise<BusinessCalendarLike | null> {
+  if (!businessCalendarId) return null;
+  const cal = await db.businessCalendar.findUnique({
+    where: { id: businessCalendarId },
+    select: { timezone: true, weeklyHours: true, holidays: { select: { date: true } } },
+  });
+  if (!cal) return null;
+  const like: BusinessCalendarLike = {
+    timezone: cal.timezone,
+    weeklyHours: cal.weeklyHours,
+    holidays: cal.holidays,
+  };
+  // A 24/7 schedule is identical to wall-clock — skip the calendar entirely.
+  return isAlwaysOpen(like) ? null : like;
+}
+
+/**
+ * Compute a deadline `mins` minutes after `from`. When a business calendar is
+ * supplied the minutes are counted in BUSINESS time; otherwise wall-clock.
+ */
+export function deadlineFrom(
+  from: Date,
+  mins: number,
+  calendar: BusinessCalendarLike | null,
+): Date {
+  const durationMs = mins * 60_000;
+  return calendar ? addBusinessMs(from, durationMs, calendar) : new Date(from.getTime() + durationMs);
+}
+
+/**
  * Data to spread into `ticket.create` — resolves the SLA and stamps the
- * response/resolve deadlines. Returns `{}` when no SLA applies.
+ * response/resolve deadlines. Returns `{}` when no SLA applies. When the SLA has
+ * a business calendar, deadlines honour working hours + holidays.
  */
 export async function slaCreateData(input: SlaInput, from: Date = new Date()) {
   const sla = await resolveSla(input);
   if (!sla) return {} as Record<string, never>;
-  const responseDueAt = new Date(from.getTime() + sla.responseMins * 60_000);
-  const resolveDueAt = new Date(from.getTime() + sla.resolveMins * 60_000);
+  const calendar = await loadBusinessCalendar(sla.businessCalendarId);
+  const responseDueAt = deadlineFrom(from, sla.responseMins, calendar);
+  const resolveDueAt = deadlineFrom(from, sla.resolveMins, calendar);
   return { slaId: sla.id, responseDueAt, resolveDueAt, dueAt: resolveDueAt };
 }
 
@@ -160,7 +212,14 @@ export function statusChangeData(
 
 const AT_RISK_FRACTION = 0.2; // last 20% of the window → "at risk"
 
-/** Live SLA state for display. `resolvedAt`/status decide terminal states. */
+/**
+ * Live SLA state for display. `resolvedAt`/status decide terminal states.
+ *
+ * `calendar` (optional): when provided (from `loadBusinessCalendar`), the
+ * at-risk/breach thresholds are measured in BUSINESS time — elapsed working ms
+ * since `createdAt` vs the resolve target's business budget — instead of raw
+ * wall-clock. Without it the original 24/7 comparison runs.
+ */
 export function slaSnapshot(
   ticket: ClockTicket & {
     status: string;
@@ -169,6 +228,7 @@ export function slaSnapshot(
     resolveBreached: boolean;
   },
   now: Date = new Date(),
+  calendar: BusinessCalendarLike | null = null,
 ): { state: SlaState; dueAt: Date | null } {
   const dueAt = ticket.resolveDueAt ?? ticket.dueAt;
   if (!dueAt) return { state: "NONE", dueAt: null };
@@ -179,7 +239,21 @@ export function slaSnapshot(
   if (ticket.pendingSince || ["PENDING", "ON_HOLD"].includes(ticket.status)) {
     return { state: "PAUSED", dueAt };
   }
-  // Wall-clock comparison — business-hours calendars are a later refinement.
+
+  if (calendar) {
+    // Business-hours mode: compare elapsed WORKING time to the working budget.
+    // The budget is the working span from createdAt to the (already
+    // business-computed) resolve deadline; elapsed is the working time so far.
+    const budget = elapsedBusinessMs(ticket.createdAt, dueAt, calendar) - ticket.pausedMs;
+    const elapsed = elapsedBusinessMs(ticket.createdAt, now, calendar);
+    if (budget <= 0) return now > dueAt ? { state: "BREACHED", dueAt } : { state: "ON_TRACK", dueAt };
+    if (elapsed >= budget) return { state: "BREACHED", dueAt };
+    const remaining = budget - elapsed;
+    if (remaining <= budget * AT_RISK_FRACTION) return { state: "AT_RISK", dueAt };
+    return { state: "ON_TRACK", dueAt };
+  }
+
+  // Wall-clock comparison (no business calendar).
   if (now > dueAt) return { state: "BREACHED", dueAt };
 
   // Exclude already-banked paused time from the window so "at risk" reflects the
@@ -188,4 +262,28 @@ export function slaSnapshot(
   const remaining = dueAt.getTime() - now.getTime();
   if (total > 0 && remaining <= total * AT_RISK_FRACTION) return { state: "AT_RISK", dueAt };
   return { state: "ON_TRACK", dueAt };
+}
+
+/**
+ * SLA elapsed-percent for escalation: how far through the resolve budget the
+ * ticket is, 0..100+ (can exceed 100 once breached). Business-aware when a
+ * calendar is supplied. Returns null when there's no deadline to measure.
+ */
+export function slaElapsedPercent(
+  ticket: ClockTicket & { createdAt: Date },
+  now: Date = new Date(),
+  calendar: BusinessCalendarLike | null = null,
+): number | null {
+  const dueAt = ticket.resolveDueAt ?? ticket.dueAt;
+  if (!dueAt) return null;
+  if (calendar) {
+    const budget = elapsedBusinessMs(ticket.createdAt, dueAt, calendar) - ticket.pausedMs;
+    if (budget <= 0) return now >= dueAt ? 100 : 0;
+    const elapsed = elapsedBusinessMs(ticket.createdAt, now, calendar);
+    return (elapsed / budget) * 100;
+  }
+  const budget = dueAt.getTime() - ticket.createdAt.getTime() - ticket.pausedMs;
+  if (budget <= 0) return now >= dueAt ? 100 : 0;
+  const elapsed = now.getTime() - ticket.createdAt.getTime() - ticket.pausedMs;
+  return (elapsed / budget) * 100;
 }

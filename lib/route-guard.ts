@@ -38,6 +38,7 @@ export const ROUTE_MIN_ROLE: ReadonlyArray<{ prefix: string; minRole: ConsoleRol
   { prefix: "/syncs", minRole: "MANAGER" },
   { prefix: "/settings", minRole: "MANAGER" },
   { prefix: "/sla", minRole: "MANAGER" },
+  { prefix: "/audit", minRole: "ADMIN" },
 ];
 
 /**

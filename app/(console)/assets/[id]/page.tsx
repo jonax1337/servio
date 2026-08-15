@@ -13,6 +13,8 @@ import { DeleteAssetButton } from "@/components/assets/delete-asset-button";
 import { LinkPicker } from "@/components/link-picker";
 import { addAssetRelation, deleteAssetRelation } from "@/lib/actions/assets";
 import { EntityHistory, HistoryHeading } from "@/components/history/entity-history";
+import { ImpactGraph } from "@/components/assets/impact-graph";
+import { computeImpact } from "@/lib/cmdb-graph";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   ASSET_TYPE_META,
@@ -71,6 +73,8 @@ export default async function AssetDetailPage({
     }),
   ]);
   if (!asset) notFound();
+
+  const impact = await computeImpact(asset.id, { direction: "both" });
 
   const isAgentUser = !!me && isAgent(me.role as Role);
   const relationTargetOpts = otherAssets.map((a) => ({ value: a.id, label: a.assetTag ? `${a.name} · ${a.assetTag}` : a.name }));
@@ -227,6 +231,9 @@ export default async function AssetDetailPage({
               </div>
             )}
           </div>
+
+          {/* Impact / blast radius */}
+          <ImpactGraph impact={impact} />
 
           {/* Linked tickets */}
           <div className="mt-8">

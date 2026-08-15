@@ -18,6 +18,8 @@ import {
   tplTicketReceived, tplTicketAssigned, tplTicketReply, tplTicketResolved, tplTicketParticipant,
   quoteHtml, textToHtmlParagraphs, signatureHtml, renderEmailHtml, renderThreadHistory,
 } from "@/lib/mail";
+import { renderTicketResolvedEmail } from "@/lib/email-templates";
+import { ensureSurvey, surveyUrl } from "@/lib/actions/survey";
 import { sanitizeCommentHtml, htmlToText, parseMentionIds } from "@/lib/markdown";
 import { format } from "date-fns";
 import { runAutomations } from "@/lib/automations";
@@ -823,8 +825,24 @@ export async function setTicketResolution(formData: FormData) {
   });
   await writeAudit({ userId: me.id, action: "UPDATE", entity: "Ticket", entityId: id, summary: `${verb} ticket` });
 
-  if (status === "RESOLVED" && ticket.requester?.email) {
-    await sendMail({ to: ticket.requester.email, toName: ticket.requester.name, entity: "Ticket", entityId: id, ticketId: id, ...(await tplTicketResolved(ticket, await mailBrand(), { requesterName: ticket.requester.name ?? "" })) });
+  if (status === "RESOLVED") {
+    // CSAT: mint (or reuse) a survey token for this ticket and, if we're emailing
+    // the requester, ride the "Rate our support" link along with the resolution.
+    const surveyToken = await ensureSurvey(id);
+    if (ticket.requester?.email) {
+      const link = surveyToken ? await surveyUrl(surveyToken) : null;
+      await sendMail({
+        to: ticket.requester.email, toName: ticket.requester.name,
+        entity: "Ticket", entityId: id, ticketId: id,
+        ...(await renderTicketResolvedEmail({
+          brand: await mailBrand(),
+          ref: ticketRef(ticket.id, ticket.type),
+          title: ticket.title,
+          requesterName: ticket.requester.name ?? "",
+          surveyUrl: link,
+        })),
+      });
+    }
   }
   await runAutomations("TICKET_UPDATED", id);
   revalidatePath(`/tickets/${id}`);

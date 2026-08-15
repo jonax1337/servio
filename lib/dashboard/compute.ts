@@ -8,6 +8,7 @@ import {
   TICKET_TYPE_META,
   LEVEL_META,
   SOURCE_META,
+  SURVEY_RATING_MAX,
 } from "@/lib/constants";
 import type { Widget, Computed, TicketFilters, BreakdownField, Threshold, Tone } from "@/lib/dashboard/types";
 
@@ -250,6 +251,30 @@ async function computeSla(filters: TicketFilters): Promise<Computed> {
   return { kind: "sla", pct, mttrHours, resolved, href };
 }
 
+/**
+ * CSAT: average rating (1..MAX) over surveys answered in the window. We key off
+ * the survey's respondedAt (when the customer rated) rather than the ticket's
+ * resolvedAt, so a late response still counts. The widget's ticket filters still
+ * apply (via the survey→ticket relation) so a per-group/service CSAT works too.
+ */
+async function computeCsat(filters: TicketFilters): Promise<Computed> {
+  const days = Math.min(365, Math.max(7, Number(filters.days) || 30));
+  const windowStart = new Date(Date.now() - days * 86400000);
+  const base = buildTicketWhere({ ...filters, status: undefined });
+  const agg = await db.surveyResponse.aggregate({
+    where: {
+      respondedAt: { gte: windowStart },
+      rating: { not: null },
+      ticket: base,
+    },
+    _avg: { rating: true },
+    _count: { rating: true },
+  });
+  const count = agg._count.rating;
+  const avg = count > 0 && agg._avg.rating != null ? Math.round(agg._avg.rating * 10) / 10 : null;
+  return { kind: "csat", avg, count, max: SURVEY_RATING_MAX };
+}
+
 async function computeAging(where: Prisma.TicketWhereInput): Promise<Computed> {
   const rows = await db.ticket.findMany({ where, select: { createdAt: true } });
   const now = Date.now();
@@ -316,6 +341,8 @@ async function computeWidgetUncached(widget: Widget): Promise<Computed> {
       return computeVolume(widget, widget.filters);
     case "sla":
       return computeSla(widget.filters);
+    case "csat":
+      return computeCsat(widget.filters);
     case "aging":
       return computeAging(where);
     case "list": {

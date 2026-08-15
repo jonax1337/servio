@@ -38,7 +38,7 @@ async function requireAgent() {
   return me;
 }
 
-const WIDGET_TYPES: WidgetType[] = ["stat", "breakdown", "volume", "sla", "aging", "list"];
+const WIDGET_TYPES: WidgetType[] = ["stat", "breakdown", "volume", "sla", "csat", "aging", "list"];
 
 /** Validate + normalise a widget layout coming from the client (never trusted). */
 function sanitizeLayout(raw: string): string {

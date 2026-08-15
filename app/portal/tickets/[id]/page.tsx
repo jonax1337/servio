@@ -1,9 +1,10 @@
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
-import { ArrowLeft, MessagesSquare } from "lucide-react";
+import { ArrowLeft, MessagesSquare, RotateCcw } from "lucide-react";
 import { db } from "@/lib/db";
 import { requireUser } from "@/lib/session";
 import { LinkButton } from "@/components/link-button";
+import { Button } from "@/components/ui/button";
 import { StatusBadge } from "@/components/status-badge";
 import { PortalComment } from "@/components/portal/portal-comment";
 import { UserAvatar } from "@/components/user-avatar";
@@ -11,6 +12,9 @@ import { AttachmentsCard } from "@/components/attachments/attachments-card";
 import { sanitizeCommentHtml } from "@/lib/markdown";
 import { iconForMime, formatBytes } from "@/lib/attachments-ui";
 import { FormAnswers } from "@/components/tickets/form-answers";
+import { effectiveApprovalStages } from "@/lib/service-forms";
+import { reRequestCatalogItem } from "@/lib/actions/catalog";
+import { ApprovalProgress } from "../approval-progress";
 import {
   TICKET_STATUS_META, PRIORITY_META, TICKET_TYPE_META, ticketRef,
 } from "@/lib/constants";
@@ -43,6 +47,7 @@ export default async function PortalTicketDetail({
       assignee: true,
       service: true,
       catalogItem: true,
+      approvals: { orderBy: { stage: "asc" }, include: { approver: { select: { name: true, email: true } } } },
       // only public (non-internal) comments are visible to the requester
       comments: { where: { isInternal: false }, include: { author: true, attachments: { orderBy: { createdAt: "asc" } } }, orderBy: { createdAt: "asc" } },
       attachments: { orderBy: { createdAt: "desc" } },
@@ -51,6 +56,13 @@ export default async function PortalTicketDetail({
   if (!ticket) notFound();
 
   const isClosed = ticket.status === "CLOSED" || ticket.status === "CANCELLED";
+
+  // Multi-stage approval progress (catalog requests only). We show the ordered
+  // stages, which one is live, and any decisions so far. Re-request is offered
+  // when a catalog request was declined so it isn't a dead end.
+  const stages = ticket.catalogItem ? effectiveApprovalStages(ticket.catalogItem) : [];
+  const isCatalogRequest = !!ticket.catalogItemId;
+  const canReRequest = isCatalogRequest && ticket.status === "CANCELLED";
 
   return (
     <div className="mx-auto max-w-3xl">
@@ -97,6 +109,36 @@ export default async function PortalTicketDetail({
           )}
         </div>
       </div>
+
+      {stages.length > 0 && (ticket.approvalState === "PENDING" || ticket.approvalState === "APPROVED" || ticket.approvalState === "REJECTED") ? (
+        <ApprovalProgress
+          className="mt-6"
+          state={ticket.approvalState}
+          stages={stages.map((s, i) => {
+            const seated = ticket.approvals.find((a) => a.stage === i);
+            return {
+              index: i,
+              kind: (s.groupId ? "group" : "user") as "group" | "user",
+              status: (seated?.status ?? "PENDING") as "PENDING" | "APPROVED" | "REJECTED",
+              approverName: seated?.approver?.name ?? seated?.approver?.email ?? null,
+              decidedAt: seated?.decidedAt ?? null,
+            };
+          })}
+        />
+      ) : null}
+
+      {canReRequest ? (
+        <div className="mt-6 flex flex-col items-start gap-3 rounded-2xl border border-amber-500/30 bg-amber-500/5 p-5 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p className="font-medium">This request was declined</p>
+            <p className="text-sm text-muted-foreground">You can resubmit it with the same details to try again.</p>
+          </div>
+          <form action={reRequestCatalogItem}>
+            <input type="hidden" name="ticketId" value={ticket.id} />
+            <Button type="submit" className="shrink-0"><RotateCcw className="size-4" /> Re-request</Button>
+          </form>
+        </div>
+      ) : null}
 
       {/* Description */}
       <div className="mt-6 rounded-2xl border bg-card p-6">

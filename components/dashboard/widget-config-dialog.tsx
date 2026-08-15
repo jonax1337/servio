@@ -43,6 +43,7 @@ export type EditorOptions = {
 const DEFAULT_SIZE: Record<WidgetType, { w: number; h: number }> = {
   stat: { w: 3, h: 1 },
   sla: { w: 4, h: 1 },
+  csat: { w: 3, h: 1 },
   breakdown: { w: 4, h: 2 },
   volume: { w: 8, h: 2 },
   aging: { w: 6, h: 2 },

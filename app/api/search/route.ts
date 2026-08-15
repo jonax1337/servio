@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getSessionUser } from "@/lib/session";
 import { ticketRef, problemRef, changeRef } from "@/lib/constants";
+import { ticketSearchWhere } from "@/lib/search";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -16,8 +17,12 @@ export async function GET(req: Request) {
   const idNum = parseInt(q.replace(/\D/g, ""), 10);
   const byId = Number.isFinite(idNum) ? [{ id: idNum }] : [];
 
+  // Tickets match across title/description/comments/requester/custom-fields
+  // (see lib/search.ts), while the lighter entities stay title-only.
+  const ticketWhere = ticketSearchWhere(q) ?? { OR: [{ title: { contains: q } }, ...byId] };
+
   const [tickets, problems, changes, assets, people, services] = await Promise.all([
-    db.ticket.findMany({ where: { OR: [{ title: { contains: q } }, ...byId] }, take: 6, orderBy: { updatedAt: "desc" }, select: { id: true, title: true, prefix: true } }),
+    db.ticket.findMany({ where: ticketWhere, take: 6, orderBy: { updatedAt: "desc" }, select: { id: true, title: true, prefix: true } }),
     db.problem.findMany({ where: { OR: [{ title: { contains: q } }, ...byId] }, take: 4, select: { id: true, title: true } }),
     db.change.findMany({ where: { OR: [{ title: { contains: q } }, ...byId] }, take: 4, select: { id: true, title: true } }),
     db.asset.findMany({ where: { OR: [{ name: { contains: q } }, { assetTag: { contains: q } }, { serial: { contains: q } }] }, take: 5, select: { id: true, name: true, assetTag: true } }),

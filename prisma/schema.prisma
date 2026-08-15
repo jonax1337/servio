@@ -72,6 +72,7 @@ model User {
   aiProjects         AiProject[]             @relation("AiProjectOwner")
   savedViews         SavedView[]             @relation("SavedViewOwner")
   dashboards         Dashboard[]             @relation("DashboardOwner")
+  macros             Macro[]                 @relation("MacroOwner")
   articles           Article[]
   articlesApproved   Article[]               @relation("ArticleApprovedBy")
   changesCreated     Change[]                @relation("ChangeCreatedBy")
@@ -399,8 +400,73 @@ model SLA {
   resolveMins  Int     @default(480)
   isActive     Boolean @default(true)
 
-  services Service[]
-  tickets  Ticket[]
+  businessCalendarId String? // optional working-hours calendar the SLA clock honours (null = 24/7)
+  escalationPolicyId String? // optional escalation policy fired as the clock elapses
+
+  businessCalendar BusinessCalendar? @relation(fields: [businessCalendarId], references: [id])
+  escalationPolicy EscalationPolicy? @relation(fields: [escalationPolicyId], references: [id])
+  services         Service[]
+  tickets          Ticket[]
+
+  @@index([businessCalendarId])
+  @@index([escalationPolicyId])
+}
+
+// ---------------------------------------------------------------------------
+// Business calendars & escalation (SLA working hours + tiered escalation)
+// ---------------------------------------------------------------------------
+
+/// A named working-hours calendar the SLA clock honours. `weeklyHours` is a JSON
+/// object of per-weekday open/close windows (e.g. {"mon":[["09:00","17:00"]], …}).
+model BusinessCalendar {
+  id          String   @id @default(cuid())
+  name        String
+  timezone    String   @default("UTC")
+  weeklyHours String   @default("{}") // JSON: per-weekday open/close windows
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  holidays Holiday[]
+  slas     SLA[]
+}
+
+/// A single non-working day on a BusinessCalendar (the SLA clock pauses on it).
+model Holiday {
+  id         String   @id @default(cuid())
+  calendarId String
+  date       DateTime
+  name       String
+
+  calendar BusinessCalendar @relation(fields: [calendarId], references: [id], onDelete: Cascade)
+
+  @@index([calendarId])
+}
+
+/// A named, ordered set of escalation steps applied as an SLA clock elapses.
+model EscalationPolicy {
+  id        String   @id @default(cuid())
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  steps EscalationStep[]
+  slas  SLA[]
+}
+
+/// One escalation step: at `thresholdPercent` of SLA elapsed, run `action`.
+model EscalationStep {
+  id              String  @id @default(cuid())
+  policyId        String
+  order           Int     @default(0)
+  thresholdPercent Int    @default(100) // % of SLA elapsed that triggers it (e.g. 50/75/100)
+  action          String // NOTIFY | REASSIGN | BUMP_PRIORITY
+  targetGroupId   String? // group to reassign/notify
+  targetUserId    String? // user to reassign/notify
+  bumpToPriority  String? // priority to bump to (for BUMP_PRIORITY)
+
+  policy EscalationPolicy @relation(fields: [policyId], references: [id], onDelete: Cascade)
+
+  @@index([policyId])
 }
 
 model Service {
@@ -436,6 +502,7 @@ model CatalogItem {
   formSchema       String   @default("[]") // JSON: array of form field definitions
   requiresApproval Boolean  @default(false)
   approverId       String?
+  approvalStages   String?  // JSON: ordered array of stage descriptors {approverId?|groupId?}; approverId is the stage-0 fallback
   estimatedDays    Int?
   isPublished      Boolean  @default(true)
   order            Int      @default(0)
@@ -526,6 +593,7 @@ model Ticket {
   tasks            Task[]
   worklogs         WorkLog[]
   approvals        TicketApproval[]
+  survey           SurveyResponse?
   mergedInto       Ticket?                 @relation("TicketMerge", fields: [mergedIntoId], references: [id])
   mergedTickets    Ticket[]                @relation("TicketMerge")
   linksFrom        TicketLink[]            @relation("LinkSource")
@@ -612,6 +680,7 @@ model TicketApproval {
   ticketId   Int
   approverId String
   status     String    @default("PENDING") // PENDING | APPROVED | REJECTED
+  stage      Int       @default(0) // multi-stage catalog approvals (stage 0 = first)
   comment    String?
   decidedAt  DateTime?
   createdAt  DateTime  @default(now())
@@ -620,6 +689,38 @@ model TicketApproval {
   approver User   @relation("TicketApprover", fields: [approverId], references: [id])
 
   @@index([approverId, status])
+}
+
+/// A post-resolution CSAT survey for a ticket. One per ticket; `token` gates the
+/// public response link. `rating` is on the SURVEY_RATING_MIN..MAX scale.
+model SurveyResponse {
+  id          String    @id @default(cuid())
+  ticketId    Int       @unique
+  token       String    @unique
+  rating      Int? // SURVEY_RATING_MIN..SURVEY_RATING_MAX
+  comment     String?
+  sentAt      DateTime  @default(now())
+  respondedAt DateTime?
+
+  ticket Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+}
+
+/// A reusable set of ordered ticket actions an agent can apply in one click.
+/// `actions` is a JSON array of ordered {type,value} steps. Personal by default;
+/// `isShared` exposes it to the whole team.
+model Macro {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  actions     String   @default("[]") // JSON: ordered array of {type,value}
+  ownerId     String?
+  isShared    Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  owner User? @relation("MacroOwner", fields: [ownerId], references: [id])
+
+  @@index([ownerId])
 }
 
 // Internal followers: agents who "watch" a ticket for in-app notifications.
@@ -728,6 +829,8 @@ model Change {
   reason             String?
   implementationPlan String?
   rollbackPlan       String?
+  approvalRule       String    @default("UNANIMOUS") // UNANIMOUS | QUORUM | PERCENT — how CAB approvals resolve
+  approvalThreshold  Int? // N for QUORUM, or percent for PERCENT
   customFields       String    @default("{}") // JSON object of custom-field key -> value (CustomFieldDef, entityType=CHANGE)
   assigneeId         String?
   createdById        String?

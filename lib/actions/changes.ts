@@ -9,7 +9,7 @@ import { writeAudit, notify } from "@/lib/audit";
 import { canTransition, CHANGE_TRANSITIONS } from "@/lib/transitions";
 import { canTransitionConfigured } from "@/lib/workflow";
 import { isGroupMember } from "@/lib/assignment";
-import { selectApprovers, isEligibleApprover } from "@/lib/cab";
+import { selectApprovers, isEligibleApprover, evaluateCab } from "@/lib/cab";
 import { readRichBody, readRichField } from "@/lib/markdown";
 import {
   changeRef,
@@ -17,6 +17,7 @@ import {
   RISKS,
   PRIORITIES,
   IMPACT_URGENCY,
+  CAB_APPROVAL_RULES,
 } from "@/lib/constants";
 
 const optionalId = z
@@ -184,23 +185,28 @@ export async function decideApproval(formData: FormData) {
     data: { status: decision, comment, decidedAt: new Date() },
   });
 
-  // When every approval is APPROVED, mark the change APPROVED.
-  const approvals = await db.changeApproval.findMany({
-    where: { changeId: approval.changeId },
-    select: { status: true },
-  });
+  // Re-evaluate the board against its configured rule (UNANIMOUS | QUORUM | PERCENT).
+  const [approvals, cfg] = await Promise.all([
+    db.changeApproval.findMany({ where: { changeId: approval.changeId }, select: { status: true } }),
+    db.change.findUnique({ where: { id: approval.changeId }, select: { approvalRule: true, approvalThreshold: true } }),
+  ]);
+  const tally = evaluateCab(approvals.map((a) => a.status), cfg?.approvalRule, cfg?.approvalThreshold);
   // Guard the status write with `status: "APPROVAL"` so a concurrent back-to-DRAFT
   // (which wipes the board) can't be overwritten by a stale APPROVED/REJECTED.
-  if (approvals.length > 0 && approvals.every((a) => a.status === "APPROVED")) {
+  if (tally.satisfied) {
     await db.change.updateMany({
       where: { id: approval.changeId, status: "APPROVAL" },
       data: { status: "APPROVED" },
     });
   } else if (decision === "REJECTED") {
-    await db.change.updateMany({
-      where: { id: approval.changeId, status: "APPROVAL" },
-      data: { status: "REJECTED" },
-    });
+    // A rejection ends the review only when the remaining pending seats can no
+    // longer reach the required approval count (i.e. the rule is now unreachable).
+    if (tally.approved + tally.pending < tally.required) {
+      await db.change.updateMany({
+        where: { id: approval.changeId, status: "APPROVAL" },
+        data: { status: "REJECTED" },
+      });
+    }
   }
 
   await writeAudit({
@@ -311,15 +317,81 @@ export async function removeChangeApprover(formData: FormData) {
 
   await db.changeApproval.delete({ where: { id: approvalId } }).catch(() => {});
 
-  // Removing a row can complete unanimity — recompute, but never auto-approve an
-  // empty board, and guard the status write against a concurrent back-to-DRAFT.
-  const remaining = await db.changeApproval.findMany({ where: { changeId: row.change.id }, select: { status: true } });
-  if (remaining.length > 0 && remaining.every((a) => a.status === "APPROVED")) {
+  // Removing a row can complete the rule (e.g. it drops the seat count under a
+  // QUORUM/PERCENT target) — recompute, but never auto-approve an empty board,
+  // and guard the status write against a concurrent back-to-DRAFT.
+  const [remaining, cfg] = await Promise.all([
+    db.changeApproval.findMany({ where: { changeId: row.change.id }, select: { status: true } }),
+    db.change.findUnique({ where: { id: row.change.id }, select: { approvalRule: true, approvalThreshold: true } }),
+  ]);
+  const tally = evaluateCab(remaining.map((a) => a.status), cfg?.approvalRule, cfg?.approvalThreshold);
+  if (tally.satisfied) {
     await db.change.updateMany({ where: { id: row.change.id, status: "APPROVAL" }, data: { status: "APPROVED" } });
   }
 
   await writeAudit({ userId: me.id, action: "UPDATE", entity: "Change", entityId: row.change.id, summary: "Removed approver" });
   revalidatePath(`/changes/${row.change.id}`);
+  revalidatePath("/approvals");
+}
+
+// ── CAB approval rule (quorum policy) ────────────────────────────────────────
+
+const setRuleSchema = z.object({
+  changeId: z.coerce.number(),
+  rule: z.enum(CAB_APPROVAL_RULES),
+  threshold: z.coerce.number().int().positive().optional(),
+});
+
+/**
+ * Choose the decision rule for a change's CAB. QUORUM needs an approval count,
+ * PERCENT needs a 1–100 percentage; UNANIMOUS ignores the threshold. Manager+
+ * only (never the owner — SoD). Only meaningful while seating the board (DRAFT
+ * before submit, or APPROVAL while the board is live), and re-evaluates whether
+ * the change is now approved when the bar is lowered.
+ */
+export async function setCabRule(formData: FormData) {
+  const me = await getSessionUser();
+  if (!me) return;
+  const parsed = setRuleSchema.safeParse(Object.fromEntries(formData));
+  if (!parsed.success) return;
+  const { changeId, rule } = parsed.data;
+
+  if (!hasRole(me.role as Role, "MANAGER")) return;
+  const change = await db.change.findUnique({
+    where: { id: changeId },
+    select: { status: true, assigneeId: true, createdById: true },
+  });
+  if (!change) return;
+  // SoD: the owner/creator can't set the rule that judges their own change.
+  if (change.assigneeId === me.id || change.createdById === me.id) return;
+  // Only before or during the approval phase — locked once decided.
+  if (change.status !== "DRAFT" && change.status !== "APPROVAL") return;
+
+  // Threshold only applies (and is validated) for QUORUM/PERCENT; PERCENT is 1–100.
+  let threshold: number | null = null;
+  if (rule === "QUORUM") threshold = parsed.data.threshold ?? null;
+  else if (rule === "PERCENT") threshold = Math.min(parsed.data.threshold ?? 100, 100);
+
+  await db.change.update({ where: { id: changeId }, data: { approvalRule: rule, approvalThreshold: threshold } });
+
+  // Lowering the bar (e.g. UNANIMOUS→QUORUM) may already be satisfied by existing
+  // approvals — re-evaluate so the change flips to APPROVED without another click.
+  if (change.status === "APPROVAL") {
+    const rows = await db.changeApproval.findMany({ where: { changeId }, select: { status: true } });
+    const tally = evaluateCab(rows.map((a) => a.status), rule, threshold);
+    if (tally.satisfied) {
+      await db.change.updateMany({ where: { id: changeId, status: "APPROVAL" }, data: { status: "APPROVED" } });
+    }
+  }
+
+  await writeAudit({
+    userId: me.id,
+    action: "UPDATE",
+    entity: "Change",
+    entityId: changeId,
+    summary: `Set CAB rule to ${rule}${threshold != null ? ` (${threshold}${rule === "PERCENT" ? "%" : ""})` : ""}`,
+  });
+  revalidatePath(`/changes/${changeId}`);
   revalidatePath("/approvals");
 }
 

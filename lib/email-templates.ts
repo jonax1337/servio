@@ -24,7 +24,7 @@ export type TemplateKey = (typeof TEMPLATE_KEYS)[number];
 export const TEMPLATE_META: Record<TemplateKey, { label: string; description: string; vars: string[] }> = {
   ticket_received: { label: "Request received", description: "Short confirmation to the requester when a new ticket is created.", vars: ["appName", "ref", "requesterName"] },
   ticket_reply: { label: "Reply to requester", description: "Agent reply: message + signature + quoted trail ({{quote}}).", vars: ["ref", "title", "requesterName", "message", "signature", "quote"] },
-  ticket_resolved: { label: "Ticket resolved", description: "Short note that the ticket was resolved.", vars: ["ref", "title", "requesterName"] },
+  ticket_resolved: { label: "Ticket resolved", description: "Short note that the ticket was resolved, with an optional CSAT survey link ({{survey}}).", vars: ["ref", "title", "requesterName", "survey"] },
   ticket_participant: { label: "Added as participant", description: "When someone is added as a participant / CC'd.", vars: ["ref", "title", "requesterName", "agentName", "message"] },
   ticket_assigned: { label: "Ticket assigned", description: "Internal notice to the assigned agent.", vars: ["ref", "title", "agentName"] },
 };
@@ -47,7 +47,8 @@ export const DEFAULT_TEMPLATES: Record<TemplateKey, { subject: string; bodyHtml:
     subject: "[{{ref}}] Resolved: {{title}}",
     bodyHtml:
       `<p>Hi {{requesterName}},</p>` +
-      `<p>good news — your request <strong>{{ref}}</strong> has been marked as <strong>resolved</strong>. If anything is still open, just reply to this email.</p>`,
+      `<p>good news — your request <strong>{{ref}}</strong> has been marked as <strong>resolved</strong>. If anything is still open, just reply to this email.</p>` +
+      `{{survey}}`,
   },
   ticket_participant: {
     subject: "[{{ref}}] You were added to a ticket",
@@ -64,7 +65,18 @@ export const DEFAULT_TEMPLATES: Record<TemplateKey, { subject: string; bodyHtml:
   },
 };
 
-const HTML_KEYS = new Set(["message", "signature", "quote"]);
+const HTML_KEYS = new Set(["message", "signature", "quote", "survey"]);
+
+/** A small "Rate our support" CTA block for the resolved email (empty string if no link). */
+export function surveyCtaHtml(url?: string | null): string {
+  if (!url) return "";
+  const safe = escapeHtml(url);
+  return (
+    `<p style="margin:16px 0 0;">How did we do? ` +
+    `<a href="${safe}" style="color:#2563eb;text-decoration:underline;">Rate our support</a>` +
+    `</p>`
+  );
+}
 
 function escapeHtml(s: string) {
   return (s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -99,6 +111,30 @@ export async function renderTicketEmail(key: TemplateKey, ctx: RenderCtx) {
   const subject = substitute(tpl.subject, ctx.vars, "text");
   const contentHtml = substitute(tpl.bodyHtml, ctx.vars, "html");
   return { template: key, subject, body: htmlToText(contentHtml), html: renderEmailHtml({ contentHtml }) };
+}
+
+/**
+ * Render the "ticket_resolved" email with an optional CSAT survey link appended.
+ * A thin wrapper over renderTicketEmail that injects the {{survey}} CTA — used by
+ * the resolve hook so the survey link rides along with the resolution notice.
+ */
+export function renderTicketResolvedEmail(ctx: {
+  brand?: MailBrand;
+  ref: string;
+  title: string;
+  requesterName?: string;
+  surveyUrl?: string | null;
+}) {
+  return renderTicketEmail("ticket_resolved", {
+    brand: ctx.brand,
+    vars: {
+      appName: ctx.brand?.appName ?? "Servio",
+      ref: ctx.ref,
+      title: ctx.title,
+      requesterName: ctx.requesterName ?? "",
+      survey: surveyCtaHtml(ctx.surveyUrl),
+    },
+  });
 }
 
 /** Preview render for the settings editor (uses the provided, unsaved body). */

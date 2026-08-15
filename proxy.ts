@@ -5,7 +5,7 @@ import { requiredRoleFor, roleAtLeast } from "@/lib/route-guard";
 
 const { auth } = NextAuth(authConfig);
 
-const PUBLIC_PREFIXES = ["/login", "/api/auth", "/api/v1"];
+const PUBLIC_PREFIXES = ["/login", "/api/auth", "/api/v1", "/survey"];
 
 export default auth((req) => {
   const { nextUrl } = req;

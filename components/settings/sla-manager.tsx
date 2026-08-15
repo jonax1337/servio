@@ -25,7 +25,11 @@ export type SlaRow = {
   responseMins: number;
   resolveMins: number;
   isActive: boolean;
+  businessCalendarId: string | null;
+  escalationPolicyId: string | null;
 };
+
+export type NamedRef = { id: string; name: string };
 
 function Field({ label, error, children, hint }: { label: string; error?: string[]; children: React.ReactNode; hint?: string }) {
   return (
@@ -38,12 +42,14 @@ function Field({ label, error, children, hint }: { label: string; error?: string
   );
 }
 
-function SlaDialog({ sla }: { sla?: SlaRow }) {
+function SlaDialog({ sla, calendars, policies }: { sla?: SlaRow; calendars: NamedRef[]; policies: NamedRef[] }) {
   const editing = !!sla;
   const [open, setOpen] = useState(false);
   const [state, setState] = useState<SlaState>(undefined);
   const [pending, startTransition] = useTransition();
   const [priority, setPriority] = useState(sla?.priority ?? "none");
+  const [calendarId, setCalendarId] = useState(sla?.businessCalendarId ?? "none");
+  const [policyId, setPolicyId] = useState(sla?.escalationPolicyId ?? "none");
   const [isActive, setIsActive] = useState(sla?.isActive ?? true);
   const fe = state?.fieldErrors ?? {};
 
@@ -61,6 +67,14 @@ function SlaDialog({ sla }: { sla?: SlaRow }) {
     { value: "none", label: "Any priority" },
     ...PRIORITIES.map((p) => ({ value: p, label: PRIORITY_META[p].label, tone: PRIORITY_META[p].tone, icon: PRIORITY_META[p].icon })),
   ];
+  const calOpts: ComboOption[] = [
+    { value: "none", label: "24/7 (wall-clock)" },
+    ...calendars.map((c) => ({ value: c.id, label: c.name })),
+  ];
+  const policyOpts: ComboOption[] = [
+    { value: "none", label: "No escalation" },
+    ...policies.map((p) => ({ value: p.id, label: p.name })),
+  ];
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -76,6 +90,8 @@ function SlaDialog({ sla }: { sla?: SlaRow }) {
         <form action={submit} className="grid gap-4">
           {editing ? <input type="hidden" name="id" value={sla.id} /> : null}
           <input type="hidden" name="priority" value={priority} />
+          <input type="hidden" name="businessCalendarId" value={calendarId} />
+          <input type="hidden" name="escalationPolicyId" value={policyId} />
           <input type="hidden" name="isActive" value={String(isActive)} />
 
           {state?.error ? (
@@ -103,6 +119,14 @@ function SlaDialog({ sla }: { sla?: SlaRow }) {
             </Field>
           </div>
 
+          <Field label="Business calendar" hint="When set, the SLA clock only counts working hours (and skips holidays). Otherwise it runs 24/7.">
+            <Combobox options={calOpts} value={calendarId} onChange={setCalendarId} />
+          </Field>
+
+          <Field label="Escalation policy" hint="Optional. Fires tiered notify / reassign / priority-bump steps as the SLA clock elapses.">
+            <Combobox options={policyOpts} value={policyId} onChange={setPolicyId} />
+          </Field>
+
           <label className="flex items-center justify-between rounded-lg border p-3 text-sm">
             <span>Active</span>
             <Switch checked={isActive} onCheckedChange={setIsActive} />
@@ -120,14 +144,24 @@ function SlaDialog({ sla }: { sla?: SlaRow }) {
   );
 }
 
-export function SlaManager({ slas }: { slas: SlaRow[] }) {
+export function SlaManager({
+  slas,
+  calendars,
+  policies,
+}: {
+  slas: SlaRow[];
+  calendars: NamedRef[];
+  policies: NamedRef[];
+}) {
+  const calName = (id: string | null) => calendars.find((c) => c.id === id)?.name;
+  const policyName = (id: string | null) => policies.find((p) => p.id === id)?.name;
   return (
     <div className="grid gap-4">
       <div className="flex items-center justify-between">
         <p className="text-sm text-muted-foreground">
           {slas.length} SLA{slas.length === 1 ? "" : "s"} · a ticket resolves its SLA by explicit assignment, then service, then priority.
         </p>
-        <SlaDialog />
+        <SlaDialog calendars={calendars} policies={policies} />
       </div>
 
       {slas.length === 0 ? (
@@ -157,6 +191,12 @@ export function SlaManager({ slas }: { slas: SlaRow[] }) {
 
               <div className="text-xs text-muted-foreground">
                 Respond <span className="font-medium text-foreground">{formatMinutes(s.responseMins)}</span> · Resolve <span className="font-medium text-foreground">{formatMinutes(s.resolveMins)}</span>
+                {calName(s.businessCalendarId) ? (
+                  <span className="ml-2 rounded-full border px-2 py-0.5">{calName(s.businessCalendarId)}</span>
+                ) : null}
+                {policyName(s.escalationPolicyId) ? (
+                  <span className="ml-1 rounded-full border px-2 py-0.5">↑ {policyName(s.escalationPolicyId)}</span>
+                ) : null}
               </div>
 
               <div className="flex items-center gap-1">
@@ -166,7 +206,7 @@ export function SlaManager({ slas }: { slas: SlaRow[] }) {
                     <Power className="size-4" />
                   </Button>
                 </form>
-                <SlaDialog sla={s} />
+                <SlaDialog sla={s} calendars={calendars} policies={policies} />
                 <ConfirmButton
                   action={deleteSla}
                   fields={{ id: s.id }}

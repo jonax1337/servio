@@ -118,6 +118,23 @@ function renderBody(data: Computed) {
         </div>
       );
 
+    case "csat":
+      if (data.avg == null) return <Empty />;
+      return (
+        <div className="flex h-full flex-wrap items-center gap-5">
+          <div className="flex items-baseline gap-1">
+            <span className="font-display text-4xl font-semibold tabular-nums tracking-tight">
+              {data.avg.toFixed(1)}
+            </span>
+            <span className="text-lg text-muted-foreground">/ {data.max}</span>
+          </div>
+          <div className="grid gap-3">
+            <Metric label="Avg rating" value={`${Math.round((data.avg / data.max) * 100)}%`} />
+            <Metric label="Responses" value={String(data.count)} muted />
+          </div>
+        </div>
+      );
+
     case "list":
       if (data.tickets.length === 0) return <Empty />;
       return (

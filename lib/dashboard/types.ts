@@ -5,7 +5,7 @@
  * react-grid-layout editor added in phase 2.
  */
 
-export type WidgetType = "stat" | "breakdown" | "volume" | "sla" | "aging" | "list";
+export type WidgetType = "stat" | "breakdown" | "volume" | "sla" | "aging" | "list" | "csat";
 
 /** A widget's own filters. Superset of the tickets-list vocabulary + a few flags. */
 export type TicketFilters = Partial<
@@ -53,6 +53,7 @@ export type Computed =
   | { kind: "aging"; rows: { label: string; value: number }[] }
   | { kind: "volume"; data: { label: string; created: number; resolved: number }[] }
   | { kind: "sla"; pct: number | null; mttrHours: number | null; resolved: number; href?: string }
+  | { kind: "csat"; avg: number | null; count: number; max: number }
   | { kind: "list"; tickets: { id: number; prefix: string; title: string; status: string; priority: string }[] }
   | { kind: "empty" };
 
@@ -63,6 +64,7 @@ export const WIDGET_LABELS: Record<WidgetType, string> = {
   sla: "SLA & MTTR",
   aging: "Ticket aging",
   list: "Ticket list",
+  csat: "CSAT",
 };
 
 /** Built-in default dashboard, shown when a user has none of their own yet. */
@@ -75,5 +77,6 @@ export const DEFAULT_LAYOUT: Widget[] = [
   { id: "d-priority", type: "breakdown", title: "Open by priority", filters: { status: "open" }, options: { groupBy: "priority", chartType: "donut" }, x: 8, y: 1, w: 4, h: 2 },
   { id: "d-workload", type: "breakdown", title: "Open per agent", filters: { status: "open" }, options: { groupBy: "assignee" }, x: 0, y: 3, w: 6, h: 2 },
   { id: "d-aging", type: "aging", title: "Open ticket aging", filters: { status: "open" }, x: 6, y: 3, w: 6, h: 2 },
-  { id: "d-recent", type: "list", title: "Recent tickets", filters: {}, x: 0, y: 5, w: 12, h: 2 },
+  { id: "d-csat", type: "csat", title: "CSAT · 30d", filters: { days: "30" }, x: 0, y: 5, w: 3, h: 1 },
+  { id: "d-recent", type: "list", title: "Recent tickets", filters: {}, x: 0, y: 6, w: 12, h: 2 },
 ];

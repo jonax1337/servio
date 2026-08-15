@@ -10,24 +10,27 @@ import { Card, CardContent } from "@/components/ui/card";
 import { CatalogEditor } from "@/components/catalog/catalog-editor";
 import { CatalogIcon } from "@/components/catalog/catalog-icon";
 import { PublishToggle } from "@/components/catalog/publish-toggle";
+import { ApprovalStagesEditor } from "./approval-stages-editor";
 import { deleteCatalogItem } from "@/lib/actions/catalog-admin";
-import { parseFormSchema } from "@/lib/service-forms";
+import { parseFormSchema, parseApprovalStages } from "@/lib/service-forms";
 
 export const metadata: Metadata = { title: "Service Catalog" };
 export const dynamic = "force-dynamic";
 
 export default async function CatalogAdminPage() {
   await requireRole("MANAGER");
-  const [items, categories, services, agents] = await Promise.all([
+  const [items, categories, services, agents, groups] = await Promise.all([
     db.catalogItem.findMany({ orderBy: [{ order: "asc" }, { name: "asc" }], include: { category: true, _count: { select: { tickets: true } } } }),
     db.category.findMany({ where: { archived: false }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
     db.service.findMany({ select: { id: true, name: true }, orderBy: { name: "asc" } }),
     db.user.findMany({ where: { role: { in: ["ADMIN", "MANAGER", "AGENT"] }, isActive: true }, select: { id: true, name: true, email: true }, orderBy: { name: "asc" } }),
+    db.group.findMany({ select: { id: true, name: true }, orderBy: { name: "asc" } }),
   ]);
 
   const catOpts = categories.map((c) => ({ value: c.id, label: c.name }));
   const serviceOpts = services.map((s) => ({ value: s.id, label: s.name }));
   const agentOpts = agents.map((a) => ({ value: a.id, label: a.name ?? a.email }));
+  const groupOpts = groups.map((g) => ({ value: g.id, label: g.name }));
 
   return (
     <>
@@ -56,6 +59,9 @@ export default async function CatalogAdminPage() {
                     <span className="font-medium">{it.name}</span>
                     {it.category ? <ToneBadge meta={{ label: it.category.name, tone: "indigo" }} icon={false} /> : null}
                     {it.requiresApproval ? <ToneBadge meta={{ label: "Approval", tone: "warning" }} icon={false} /> : null}
+                    {parseApprovalStages(it.approvalStages).length > 1 ? (
+                      <ToneBadge meta={{ label: `${parseApprovalStages(it.approvalStages).length} stages`, tone: "indigo" }} icon={false} />
+                    ) : null}
                     {!it.isPublished ? <ToneBadge meta={{ label: "Unpublished", tone: "neutral" }} icon={false} /> : null}
                   </div>
                   <p className="mt-1 text-sm text-muted-foreground">{it.shortDescription ?? it.description ?? "—"}</p>
@@ -68,6 +74,13 @@ export default async function CatalogAdminPage() {
                 </div>
                 <div className="flex items-center gap-2">
                   <PublishToggle id={it.id} published={it.isPublished} />
+                  <ApprovalStagesEditor
+                    itemId={it.id}
+                    itemName={it.name}
+                    stages={parseApprovalStages(it.approvalStages)}
+                    agents={agentOpts}
+                    groups={groupOpts}
+                  />
                   <CatalogEditor
                     categories={catOpts}
                     services={serviceOpts}

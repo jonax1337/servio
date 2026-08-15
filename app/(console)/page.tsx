@@ -1,4 +1,4 @@
-import { getSessionUser, hasRole, type Role } from "@/lib/session";
+import { getSessionUser, hasRole, isAgent, type Role } from "@/lib/session";
 import { getFormOptions } from "@/lib/data/options";
 import { getVisibleDashboards, ensurePersonalDashboard } from "@/lib/actions/dashboards";
 import { computeWidget } from "@/lib/dashboard/compute";
@@ -8,8 +8,9 @@ import { DashboardCanvas } from "@/components/dashboard/dashboard-canvas";
 import { DashboardGridView } from "@/components/dashboard/dashboard-grid-view";
 import { PageHeader, PageBody } from "@/components/page-header";
 import { LinkButton } from "@/components/link-button";
+import { buttonVariants } from "@/components/ui/button";
 import { getParam, type SearchParams } from "@/lib/query";
-import { Pencil } from "lucide-react";
+import { Pencil, Download } from "lucide-react";
 
 export const dynamic = "force-dynamic";
 
@@ -89,6 +90,16 @@ export default async function DashboardPage({
         title={`Good ${greeting()}, ${me?.name?.split(" ")[0] ?? "there"}`}
         description="Your service desk at a glance — pick or build a dashboard."
       >
+        {me && isAgent(me.role) ? (
+          <a
+            href="/api/export?type=tickets"
+            download
+            title="Export tickets as CSV"
+            className={buttonVariants({ variant: "ghost", size: "sm" })}
+          >
+            <Download className="size-4" /> Export CSV
+          </a>
+        ) : null}
         <LinkButton href="/tickets/new">New ticket</LinkButton>
       </PageHeader>
 

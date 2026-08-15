@@ -17,6 +17,10 @@ import { EntityCustomFields } from "@/components/custom-fields/entity-custom-fie
 import { isFieldVisible, parseValues, entityFieldValues, type CustomFieldDef } from "@/lib/custom-fields";
 import { SubmitForApproval } from "@/components/changes/submit-for-approval";
 import { ApprovalPanel, type ApprovalRow } from "@/components/changes/approval-panel";
+import { ApprovalProgress } from "@/components/changes/approval-progress";
+import { AffectedCiPanel, type ChangeImpact } from "@/components/changes/affected-ci-panel";
+import { evaluateCab } from "@/lib/cab";
+import { computeImpact } from "@/lib/cmdb-graph";
 import { EntityApprovals } from "@/components/approvals/entity-approvals";
 import { CommentThread } from "@/components/comments/comment-thread";
 import { EditEntityDialog } from "@/components/edit-entity-dialog";
@@ -55,7 +59,7 @@ export default async function ChangeDetailPage({
   const changeId = Number(id);
   if (!Number.isFinite(changeId)) notFound();
 
-  const [change, options, audits, linkableTickets, adHocApprovals, customFieldDefs] = await Promise.all([
+  const [change, options, audits, linkableTickets, adHocApprovals, customFieldDefs, allAssets] = await Promise.all([
     db.change.findUnique({
       where: { id: changeId },
       include: {
@@ -81,6 +85,12 @@ export default async function ChangeDetailPage({
     }),
     getEntityApprovals("CHANGE", changeId),
     db.customFieldDef.findMany({ where: { entityType: "CHANGE", active: true }, orderBy: { order: "asc" } }),
+    db.asset.findMany({
+      where: { status: { notIn: ["RETIRED", "DISPOSED"] } },
+      select: { id: true, name: true, type: true },
+      orderBy: { name: "asc" },
+      take: 500,
+    }),
   ]);
   if (!change) notFound();
 
@@ -107,6 +117,49 @@ export default async function ChangeDetailPage({
     comment: a.comment,
     decidedAt: a.decidedAt,
   }));
+
+  // ── Affected CIs + automated CMDB impact ──────────────────────────────────
+  const affectedIds = new Set(change.assets.map((a) => a.assetId));
+  const assetOptions: ComboOption[] = allAssets
+    .filter((a) => !affectedIds.has(a.id))
+    .map((a) => ({ value: a.id, label: a.name, hint: a.type }));
+
+  // Walk the CMDB dependency graph downstream from each affected CI, then union
+  // the reachable nodes (excluding the affected roots themselves) — this is the
+  // blast radius of the change. Coarse risk = a threshold on the fan-out size.
+  const rootImpacts = await Promise.all(
+    change.assets.map((a) => computeImpact(a.assetId, { direction: "downstream" })),
+  );
+  const impactMap = new Map<string, ChangeImpact["impacted"][number]>();
+  for (const res of rootImpacts) {
+    for (const node of res.impacted) {
+      if (affectedIds.has(node.id)) continue; // a root can't impact itself
+      if (!impactMap.has(node.id)) {
+        impactMap.set(node.id, {
+          id: node.id,
+          name: node.name,
+          assetType: node.assetType,
+          status: node.status,
+          relation: node.relation,
+        });
+      }
+    }
+  }
+  const impactedCis = Array.from(impactMap.values());
+  const impactRisk: ChangeImpact["risk"] =
+    impactedCis.length >= 8 ? "HIGH" : impactedCis.length >= 3 ? "MEDIUM" : "LOW";
+  const changeImpact: ChangeImpact = { impacted: impactedCis, risk: impactRisk };
+
+  // ── CAB tally against the configured decision rule ────────────────────────
+  const cabTally = evaluateCab(
+    change.approvals.map((a) => a.status),
+    change.approvalRule,
+    change.approvalThreshold,
+  );
+  // Managers may re-tune the rule while the board is being seated (DRAFT/APPROVAL,
+  // non-STANDARD). Matches the server-side gate in setCabRule.
+  const canSeatRule =
+    canManage && change.type !== "STANDARD" && (change.status === "DRAFT" || change.status === "APPROVAL");
 
   const comments = change.comments.map((c) => ({
     id: c.id, author: c.author.name ?? c.author.email, body: c.body, bodyHtml: c.bodyHtml, isInternal: c.isInternal, createdAt: c.createdAt, attachments: [],
@@ -261,6 +314,16 @@ export default async function ChangeDetailPage({
           </div>
 
           {/* Approvals / CAB */}
+          {change.type !== "STANDARD" && (change.approvals.length > 0 || canSeatRule) ? (
+            <div className="mt-8">
+              <ApprovalProgress
+                changeId={change.id}
+                tally={cabTally}
+                threshold={change.approvalThreshold}
+                canSeat={canSeatRule}
+              />
+            </div>
+          ) : null}
           <ApprovalPanel
             changeId={change.id}
             changeType={change.type}
@@ -284,30 +347,19 @@ export default async function ChangeDetailPage({
             agents={options.agents}
           />
 
-          {/* Affected assets */}
-          {change.assets.length > 0 ? (
-            <div className="mt-8">
-              <h2 className="mb-4 flex items-center gap-2 text-sm font-semibold">
-                <Server className="size-4 text-muted-foreground" />
-                Affected assets · {change.assets.length}
-              </h2>
-              <div className="overflow-hidden rounded-xl border bg-card">
-                {change.assets.map((a) => (
-                  <Link
-                    key={a.assetId}
-                    href={`/assets/${a.assetId}`}
-                    className="flex items-center justify-between gap-3 border-b px-4 py-2.5 text-sm last:border-b-0 hover:bg-muted/40"
-                  >
-                    <span className="flex items-center gap-2 font-medium">
-                      <Server className="size-4 text-indigo-500" />
-                      {a.asset.name}
-                    </span>
-                    <span className="text-xs text-muted-foreground">{a.asset.type}</span>
-                  </Link>
-                ))}
-              </div>
-            </div>
-          ) : null}
+          {/* Affected CIs + automated impact assessment */}
+          <AffectedCiPanel
+            changeId={change.id}
+            affected={change.assets.map((a) => ({
+              assetId: a.assetId,
+              name: a.asset.name,
+              type: a.asset.type,
+              status: a.asset.status,
+            }))}
+            impact={changeImpact}
+            assetOptions={assetOptions}
+            editable={isAgentUser}
+          />
 
           {/* Comments & Activity */}
           <div className="mt-8">

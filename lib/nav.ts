@@ -16,6 +16,8 @@ import {
   Zap,
   MapPin,
   ShoppingBag,
+  ScrollText,
+  MessageSquareText,
 } from "lucide-react";
 
 export type NavItem = {
@@ -70,7 +72,9 @@ export const consoleNav: NavGroup[] = [
     label: "Administration",
     items: [
       { title: "Automations", href: "/automations", icon: Zap, minRole: "MANAGER" },
+      { title: "Macros", href: "/settings/macros", icon: MessageSquareText, minRole: "MANAGER" },
       { title: "Syncs", href: "/syncs", icon: RefreshCw, minRole: "MANAGER" },
+      { title: "Audit Log", href: "/audit", icon: ScrollText, minRole: "ADMIN" },
       { title: "Settings", href: "/settings", icon: Settings, minRole: "MANAGER" },
     ],
   },

@@ -215,6 +215,14 @@ export const APPROVAL_META: Record<string, Meta> = {
   REJECTED: { label: "Rejected", tone: "danger" },
 };
 
+// How a Change's CAB approvals resolve (see Change.approvalRule / approvalThreshold).
+export const CAB_APPROVAL_RULES = ["UNANIMOUS", "QUORUM", "PERCENT"] as const;
+export const CAB_APPROVAL_RULE_META: Record<string, Meta> = {
+  UNANIMOUS: { label: "Unanimous", tone: "indigo" },
+  QUORUM: { label: "Quorum (N approvers)", tone: "purple" },
+  PERCENT: { label: "Percentage", tone: "info" },
+};
+
 // Entities that support generic, ad-hoc approvals (see the Approval model).
 export const APPROVAL_ENTITY_TYPES = ["TICKET", "PROBLEM", "CHANGE", "SERVICE"] as const;
 export type ApprovalEntityType = (typeof APPROVAL_ENTITY_TYPES)[number];
@@ -378,6 +386,20 @@ export const SLA_STATE_META: Record<string, Meta> = {
   PAUSED: { label: "Paused", tone: "neutral", icon: PauseCircle },
   NONE: { label: "No SLA", tone: "neutral" },
 };
+
+// ---- SLA escalation -------------------------------------------------------
+// Actions an EscalationStep can run as an SLA clock elapses.
+export const ESCALATION_ACTIONS = ["NOTIFY", "REASSIGN", "BUMP_PRIORITY"] as const;
+export const ESCALATION_ACTION_META: Record<string, Meta> = {
+  NOTIFY: { label: "Notify", tone: "info", icon: Send },
+  REASSIGN: { label: "Reassign", tone: "purple", icon: ArrowUp },
+  BUMP_PRIORITY: { label: "Bump priority", tone: "warning", icon: Flame },
+};
+
+// ---- CSAT survey ----------------------------------------------------------
+// Rating scale for a post-resolution SurveyResponse (inclusive).
+export const SURVEY_RATING_MIN = 1;
+export const SURVEY_RATING_MAX = 5;
 
 // ---- Knowledge base -------------------------------------------------------
 export const ARTICLE_STATUSES = [

@@ -1,4 +1,4 @@
-import { Ticket as TicketIcon, Plus } from "lucide-react";
+import { Ticket as TicketIcon, Plus, Download } from "lucide-react";
 import type { Metadata } from "next";
 import type { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
@@ -10,6 +10,7 @@ import { TicketsTable } from "@/components/tickets/tickets-table";
 import { buildTicketWhere } from "@/lib/dashboard/compute";
 import type { TicketFilters } from "@/lib/dashboard/types";
 import { getParam, getPage, PAGE_SIZE, type SearchParams } from "@/lib/query";
+import { applyTicketSearch } from "@/lib/search";
 import { PageHeader, PageBody } from "@/components/page-header";
 import { LinkButton } from "@/components/link-button";
 import { ListToolbar, type FilterDef } from "@/components/list-toolbar";
@@ -60,7 +61,9 @@ export default async function TicketsPage({
     breached: getParam(sp, "breached"),
   };
   const where: Prisma.TicketWhereInput = buildTicketWhere(filterParams);
-  if (q) where.title = { contains: q };
+  // Cross-field text search (title/description/comments/requester/custom-fields)
+  // AND'd onto the active filters so search narrows the list. See lib/search.ts.
+  applyTicketSearch(where, q);
 
   // Sorting (URL-driven, so it survives pagination + filters).
   const sort = getParam(sp, "sort") ?? "updatedAt";
@@ -76,6 +79,15 @@ export default async function TicketsPage({
     assignee: { assignee: { name: dir } },
   };
   const orderBy = ORDER[sort] ?? ORDER.updatedAt;
+
+  // "Export CSV" carries the current filters/search/sort through to the shared
+  // /api/export endpoint (type=tickets), which streams a csvResponse(...).
+  const exportParams = new URLSearchParams({ type: "tickets" });
+  for (const key of ["q", "status", "priority", "type", "group", "assignee", "category", "service", "sort", "dir"]) {
+    const v = getParam(sp, key);
+    if (v) exportParams.set(key, v);
+  }
+  const exportHref = `/api/export?${exportParams.toString()}`;
 
   const [total, tickets] = await Promise.all([
     db.ticket.count({ where }),
@@ -148,7 +160,11 @@ export default async function TicketsPage({
           canManageShared={!!me && hasRole(me.role as Role, "MANAGER")}
           teams={opts.groups.map((g) => ({ value: g.id, label: g.name }))}
         />
-        <ListToolbar filters={filters} searchPlaceholder="Search tickets…" />
+        <ListToolbar filters={filters} searchPlaceholder="Search title, description, comments, requester…">
+          <LinkButton href={exportHref} variant="outline" size="sm">
+            <Download className="size-4" /> Export CSV
+          </LinkButton>
+        </ListToolbar>
 
         {tickets.length === 0 ? (
           <EmptyState

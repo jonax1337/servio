@@ -22,6 +22,7 @@ import { getBoolSetting } from "@/lib/settings";
 import { EditEntityDialog } from "@/components/edit-entity-dialog";
 import { addTicketComment, updateTicketDetails, unlinkTicket, unlinkAsset, unlinkRelation, setTicketProblem, setTicketChange, linkAsset } from "@/lib/actions/tickets";
 import { TicketActions } from "@/components/tickets/ticket-actions";
+import { MacroPicker } from "@/components/tickets/macro-picker";
 import { LinkPicker } from "@/components/link-picker";
 import { LinkedChip as Chip, UnlinkButton as UnlinkBtn } from "@/components/linked-records";
 import { SlaBadge } from "@/components/tickets/sla-badge";
@@ -116,6 +117,16 @@ export default async function TicketDetailPage({
   ]);
   if (!ticket) notFound();
 
+  // Macros the current agent may apply here: any shared macro + their own personal
+  // ones. Non-agents get none (the picker is agent-only anyway).
+  const macros = me && isAgent(me.role as Role)
+    ? await db.macro.findMany({
+        where: { OR: [{ isShared: true }, { ownerId: me.id }] },
+        select: { id: true, name: true, description: true, isShared: true, actions: true },
+        orderBy: [{ isShared: "desc" }, { name: "asc" }],
+      })
+    : [];
+
   // Custom fields: keep only defs whose visibility matches this ticket's built-in fields.
   const cfValues = parseValues(ticket.customFields);
   const visibleCustomFields = (customFieldDefs as CustomFieldDef[]).filter((def) =>
@@ -135,6 +146,14 @@ export default async function TicketDetailPage({
     value: String(c.id),
     label: `${ticketRef(c.id, c.prefix)} — ${c.title}`,
   }));
+  const pickerMacros = macros.map((m) => {
+    let actionCount = 0;
+    try {
+      const parsed = JSON.parse(m.actions) as unknown;
+      if (Array.isArray(parsed)) actionCount = parsed.length;
+    } catch { /* malformed macro → 0 actions */ }
+    return { id: m.id, name: m.name, description: m.description, isShared: m.isShared, actionCount };
+  });
   const linkedAssetIds = new Set(ticket.assets.map((a) => a.assetId));
   const problemOpts = problemChoices.map((p) => ({ value: String(p.id), label: `${problemRef(p.id)} · ${p.title}` }));
   const changeOpts = changeChoices.map((c) => ({ value: String(c.id), label: `${changeRef(c.id)} · ${c.title}` }));
@@ -188,6 +207,7 @@ export default async function TicketDetailPage({
           <StatusBadge map={PRIORITY_META} value={ticket.priority} />
           <StatusBadge map={TICKET_STATUS_META} value={ticket.status} />
           <div className="ml-auto flex items-center gap-2">
+            {isAgentUser ? <MacroPicker ticketId={ticket.id} macros={pickerMacros} /> : null}
             <EditEntityDialog
               action={updateTicketDetails}
               idField="id"
