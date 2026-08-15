@@ -87,6 +87,54 @@ export function resolveBreachData(ticket: { resolveDueAt: Date | null }, resolve
   return { resolveBreached: ticket.resolveDueAt ? resolvedAt > ticket.resolveDueAt : false };
 }
 
+/**
+ * The side-effect fields to write when a ticket's status changes to `value`
+ * (everything except the `status` column itself): SLA pause on entering
+ * PENDING/ON_HOLD, resume+deadline-shift on leaving, resolve/close stamping,
+ * and reopen clearing. Shared by the console (updateTicketField) and the
+ * automation engine so both keep the SLA clock and resolution stamps in sync.
+ */
+export function statusChangeData(
+  current: ClockTicket & {
+    status: string;
+    resolutionCode?: string | null;
+    resolutionNote?: string | null;
+  },
+  value: string,
+  now: Date = new Date(),
+): Record<string, unknown> {
+  const patch: Record<string, unknown> = {};
+  const wasPending = current.status === "PENDING" || current.status === "ON_HOLD";
+  const willPending = value === "PENDING" || value === "ON_HOLD";
+
+  if (willPending && !wasPending) Object.assign(patch, pauseData(current, now));
+  let effResolveDueAt = current.resolveDueAt;
+  if (!willPending && wasPending) {
+    const resumed = resumeData(current, now);
+    Object.assign(patch, resumed);
+    effResolveDueAt = resumed.resolveDueAt ?? current.resolveDueAt;
+  }
+
+  if (value === "RESOLVED") {
+    patch.resolvedAt = now;
+    patch.resolveBreached = effResolveDueAt ? now > effResolveDueAt : false;
+  }
+  if (value === "CLOSED") patch.closedAt = now;
+  if (value === "OPEN" || value === "NEW") {
+    patch.resolvedAt = null;
+    patch.closedAt = null;
+    patch.resolutionCode = null;
+    patch.resolutionNote = null;
+    patch.resolveBreached = false;
+  }
+  // Leaving a pending state clears its reason.
+  if (!willPending) {
+    patch.pendingReason = null;
+    patch.pendingNote = null;
+  }
+  return patch;
+}
+
 const AT_RISK_FRACTION = 0.2; // last 20% of the window → "at risk"
 
 /** Live SLA state for display. `resolvedAt`/status decide terminal states. */

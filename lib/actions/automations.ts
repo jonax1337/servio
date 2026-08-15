@@ -92,6 +92,29 @@ export async function toggleRule(formData: FormData) {
   revalidatePath("/automations");
 }
 
+/** Move a rule up/down in execution order. Rewrites all order values to a clean
+ *  0..n-1 sequence after the swap, so duplicate/legacy order values self-heal. */
+export async function moveRule(formData: FormData) {
+  const me = await requireManager();
+  if (!me) return;
+  const id = String(formData.get("id") ?? "");
+  const dir = String(formData.get("direction") ?? "");
+  if (dir !== "up" && dir !== "down") return;
+
+  const rules = await db.automationRule.findMany({
+    orderBy: [{ order: "asc" }, { createdAt: "asc" }],
+    select: { id: true },
+  });
+  const idx = rules.findIndex((r) => r.id === id);
+  const swapIdx = dir === "up" ? idx - 1 : idx + 1;
+  if (idx === -1 || swapIdx < 0 || swapIdx >= rules.length) return;
+
+  [rules[idx], rules[swapIdx]] = [rules[swapIdx], rules[idx]];
+  await db.$transaction(rules.map((r, i) => db.automationRule.update({ where: { id: r.id }, data: { order: i } })));
+  await writeAudit({ userId: me.id, action: "UPDATE", entity: "AutomationRule", entityId: id, summary: `Moved automation ${dir}` });
+  revalidatePath("/automations");
+}
+
 export async function deleteRule(formData: FormData) {
   const me = await requireManager();
   if (!me) return;

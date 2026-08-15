@@ -31,6 +31,7 @@ const createSchema = z.object({
     .string()
     .regex(/^#[0-9a-fA-F]{6}$/, "Use a hex color like #64748b")
     .default("#64748b"),
+  icon: optionalText,
   description: optionalText,
 });
 
@@ -60,6 +61,7 @@ export async function createCategory(
       parentId: data.parentId,
       groupId: data.groupId,
       color: data.color,
+      icon: data.icon,
       description: data.description,
     },
   });
@@ -85,6 +87,7 @@ const updateSchema = z.object({
     .string()
     .regex(/^#[0-9a-fA-F]{6}$/, "Use a hex color like #64748b")
     .default("#64748b"),
+  icon: optionalText,
   description: optionalText,
 });
 
@@ -114,6 +117,7 @@ export async function updateCategory(
       parentId,
       groupId: data.groupId,
       color: data.color,
+      icon: data.icon,
       description: data.description,
     },
   });

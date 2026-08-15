@@ -23,7 +23,7 @@ import { format } from "date-fns";
 import { runAutomations } from "@/lib/automations";
 import { autoAssignTicket } from "@/lib/assignment";
 import {
-  slaCreateData, pauseData, resumeData, firstResponseData,
+  slaCreateData, pauseData, resumeData, firstResponseData, statusChangeData,
 } from "@/lib/sla";
 import { canTransition, TICKET_TRANSITIONS } from "@/lib/transitions";
 import {
@@ -164,32 +164,8 @@ export async function updateTicketField(formData: FormData) {
     if (!current) return;
     // Enforce the allowed lifecycle — reject illegal jumps silently.
     if (!canTransition(TICKET_TRANSITIONS, current.status, value)) return;
-
-    const now = new Date();
-    const wasPending = current.status === "PENDING" || current.status === "ON_HOLD";
-    const willPending = value === "PENDING" || value === "ON_HOLD";
-
-    // Pause the SLA clock on entering hold; resume (shift deadlines) on leaving.
-    if (willPending && !wasPending) Object.assign(patch, pauseData(current, now));
-    let effResolveDueAt = current.resolveDueAt;
-    if (!willPending && wasPending) {
-      const resumed = resumeData(current, now);
-      Object.assign(patch, resumed);
-      effResolveDueAt = resumed.resolveDueAt ?? current.resolveDueAt;
-    }
-
-    if (value === "RESOLVED") {
-      patch.resolvedAt = now;
-      patch.resolveBreached = effResolveDueAt ? now > effResolveDueAt : false;
-    }
-    if (value === "CLOSED") patch.closedAt = now;
-    if (value === "OPEN" || value === "NEW") {
-      patch.resolvedAt = null; patch.closedAt = null;
-      patch.resolutionCode = null; patch.resolutionNote = null;
-      patch.resolveBreached = false;
-    }
-    // leaving a pending state clears the reason
-    if (!willPending) { patch.pendingReason = null; patch.pendingNote = null; }
+    // Shared with the automation engine so both keep the SLA clock consistent.
+    Object.assign(patch, statusChangeData(current, value));
   }
 
   const ticket = await db.ticket.update({

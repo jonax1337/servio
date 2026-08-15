@@ -19,9 +19,15 @@ const optionalId = z
   .optional()
   .transform((v) => (v && v !== "none" && v !== "" ? v : null));
 
+const optionalIcon = z
+  .string()
+  .optional()
+  .transform((v) => (v && v.trim() !== "" ? v.trim() : null));
+
 const createSchema = z.object({
   name: z.string().min(2, "Name must be at least 2 characters"),
   description: z.string().default(""),
+  icon: optionalIcon,
   status: z.enum(SERVICE_STATUSES).default("OPERATIONAL"),
   criticality: z.enum(CRITICALITIES).default("MEDIUM"),
   categoryId: optionalId,
@@ -100,6 +106,7 @@ const detailsSchema = z.object({
   id: z.string().min(1),
   name: z.string().min(2, "Name must be at least 2 characters"),
   description: z.string().default(""),
+  icon: optionalIcon,
 });
 
 export async function updateService(
@@ -116,10 +123,10 @@ export async function updateService(
       fieldErrors: parsed.error.flatten().fieldErrors,
     };
   }
-  const { id, name, description } = parsed.data;
+  const { id, name, description, icon } = parsed.data;
 
   try {
-    await db.service.update({ where: { id }, data: { name, description } });
+    await db.service.update({ where: { id }, data: { name, description, icon } });
   } catch (e) {
     // Name is unique — surface a clean field error instead of a 500.
     if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {

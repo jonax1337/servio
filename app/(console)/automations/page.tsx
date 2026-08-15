@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Zap, Trash2 } from "lucide-react";
+import { Zap, Trash2, ChevronUp, ChevronDown } from "lucide-react";
 import { db } from "@/lib/db";
 import { requireRole } from "@/lib/session";
 import { getFormOptions } from "@/lib/data/options";
@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { RuleBuilder, type AutomationOptions } from "@/components/automations/rule-builder";
 import { ToggleRuleSwitch } from "@/components/automations/toggle-switch";
-import { deleteRule } from "@/lib/actions/automations";
+import { deleteRule, moveRule } from "@/lib/actions/automations";
 import {
   parseJson, CONDITION_FIELDS, OPERATORS, ACTION_TYPES, TRIGGERS,
   type Condition, type AutomationAction,
@@ -52,7 +52,7 @@ export default async function AutomationsPage() {
       <PageHeader
         icon={Zap}
         title="Automations"
-        description="Rules that run when tickets are created or updated — no code required."
+        description="Rules that run when tickets are created or updated, top to bottom — reorder with the arrows. No code required."
       >
         <RuleBuilder options={options} />
       </PageHeader>
@@ -63,7 +63,7 @@ export default async function AutomationsPage() {
             <RuleBuilder options={options} />
           </EmptyState>
         ) : (
-          rules.map((r) => {
+          rules.map((r, i) => {
             const conditions = parseJson<Condition[]>(r.conditions, []);
             const actions = parseJson<AutomationAction[]>(r.actions, []);
             return (
@@ -102,6 +102,22 @@ export default async function AutomationsPage() {
                   </div>
 
                   <div className="flex items-center gap-2">
+                    <div className="flex flex-col">
+                      <form action={moveRule}>
+                        <input type="hidden" name="id" value={r.id} />
+                        <input type="hidden" name="direction" value="up" />
+                        <Button type="submit" variant="ghost" size="icon-sm" aria-label="Move up" title="Run earlier" disabled={i === 0} className="size-6">
+                          <ChevronUp className="size-4 text-muted-foreground" />
+                        </Button>
+                      </form>
+                      <form action={moveRule}>
+                        <input type="hidden" name="id" value={r.id} />
+                        <input type="hidden" name="direction" value="down" />
+                        <Button type="submit" variant="ghost" size="icon-sm" aria-label="Move down" title="Run later" disabled={i === rules.length - 1} className="size-6">
+                          <ChevronDown className="size-4 text-muted-foreground" />
+                        </Button>
+                      </form>
+                    </div>
                     <ToggleRuleSwitch id={r.id} active={r.isActive} />
                     <RuleBuilder
                       options={options}

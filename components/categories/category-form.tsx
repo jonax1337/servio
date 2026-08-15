@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { ComboField } from "@/components/combo-field";
+import { IconPicker } from "@/components/icon-picker";
 import type { ComboOption } from "@/components/combobox";
 
 export type ParentOption = { id: string; name: string };
@@ -17,6 +18,7 @@ export type CategoryData = {
   name: string;
   description: string | null;
   color: string;
+  icon: string | null;
   parentId: string | null;
   groupId: string | null;
 };
@@ -86,6 +88,10 @@ export function CategoryForm({
           <Input name="color" defaultValue={category?.color ?? "#64748b"} placeholder="#64748b" />
         </Field>
       </div>
+
+      <Field label="Icon">
+        <IconPicker name="icon" defaultValue={category?.icon ?? "Boxes"} />
+      </Field>
 
       <Field
         label="Handled by (team)"

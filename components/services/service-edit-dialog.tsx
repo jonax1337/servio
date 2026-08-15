@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { IconPicker } from "@/components/icon-picker";
 import {
   Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger,
 } from "@/components/ui/dialog";
@@ -16,7 +17,7 @@ import {
 export function ServiceEditDialog({
   service,
 }: {
-  service: { id: string; name: string; description: string | null };
+  service: { id: string; name: string; description: string | null; icon: string | null };
 }) {
   const [open, setOpen] = useState(false);
   const [state, setState] = useState<ActionState>(undefined);
@@ -52,6 +53,10 @@ export function ServiceEditDialog({
             <Label htmlFor="svc-name">Name</Label>
             <Input id="svc-name" name="name" defaultValue={service.name} required />
             {fe.name ? <p className="text-xs text-destructive">{fe.name[0]}</p> : null}
+          </div>
+          <div className="grid gap-1.5">
+            <Label>Icon</Label>
+            <IconPicker name="icon" defaultValue={service.icon ?? "LifeBuoy"} />
           </div>
           <div className="grid gap-1.5">
             <Label htmlFor="svc-desc">Description</Label>

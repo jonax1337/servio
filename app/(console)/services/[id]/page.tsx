@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
-import { ArrowLeft, LifeBuoy, Timer, Ticket as TicketIcon } from "lucide-react";
+import { ArrowLeft, Timer, Ticket as TicketIcon } from "lucide-react";
+import { CatalogIcon } from "@/components/catalog/catalog-icon";
 import { db } from "@/lib/db";
 import { getFormOptions } from "@/lib/data/options";
 import { getEntityApprovals } from "@/lib/data/approvals";
@@ -94,7 +95,7 @@ export default async function ServiceDetailPage({
         <div className="p-4 sm:p-6">
           <div className="flex items-start gap-3">
             <div className="grid size-11 shrink-0 place-items-center rounded-xl border bg-muted text-primary">
-              <LifeBuoy className="size-5.5" />
+              <CatalogIcon name={service.icon} className="size-5.5" />
             </div>
             <div className="min-w-0">
               <h1 className="font-display text-2xl font-semibold tracking-tight">

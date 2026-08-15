@@ -58,7 +58,7 @@ export async function createChange(
   formData: FormData,
 ): Promise<ActionState> {
   const me = await getSessionUser();
-  if (!me) return { error: "Not authenticated" };
+  if (!me || !isAgent(me.role as Role)) return { error: "Not authorised" };
 
   const parsed = createSchema.safeParse(Object.fromEntries(formData));
   if (!parsed.success) {

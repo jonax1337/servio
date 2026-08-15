@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { LifeBuoy, User } from "lucide-react";
+import { CatalogIcon } from "@/components/catalog/catalog-icon";
 import type { Metadata } from "next";
 import type { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
@@ -98,7 +99,7 @@ export default async function ServicesPage({
               >
                 <div className="flex items-start gap-3">
                   <div className="grid size-10 shrink-0 place-items-center rounded-lg border bg-muted text-primary">
-                    <LifeBuoy className="size-5" />
+                    <CatalogIcon name={s.icon} className="size-5" />
                   </div>
                   <div className="min-w-0 flex-1">
                     <h3 className="line-clamp-1 font-medium group-hover:text-primary">

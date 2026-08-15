@@ -1,6 +1,8 @@
 import { db } from "@/lib/db";
 import { writeAudit, notify } from "@/lib/audit";
 import { getAutomationUserId } from "@/lib/system-user";
+import { statusChangeData } from "@/lib/sla";
+import { TICKET_STATUSES } from "@/lib/constants";
 import { parseJson, type Condition, type AutomationAction } from "@/lib/automation-defs";
 
 const PRIORITY_ORDER = ["LOW", "MEDIUM", "HIGH", "CRITICAL"] as const;
@@ -60,10 +62,17 @@ export async function runAutomations(trigger: Trigger, ticketId: number) {
 
     for (const a of actions) {
       switch (a.type) {
-        case "set_status":
-          patch.status = a.value;
-          if (a.value === "RESOLVED") patch.resolvedAt = new Date();
+        case "set_status": {
+          // Validate the enum (a corrupt rule must never write a junk status),
+          // then apply the SAME SLA/resolution side-effects as the console so
+          // automations don't leave the SLA clock or resolution stamps stale.
+          const next = a.value;
+          if (next && TICKET_STATUSES.includes(next as (typeof TICKET_STATUSES)[number])) {
+            patch.status = next;
+            Object.assign(patch, statusChangeData(t, next));
+          }
           break;
+        }
         case "set_priority": patch.priority = a.value; break;
         case "assign": patch.assigneeId = a.value || null; break;
         case "set_group": patch.groupId = a.value || null; break;

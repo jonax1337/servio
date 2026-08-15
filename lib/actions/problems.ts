@@ -33,7 +33,7 @@ export type ActionState = { error?: string; fieldErrors?: Record<string, string[
 
 export async function createProblem(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const me = await getSessionUser();
-  if (!me) return { error: "Not authenticated" };
+  if (!me || !isAgent(me.role as Role)) return { error: "Not authorised" };
 
   const parsed = createSchema.safeParse(Object.fromEntries(formData));
   if (!parsed.success) {
@@ -63,7 +63,7 @@ const updateSchema = z.object({
 
 export async function updateProblemField(formData: FormData) {
   const me = await getSessionUser();
-  if (!me) return;
+  if (!me || !isAgent(me.role as Role)) return;
   const parsed = updateSchema.safeParse(Object.fromEntries(formData));
   if (!parsed.success) return;
   const { id, field, value } = parsed.data;
