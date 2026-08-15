@@ -1,13 +1,21 @@
 import { db } from "@/lib/db";
 import { isAgent, type Role } from "@/lib/session";
+import { loadAccessibleProject } from "@/lib/ai-projects";
 
 export type SessionActor = { id: string; role: Role };
 
 export type UploadTarget =
   | { kind: "ticket"; ticketId: number }
   | { kind: "comment"; commentId: string }
-  | { kind: "article"; articleId: string };
+  | { kind: "article"; articleId: string }
+  | { kind: "aiProject"; projectId: string; folderId?: string | null };
 
+/**
+ * The FK columns to persist on the created Attachment row. Ticket/comment/article
+ * targets set their column; an aiProject upload carries NO Attachment FK (the join
+ * lives on AiProjectFile.attachmentId @unique), so it resolves to an empty object —
+ * a non-null "allowed, no FK" signal distinct from `null` (deny/not-found).
+ */
 type ForeignKey = { ticketId?: number; commentId?: string; articleId?: string };
 
 /**
@@ -35,6 +43,14 @@ export async function canUploadTo(actor: SessionActor, target: UploadTarget): Pr
     return null;
   }
 
+  if (target.kind === "aiProject") {
+    // The blob attaches to a project file, whose access is owner-or-shared-member.
+    // Attachment has no aiProject FK column (the join is AiProjectFile.attachmentId
+    // @unique), so we return an empty FK — the caller creates the AiProjectFile row.
+    const access = await loadAccessibleProject(actor, target.projectId);
+    return access ? {} : null;
+  }
+
   // article — agents only
   const a = await db.article.findUnique({ where: { id: target.articleId }, select: { id: true } });
   if (!a) return null;
@@ -45,9 +61,22 @@ export async function canUploadTo(actor: SessionActor, target: UploadTarget): Pr
 /** Whether an actor (possibly anonymous) may download an attachment. */
 export async function canViewAttachment(
   actor: SessionActor | null,
-  att: { ticketId: number | null; commentId: string | null; articleId: string | null },
+  att: { id?: string; ticketId: number | null; commentId: string | null; articleId: string | null },
 ): Promise<boolean> {
   const agent = !!actor && isAgent(actor.role);
+
+  // A project-library file: allow when the actor can access its project. Checked
+  // first because such blobs carry no ticket/comment/article FK.
+  if (att.id) {
+    const projFile = await db.aiProjectFile.findUnique({
+      where: { attachmentId: att.id },
+      select: { projectId: true },
+    });
+    if (projFile) {
+      if (!actor) return false;
+      return !!(await loadAccessibleProject(actor, projFile.projectId));
+    }
+  }
 
   if (att.ticketId != null) {
     if (agent) return true;

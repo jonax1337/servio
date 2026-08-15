@@ -12,7 +12,7 @@ const writeName = (op: AiOperation) => "propose_" + op.id.replace(NON_TOOL, "_")
 export function availableOperations(role: Role, scope: AiOpChatScope): AiOperation[] {
   return ALL_OPERATIONS.filter((op) => {
     if (!hasRole(role, op.minRole)) return false;
-    if (op.adminOnly && scope !== "ADMIN") return false;
+    if (op.adminOnly && !hasRole(role, "ADMIN")) return false;
     return true;
   });
 }
@@ -84,7 +84,7 @@ export async function runOperation(input: {
   const op = findOperation(input.operationId);
   if (!op) return { ok: false, error: "Unknown operation." };
   if (!hasRole(input.ctx.role, op.minRole)) return { ok: false, error: "Not authorised." };
-  if (op.adminOnly && input.scope !== "ADMIN") return { ok: false, error: "Not authorised." };
+  if (op.adminOnly && !hasRole(input.ctx.role, "ADMIN")) return { ok: false, error: "Not authorised." };
   const parsed = op.input.safeParse(input.args);
   if (!parsed.success) {
     return { ok: false, error: parsed.error.issues.map((i) => i.message).join("; ") };

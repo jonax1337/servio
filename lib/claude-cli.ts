@@ -44,7 +44,10 @@ function rawShape(inputSchema: unknown): Record<string, unknown> {
  * calls the original ai-sdk `execute` and serialises the result as text — so the
  * model sees identical behaviour to the built-in provider.
  */
-function adaptTools(aiSdkTools: ToolSet) {
+function adaptTools(
+  aiSdkTools: ToolSet,
+  onResult?: (name: string, output: unknown) => void,
+) {
   return Object.entries(aiSdkTools).map(([name, t]) => {
     const def = t as {
       description?: string;
@@ -63,6 +66,9 @@ function adaptTools(aiSdkTools: ToolSet) {
         } catch (e) {
           out = { error: e instanceof Error ? e.message : "tool failed" };
         }
+        // Surface the REAL tool output to the caller (the buffered path otherwise
+        // loses it) so it can e.g. cite the web/KB sources the answer grounded on.
+        onResult?.(name, out);
         const text = typeof out === "string" ? out : JSON.stringify(out ?? {});
         return { content: [{ type: "text" as const, text }] };
       },
@@ -141,12 +147,18 @@ export async function generateViaClaudeSdk(input: {
   maxTurns?: number;
   /** Enable extended thinking with this token budget; captured reasoning is returned. */
   maxThinkingTokens?: number;
-}): Promise<{ text: string; toolCalls: { name: string; input: unknown }[]; reasoning?: string }> {
+}): Promise<{
+  text: string;
+  toolCalls: { name: string; input: unknown }[];
+  toolResults: { name: string; output: unknown }[];
+  reasoning?: string;
+}> {
   const model = input.model || (await getSetting("AI_MODEL")) || "sonnet";
+  const toolResults: { name: string; output: unknown }[] = [];
   const server = createSdkMcpServer({
     name: MCP_SERVER,
     version: "1.0.0",
-    tools: adaptTools(input.aiSdkTools),
+    tools: adaptTools(input.aiSdkTools, (name, output) => toolResults.push({ name, output })),
   });
   const allowedTools = Object.keys(input.aiSdkTools).map((n) => TOOL_PREFIX + n);
 
@@ -219,6 +231,7 @@ export async function generateViaClaudeSdk(input: {
   return {
     text: finalText.trim(),
     toolCalls,
+    toolResults,
     reasoning: reasoningParts.length ? reasoningParts.join("\n\n") : undefined,
   };
 }

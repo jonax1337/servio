@@ -6,14 +6,20 @@ import {
 } from "lucide-react";
 import { db } from "@/lib/db";
 import { getFormOptions } from "@/lib/data/options";
-import { getSessionUser, isAgent, type Role } from "@/lib/session";
+import { getEntityApprovals } from "@/lib/data/approvals";
+import { allowedTransitions } from "@/lib/workflow";
+import { getSessionUser, isAgent, hasRole, type Role } from "@/lib/session";
 import { LinkButton } from "@/components/link-button";
 import { StatusBadge } from "@/components/status-badge";
 import { ProblemProperties } from "@/components/problems/problem-properties";
+import { EntityCustomFields } from "@/components/custom-fields/entity-custom-fields";
+import { isFieldVisible, parseValues, entityFieldValues, type CustomFieldDef } from "@/lib/custom-fields";
+import { EntityApprovals } from "@/components/approvals/entity-approvals";
 import { CommentThread } from "@/components/comments/comment-thread";
 import { EditEntityDialog } from "@/components/edit-entity-dialog";
+import { EditableTextCard } from "@/components/editable-text-card";
 import { LinkPicker } from "@/components/link-picker";
-import { addProblemComment, updateProblemDetails } from "@/lib/actions/problems";
+import { addProblemComment, updateProblemDetails, updateProblemText } from "@/lib/actions/problems";
 import { setTicketProblem } from "@/lib/actions/tickets";
 import { sanitizeCommentHtml } from "@/lib/markdown";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -45,7 +51,7 @@ export default async function ProblemDetailPage({
   if (!Number.isFinite(problemId)) notFound();
 
   const me = await getSessionUser();
-  const [problem, options, audits, linkableTickets] = await Promise.all([
+  const [problem, options, audits, linkableTickets, approvals, customFieldDefs] = await Promise.all([
     db.problem.findUnique({
       where: { id: problemId },
       include: {
@@ -69,10 +75,19 @@ export default async function ProblemDetailPage({
       orderBy: { updatedAt: "desc" },
       take: 100,
     }),
+    getEntityApprovals("PROBLEM", problemId),
+    db.customFieldDef.findMany({ where: { entityType: "PROBLEM", active: true }, orderBy: { order: "asc" } }),
   ]);
   if (!problem) notFound();
 
+  const cfValues = parseValues(problem.customFields);
+  const visibleCustomFields = (customFieldDefs as CustomFieldDef[]).filter((def) =>
+    isFieldVisible(def, entityFieldValues(problem)),
+  );
+
   const isAgentUser = !!me && isAgent(me.role as Role);
+  const canManage = !!me && hasRole(me.role as Role, "MANAGER");
+  const allowedStatuses = me ? [...await allowedTransitions("PROBLEM", problem.status, me.role as Role)] : undefined;
   const ticketOpts = linkableTickets.map((t) => ({ value: String(t.id), label: `${ticketRef(t.id, t.prefix)} · ${t.title}` }));
 
   const comments = problem.comments.map((c) => ({
@@ -128,26 +143,28 @@ export default async function ProblemDetailPage({
           </div>
 
           <div className="mt-4 grid gap-4 sm:grid-cols-2">
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-sm">
-                  <Search className="size-4 text-muted-foreground" /> Root cause
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="text-sm leading-relaxed whitespace-pre-wrap">
-                {problem.rootCause || <span className="text-muted-foreground">Not yet identified.</span>}
-              </CardContent>
-            </Card>
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-sm">
-                  <ShieldCheck className="size-4 text-muted-foreground" /> Workaround
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="text-sm leading-relaxed whitespace-pre-wrap">
-                {problem.workaround || <span className="text-muted-foreground">No workaround documented.</span>}
-              </CardContent>
-            </Card>
+            <EditableTextCard
+              action={updateProblemText}
+              idField="id"
+              id={problem.id}
+              field="rootCause"
+              label="Root cause"
+              icon={<Search className="size-4 text-muted-foreground" />}
+              value={problem.rootCause}
+              emptyText="Not yet identified."
+              editable={isAgentUser}
+            />
+            <EditableTextCard
+              action={updateProblemText}
+              idField="id"
+              id={problem.id}
+              field="workaround"
+              label="Workaround"
+              icon={<ShieldCheck className="size-4 text-muted-foreground" />}
+              value={problem.workaround}
+              emptyText="No workaround documented."
+              editable={isAgentUser}
+            />
           </div>
 
           {/* Linked incidents */}
@@ -223,6 +240,19 @@ export default async function ProblemDetailPage({
             </div>
           ) : null}
 
+          {/* Approvals (ad-hoc sign-off) */}
+          <EntityApprovals
+            entityType="PROBLEM"
+            entityId={String(problem.id)}
+            entityTitle={problem.title}
+            approvals={approvals}
+            currentUserId={me?.id ?? ""}
+            isAdmin={me?.role === "ADMIN"}
+            canManage={canManage}
+            canRequest={isAgentUser}
+            agents={options.agents}
+          />
+
           {/* Comments & Activity */}
           <div className="mt-8">
             <CommentThread
@@ -241,9 +271,18 @@ export default async function ProblemDetailPage({
         <Card>
           <CardHeader><CardTitle className="text-sm">Properties</CardTitle></CardHeader>
           <CardContent>
-            <ProblemProperties problem={problem} options={options} />
+            <ProblemProperties problem={problem} options={options} allowedStatuses={allowedStatuses} />
           </CardContent>
         </Card>
+
+        <EntityCustomFields
+          className="mt-4"
+          entityType="PROBLEM"
+          entityId={problem.id}
+          defs={visibleCustomFields}
+          values={cfValues}
+          editable={isAgentUser}
+        />
 
         <Card className="mt-4">
           <CardHeader><CardTitle className="text-sm">Assignment</CardTitle></CardHeader>

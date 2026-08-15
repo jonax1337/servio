@@ -3,7 +3,13 @@ import { db } from "@/lib/db";
 import { writeAudit } from "@/lib/audit";
 import { updateProblemField, addProblemComment } from "@/lib/actions/problems";
 import { updateChangeField, addChangeComment } from "@/lib/actions/changes";
-import { resolveGroupId, resolveCategoryId, resolveAgentId } from "@/lib/ai-tools";
+import {
+  resolveGroupId,
+  resolveCategoryId,
+  resolveAgentId,
+  categoryNotFoundHint,
+  groupNotFoundHint,
+} from "@/lib/ai-tools";
 import {
   PRIORITIES,
   IMPACT_URGENCY,
@@ -15,7 +21,7 @@ import {
   changeRef,
 } from "@/lib/constants";
 import type { AiOperation } from "../types";
-import { ok, err, str, toFormData, coerceEnum } from "../helpers";
+import { ok, err, str, toFormData, coerceEnum, richHtml } from "../helpers";
 
 /**
  * Problems & Changes. Exports `OPERATIONS: AiOperation[]`, one entry per capability.
@@ -58,11 +64,12 @@ export const OPERATIONS: AiOperation[] = [
 
       const teamName = str(a.team);
       const team = teamName ? await resolveGroupId(teamName) : null;
-      if (teamName && !team) return err(`Team not found: ${a.team}`);
+      if (teamName && !team) return err(`Team not found: ${a.team}.${await groupNotFoundHint(teamName)}`);
 
       const categoryName = str(a.category);
       const category = categoryName ? await resolveCategoryId(categoryName) : null;
-      if (categoryName && !category) return err(`Category not found: ${a.category}`);
+      if (categoryName && !category)
+        return err(`Category not found: ${a.category}.${await categoryNotFoundHint(categoryName)}`);
 
       const assigneeName = str(a.assignee);
       const assignee = assigneeName ? await resolveAgentId(assigneeName) : null;
@@ -72,6 +79,7 @@ export const OPERATIONS: AiOperation[] = [
         data: {
           title,
           description: str(a.description) ?? "",
+          descriptionHtml: richHtml(a.description),
           status: "NEW",
           priority,
           impact,
@@ -119,12 +127,12 @@ export const OPERATIONS: AiOperation[] = [
 
       if (field === "team") {
         const g = await resolveGroupId(value);
-        if (!g) return err(`Team not found: ${value}`);
+        if (!g) return err(`Team not found: ${value}.${await groupNotFoundHint(value)}`);
         realField = "groupId";
         realValue = g.id;
       } else if (field === "category") {
         const c = await resolveCategoryId(value);
-        if (!c) return err(`Category not found: ${value}`);
+        if (!c) return err(`Category not found: ${value}.${await categoryNotFoundHint(value)}`);
         realField = "categoryId";
         realValue = c.id;
       } else if (field === "assignee") {
@@ -175,7 +183,7 @@ export const OPERATIONS: AiOperation[] = [
       if (!text) return err("Comment text is required.");
       const internal = a.internal === true;
       await addProblemComment(
-        toFormData({ problemId: problem.id, bodyHtml: text, isInternal: internal ? "on" : "" }),
+        toFormData({ problemId: problem.id, bodyHtml: richHtml(text) ?? text, isInternal: internal ? "on" : "" }),
       );
       return ok(`Added ${internal ? "an internal note" : "a comment"} to ${problemRef(problem.id)}`);
     },
@@ -210,11 +218,12 @@ export const OPERATIONS: AiOperation[] = [
 
       const teamName = str(a.team);
       const team = teamName ? await resolveGroupId(teamName) : null;
-      if (teamName && !team) return err(`Team not found: ${a.team}`);
+      if (teamName && !team) return err(`Team not found: ${a.team}.${await groupNotFoundHint(teamName)}`);
 
       const categoryName = str(a.category);
       const category = categoryName ? await resolveCategoryId(categoryName) : null;
-      if (categoryName && !category) return err(`Category not found: ${a.category}`);
+      if (categoryName && !category)
+        return err(`Category not found: ${a.category}.${await categoryNotFoundHint(categoryName)}`);
 
       const assigneeName = str(a.assignee);
       const assignee = assigneeName ? await resolveAgentId(assigneeName) : null;
@@ -224,6 +233,7 @@ export const OPERATIONS: AiOperation[] = [
         data: {
           title,
           description: str(a.description) ?? "",
+          descriptionHtml: richHtml(a.description),
           type,
           risk,
           priority,
@@ -273,12 +283,12 @@ export const OPERATIONS: AiOperation[] = [
 
       if (field === "team") {
         const g = await resolveGroupId(value);
-        if (!g) return err(`Team not found: ${value}`);
+        if (!g) return err(`Team not found: ${value}.${await groupNotFoundHint(value)}`);
         realField = "groupId";
         realValue = g.id;
       } else if (field === "category") {
         const c = await resolveCategoryId(value);
-        if (!c) return err(`Category not found: ${value}`);
+        if (!c) return err(`Category not found: ${value}.${await categoryNotFoundHint(value)}`);
         realField = "categoryId";
         realValue = c.id;
       } else if (field === "assignee") {
@@ -333,7 +343,7 @@ export const OPERATIONS: AiOperation[] = [
       if (!text) return err("Comment text is required.");
       const internal = a.internal === true;
       await addChangeComment(
-        toFormData({ changeId: change.id, bodyHtml: text, isInternal: internal ? "on" : "" }),
+        toFormData({ changeId: change.id, bodyHtml: richHtml(text) ?? text, isInternal: internal ? "on" : "" }),
       );
       return ok(`Added ${internal ? "an internal note" : "a comment"} to ${changeRef(change.id)}`);
     },

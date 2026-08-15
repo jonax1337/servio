@@ -23,6 +23,9 @@ export default async function AiSettingsPage() {
     ticketTriage,
     anthropicSet,
     openaiSet,
+    webSearchProvider,
+    tavilySet,
+    braveSet,
   ] = await Promise.all([
     getSetting("AI_PROVIDER", "anthropic"),
     getBoolSetting("AI_ALLOW_EXTERNAL"),
@@ -34,6 +37,9 @@ export default async function AiSettingsPage() {
     getBoolSetting("AI_TICKET_TRIAGE", true),
     settingIsSet("ANTHROPIC_API_KEY"),
     settingIsSet("OPENAI_API_KEY"),
+    getSetting("WEB_SEARCH_PROVIDER", "auto"),
+    settingIsSet("TAVILY_API_KEY"),
+    settingIsSet("BRAVE_API_KEY"),
   ]);
 
   return (
@@ -111,6 +117,21 @@ export default async function AiSettingsPage() {
               defaultChecked: ticketTriage,
               hint: `When on, ${AI_ASSISTANT_NAME} suggests priority, type, team and category inline when you open a ticket. Turn off to hide those suggestions — chat and request handling stay on.`,
             },
+            {
+              type: "select",
+              name: "WEB_SEARCH_PROVIDER",
+              label: "Web search provider",
+              defaultValue: webSearchProvider ?? "auto",
+              options: [
+                { value: "auto", label: "Auto (use a configured key, else DuckDuckGo)" },
+                { value: "tavily", label: "Tavily (API key)" },
+                { value: "brave", label: "Brave Search (API key)" },
+                { value: "duckduckgo", label: "DuckDuckGo (keyless, best-effort)" },
+              ],
+              hint: `${AI_ASSISTANT_NAME}'s web_search tool. A real provider gives cleaner, more reliable results than the keyless DuckDuckGo scraper. The search query leaves the box regardless of provider.`,
+            },
+            { type: "password", name: "TAVILY_API_KEY", label: "Tavily API key", isSet: tavilySet },
+            { type: "password", name: "BRAVE_API_KEY", label: "Brave Search API key", isSet: braveSet },
           ]}
         />
       </PageBody>

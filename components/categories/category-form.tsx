@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { ComboField } from "@/components/combo-field";
+import { IconPicker } from "@/components/icon-picker";
 import type { ComboOption } from "@/components/combobox";
 
 export type ParentOption = { id: string; name: string };
@@ -17,6 +18,7 @@ export type CategoryData = {
   name: string;
   description: string | null;
   color: string;
+  icon: string | null;
   parentId: string | null;
   groupId: string | null;
 };
@@ -87,12 +89,16 @@ export function CategoryForm({
         </Field>
       </div>
 
+      <Field label="Icon">
+        <IconPicker name="icon" defaultValue={category?.icon ?? "Boxes"} />
+      </Field>
+
       <Field
         label="Handled by (team)"
         error={fe.groupId}
         hint="Optional. Recorded so Sable knows who owns this category — it does not auto-route tickets."
       >
-        <ComboField name="groupId" options={teamOpts} defaultValue={category?.groupId ?? undefined} includeNone noneLabel="— No team —" />
+        <ComboField name="groupId" options={teamOpts} defaultValue={category?.groupId ?? undefined} includeNone noneLabel="— No group —" />
       </Field>
 
       <Field label="Description" error={fe.description}>

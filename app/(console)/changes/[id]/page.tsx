@@ -7,15 +7,21 @@ import {
 } from "lucide-react";
 import { db } from "@/lib/db";
 import { getFormOptions } from "@/lib/data/options";
+import { getEntityApprovals } from "@/lib/data/approvals";
+import { allowedTransitions } from "@/lib/workflow";
 import { getSessionUser, isAgent, hasRole, type Role } from "@/lib/session";
 import { LinkButton } from "@/components/link-button";
 import { StatusBadge } from "@/components/status-badge";
 import { ChangeProperties } from "@/components/changes/change-properties";
+import { EntityCustomFields } from "@/components/custom-fields/entity-custom-fields";
+import { isFieldVisible, parseValues, entityFieldValues, type CustomFieldDef } from "@/lib/custom-fields";
 import { SubmitForApproval } from "@/components/changes/submit-for-approval";
 import { ApprovalPanel, type ApprovalRow } from "@/components/changes/approval-panel";
+import { EntityApprovals } from "@/components/approvals/entity-approvals";
 import { CommentThread } from "@/components/comments/comment-thread";
 import { EditEntityDialog } from "@/components/edit-entity-dialog";
-import { addChangeComment, updateChangeDetails } from "@/lib/actions/changes";
+import { EditableTextCard } from "@/components/editable-text-card";
+import { addChangeComment, updateChangeDetails, updateChangeText } from "@/lib/actions/changes";
 import { setTicketChange } from "@/lib/actions/tickets";
 import { LinkPicker } from "@/components/link-picker";
 import { sanitizeCommentHtml } from "@/lib/markdown";
@@ -49,7 +55,7 @@ export default async function ChangeDetailPage({
   const changeId = Number(id);
   if (!Number.isFinite(changeId)) notFound();
 
-  const [change, options, audits, linkableTickets] = await Promise.all([
+  const [change, options, audits, linkableTickets, adHocApprovals, customFieldDefs] = await Promise.all([
     db.change.findUnique({
       where: { id: changeId },
       include: {
@@ -73,12 +79,20 @@ export default async function ChangeDetailPage({
       orderBy: { updatedAt: "desc" },
       take: 100,
     }),
+    getEntityApprovals("CHANGE", changeId),
+    db.customFieldDef.findMany({ where: { entityType: "CHANGE", active: true }, orderBy: { order: "asc" } }),
   ]);
   if (!change) notFound();
+
+  const cfValues = parseValues(change.customFields);
+  const visibleCustomFields = (customFieldDefs as CustomFieldDef[]).filter((def) =>
+    isFieldVisible(def, entityFieldValues(change)),
+  );
 
   const ticketOpts = linkableTickets.map((t) => ({ value: String(t.id), label: `${ticketRef(t.id, t.prefix)} · ${t.title}` }));
 
   const me = await getSessionUser();
+  const allowedStatuses = me ? [...await allowedTransitions("CHANGE", change.status, me.role as Role)] : undefined;
   // Manager+ curate the approval board (not the owner — SoD, matches the server).
   const canManage = !!me && hasRole(me.role as Role, "MANAGER");
   const isAgentUser = !!me && isAgent(me.role as Role);
@@ -156,9 +170,39 @@ export default async function ChangeDetailPage({
 
           {/* Plan cards */}
           <div className="mt-4 grid gap-4">
-            <PlanCard icon={FileText} title="Reason for change" body={change.reason} />
-            <PlanCard icon={ClipboardList} title="Implementation plan" body={change.implementationPlan} />
-            <PlanCard icon={RotateCcw} title="Rollback plan" body={change.rollbackPlan} />
+            <EditableTextCard
+              action={updateChangeText}
+              idField="id"
+              id={change.id}
+              field="reason"
+              label="Reason for change"
+              icon={<FileText className="size-4 text-muted-foreground" />}
+              value={change.reason}
+              emptyText="Not documented yet."
+              editable={isAgentUser}
+            />
+            <EditableTextCard
+              action={updateChangeText}
+              idField="id"
+              id={change.id}
+              field="implementationPlan"
+              label="Implementation plan"
+              icon={<ClipboardList className="size-4 text-muted-foreground" />}
+              value={change.implementationPlan}
+              emptyText="Not documented yet."
+              editable={isAgentUser}
+            />
+            <EditableTextCard
+              action={updateChangeText}
+              idField="id"
+              id={change.id}
+              field="rollbackPlan"
+              label="Rollback plan"
+              icon={<RotateCcw className="size-4 text-muted-foreground" />}
+              value={change.rollbackPlan}
+              emptyText="Not documented yet."
+              editable={isAgentUser}
+            />
           </div>
 
           {/* Linked records */}
@@ -227,6 +271,19 @@ export default async function ChangeDetailPage({
             agentOptions={agentOptions}
           />
 
+          {/* Ad-hoc approvals (in addition to the CAB) */}
+          <EntityApprovals
+            entityType="CHANGE"
+            entityId={String(change.id)}
+            entityTitle={change.title}
+            approvals={adHocApprovals}
+            currentUserId={me?.id ?? ""}
+            isAdmin={me?.role === "ADMIN"}
+            canManage={canManage}
+            canRequest={isAgentUser}
+            agents={options.agents}
+          />
+
           {/* Affected assets */}
           {change.assets.length > 0 ? (
             <div className="mt-8">
@@ -270,9 +327,18 @@ export default async function ChangeDetailPage({
         <Card>
           <CardHeader><CardTitle className="text-sm">Properties</CardTitle></CardHeader>
           <CardContent>
-            <ChangeProperties change={change} options={options} />
+            <ChangeProperties change={change} options={options} allowedStatuses={allowedStatuses} />
           </CardContent>
         </Card>
+
+        <EntityCustomFields
+          className="mt-4"
+          entityType="CHANGE"
+          entityId={change.id}
+          defs={visibleCustomFields}
+          values={cfValues}
+          editable={isAgentUser}
+        />
 
         <Card className="mt-4">
           <CardHeader><CardTitle className="text-sm">Planned window</CardTitle></CardHeader>
@@ -286,26 +352,6 @@ export default async function ChangeDetailPage({
           </CardContent>
         </Card>
       </aside>
-    </div>
-  );
-}
-
-function PlanCard({
-  icon: Icon, title, body,
-}: {
-  icon: typeof FileText;
-  title: string;
-  body: string | null;
-}) {
-  return (
-    <div className="rounded-xl border bg-card p-4">
-      <h3 className="mb-2 flex items-center gap-2 text-sm font-semibold">
-        <Icon className="size-4 text-muted-foreground" />
-        {title}
-      </h3>
-      <p className="text-sm leading-relaxed whitespace-pre-wrap text-muted-foreground">
-        {body || "Not documented yet."}
-      </p>
     </div>
   );
 }

@@ -147,6 +147,42 @@ App Router). Node runtime is required — the app uses `node:fs`/`node:crypto` f
 
 ---
 
+## 🐳 Docker
+
+A [`Dockerfile`](../Dockerfile) and [`docker-compose.yml`](../docker-compose.yml) are
+provided. The compose stack runs the app plus **Gotenberg** (LibreOffice) for
+high-fidelity office-document previews.
+
+```bash
+# Just Gotenberg (use it alongside local `next dev`):
+docker compose up -d gotenberg          # publishes host :3001 → set GOTENBERG_URL=http://localhost:3001
+
+# The whole stack (app + Gotenberg):
+docker compose up --build               # app on :3000, Gotenberg internal
+```
+
+- **Database.** The image defaults to **SQLite on the `/data` volume**
+  (`DATABASE_URL=file:/data/servio.db`) — Servio's Prisma schema currently targets
+  SQLite. To run Postgres instead, switch `datasource.provider` to `postgresql` in
+  [`prisma/schema.prisma`](../prisma/schema.prisma), migrate, then uncomment the `db`
+  service in the compose file and repoint `DATABASE_URL`.
+- **Uploads.** Blob storage is redirected to `/data/uploads` (same volume) via
+  `UPLOAD_DIR`, so DB + files persist together.
+- **Boot.** [`docker/entrypoint.sh`](../docker/entrypoint.sh) runs `prisma db push`
+  (matching the dev workflow, since the committed migrations have drifted) and seeds
+  once per volume, then `pnpm start`.
+- **Office previews.** The web service sets `GOTENBERG_URL=http://gotenberg:3000`
+  automatically. Documents (docx/pptx/legacy/ODF) then render as a faithful PDF in the
+  lightbox; without it, Servio falls back to a best-effort text/HTML preview.
+- **Secrets.** The web service reads your `.env` (`env_file`) for `AUTH_SECRET`, AI keys,
+  SMTP, etc. — override `DATABASE_URL`/`GOTENBERG_URL`/`UPLOAD_DIR` are set in the compose.
+
+> The `Dockerfile`/compose were authored for this project but should be **test-built in
+> your environment** (`docker compose build`) before a real deploy. Gotenberg office
+> conversion itself is verified working end-to-end.
+
+---
+
 ## 📁 Persistent file storage
 
 Attachments are stored via a pluggable storage adapter in

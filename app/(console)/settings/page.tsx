@@ -15,6 +15,8 @@ import {
   MailCheck,
   Bot,
   UploadCloud,
+  Workflow,
+  SlidersHorizontal,
 } from "lucide-react";
 import type { Metadata } from "next";
 import type { LucideIcon } from "lucide-react";
@@ -74,6 +76,18 @@ const CARDS: SettingCard[] = [
     title: "SLA Policies",
     description: "Define response and resolution targets and how the clock is applied.",
     icon: Timer,
+  },
+  {
+    href: "/settings/workflows",
+    title: "Status Workflows",
+    description: "Control allowed status changes per entity and gate transitions behind a role.",
+    icon: Workflow,
+  },
+  {
+    href: "/settings/custom-fields",
+    title: "Custom Fields",
+    description: "Add admin-defined fields to tickets, problems and changes with conditional visibility.",
+    icon: SlidersHorizontal,
   },
   {
     href: "/automations",

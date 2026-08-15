@@ -21,11 +21,11 @@ import {
 import { sanitizeCommentHtml, htmlToText, parseMentionIds } from "@/lib/markdown";
 import { format } from "date-fns";
 import { runAutomations } from "@/lib/automations";
-import { autoAssignTicket } from "@/lib/assignment";
+import { autoAssignTicket, isGroupMember } from "@/lib/assignment";
 import {
-  slaCreateData, pauseData, resumeData, firstResponseData,
+  slaCreateData, pauseData, resumeData, firstResponseData, statusChangeData,
 } from "@/lib/sla";
-import { canTransition, TICKET_TRANSITIONS } from "@/lib/transitions";
+import { canTransitionConfigured } from "@/lib/workflow";
 import {
   TICKET_TYPES,
   PRIORITIES,
@@ -45,6 +45,10 @@ const optionalId = z
 const createSchema = z.object({
   title: z.string().min(3, "Title must be at least 3 characters"),
   description: z.string().default(""),
+  // Optional rich-text twin (sanitised HTML) — set by callers that have formatted
+  // content (e.g. Sable renders the model's markdown), so the description shows
+  // paragraphs/lists instead of a wall of text. Falls back to the plaintext.
+  descriptionHtml: z.string().nullish(),
   type: z.enum(TICKET_TYPES),
   priority: z.enum(PRIORITIES),
   impact: z.enum(IMPACT_URGENCY),
@@ -158,34 +162,21 @@ export async function updateTicketField(formData: FormData) {
   if (field === "status") {
     const current = await db.ticket.findUnique({ where: { id } });
     if (!current) return;
-    // Enforce the allowed lifecycle — reject illegal jumps silently.
-    if (!canTransition(TICKET_TRANSITIONS, current.status, value)) return;
-
-    const now = new Date();
-    const wasPending = current.status === "PENDING" || current.status === "ON_HOLD";
-    const willPending = value === "PENDING" || value === "ON_HOLD";
-
-    // Pause the SLA clock on entering hold; resume (shift deadlines) on leaving.
-    if (willPending && !wasPending) Object.assign(patch, pauseData(current, now));
-    let effResolveDueAt = current.resolveDueAt;
-    if (!willPending && wasPending) {
-      const resumed = resumeData(current, now);
-      Object.assign(patch, resumed);
-      effResolveDueAt = resumed.resolveDueAt ?? current.resolveDueAt;
-    }
-
-    if (value === "RESOLVED") {
-      patch.resolvedAt = now;
-      patch.resolveBreached = effResolveDueAt ? now > effResolveDueAt : false;
-    }
-    if (value === "CLOSED") patch.closedAt = now;
-    if (value === "OPEN" || value === "NEW") {
-      patch.resolvedAt = null; patch.closedAt = null;
-      patch.resolutionCode = null; patch.resolutionNote = null;
-      patch.resolveBreached = false;
-    }
-    // leaving a pending state clears the reason
-    if (!willPending) { patch.pendingReason = null; patch.pendingNote = null; }
+    // Enforce the configured lifecycle (built-in map + admin overrides + role).
+    if (!(await canTransitionConfigured("TICKET", current.status, value, me.role as Role))) return;
+    // Shared with the automation engine so both keep the SLA clock consistent.
+    Object.assign(patch, statusChangeData(current, value));
+  }
+  // The assignee must belong to the ticket's group (anyone when there's no group).
+  if (field === "assigneeId" && v) {
+    const current = await db.ticket.findUnique({ where: { id }, select: { groupId: true } });
+    if (current?.groupId && !(await isGroupMember(current.groupId, v))) return;
+  }
+  // Re-routing to a group the current assignee isn't in clears the assignee
+  // (auto-assign below then picks an eligible member).
+  if (field === "groupId" && v) {
+    const current = await db.ticket.findUnique({ where: { id }, select: { assigneeId: true } });
+    if (current?.assigneeId && !(await isGroupMember(v, current.assigneeId))) patch.assigneeId = null;
   }
 
   const ticket = await db.ticket.update({
@@ -636,7 +627,7 @@ export async function setTicketResolution(formData: FormData) {
 
   const current = await db.ticket.findUnique({ where: { id } });
   if (!current) return;
-  if (!canTransition(TICKET_TRANSITIONS, current.status, status)) return;
+  if (!(await canTransitionConfigured("TICKET", current.status, status, me.role as Role))) return;
 
   const now = new Date();
   const clock: Record<string, unknown> = {};
@@ -1048,7 +1039,7 @@ export async function setTicketPending(formData: FormData) {
 
   const current = await db.ticket.findUnique({ where: { id }, select: { status: true, pendingSince: true } });
   if (!current) return;
-  if (!canTransition(TICKET_TRANSITIONS, current.status, status)) return;
+  if (!(await canTransitionConfigured("TICKET", current.status, status, me.role as Role))) return;
 
   await db.ticket.update({
     where: { id },

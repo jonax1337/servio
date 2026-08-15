@@ -57,6 +57,7 @@ function Prop({
 export function ChangeProperties({
   change,
   options,
+  allowedStatuses,
 }: {
   change: {
     id: number;
@@ -69,9 +70,14 @@ export function ChangeProperties({
     categoryId: string | null;
   };
   options: FormOptions;
+  /** Statuses reachable from the current one under the workflow; others grey out. */
+  allowedStatuses?: string[];
 }) {
+  const allowed = allowedStatuses ? new Set(allowedStatuses) : null;
   const statusOpts: ComboOption[] = CHANGE_STATUSES.map((s) => ({
     value: s, label: CHANGE_STATUS_META[s].label, tone: CHANGE_STATUS_META[s].tone, icon: CHANGE_STATUS_META[s].icon,
+    disabled: allowed ? !allowed.has(s) : false,
+    disabledReason: "Not allowed from the current status by the workflow.",
   }));
   const typeOpts: ComboOption[] = CHANGE_TYPES.map((t) => ({
     value: t, label: CHANGE_TYPE_META[t].label, tone: CHANGE_TYPE_META[t].tone, icon: CHANGE_TYPE_META[t].icon,
@@ -83,9 +89,13 @@ export function ChangeProperties({
     value: p, label: PRIORITY_META[p].label, tone: PRIORITY_META[p].tone, icon: PRIORITY_META[p].icon,
   }));
   const none = (label: string): ComboOption => ({ value: "none", label });
+  // Assignee must be a member of the change's group (any agent if none).
+  const memberIds = change.groupId ? new Set(options.groupMembers[change.groupId] ?? []) : null;
   const agentOpts: ComboOption[] = [
     none("Unassigned"),
-    ...options.agents.map((a) => ({ value: a.id, label: a.name ?? a.email, avatar: initials(a.name ?? a.email), hint: a.email })),
+    ...options.agents
+      .filter((a) => !memberIds || memberIds.has(a.id) || a.id === change.assigneeId)
+      .map((a) => ({ value: a.id, label: a.name ?? a.email, avatar: initials(a.name ?? a.email), hint: a.email })),
   ];
   const groupOpts: ComboOption[] = [none("No group"), ...options.groups.map((g) => ({ value: g.id, label: g.name }))];
   const catOpts: ComboOption[] = [none("No category"), ...options.categories.map((c) => ({ value: c.id, label: c.name }))];

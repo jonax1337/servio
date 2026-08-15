@@ -252,6 +252,38 @@ export function buildAssistantGeneralTools(ctx: AssistantUserContext): ToolSet {
     },
   });
 
+  const draftDocument = tool({
+    description:
+      "Hand a LONG document or SCRIPT draft to an editable side canvas the user can review, edit, publish " +
+      "or SAVE INTO THE ACTIVE PROJECT's files — use for runbooks, RCAs, change docs, Knowledge Base drafts, " +
+      "or code/scripts (anything longer than a chat reply). Write the full document body as markdown (for a " +
+      "script, put the code in a fenced code block). It opens beside the chat. This does NOT save anything: " +
+      "the user edits it in the canvas and chooses whether to publish or save. Call it once with the complete " +
+      "draft. When drafting a SCRIPT or a file that should keep a sensible name/extension, ALSO pass `filename` " +
+      "(e.g. 'deploy.sh', 'migrate.py', 'runbook.md') and/or `language` (e.g. 'bash', 'python', 'sql', " +
+      "'markdown') so it saves with the right extension.",
+    inputSchema: z.object({
+      title: z.string().min(1).max(160).describe("a short document title"),
+      markdown: z.string().min(1).describe("the full document body as markdown"),
+      filename: z
+        .string()
+        .min(1)
+        .max(160)
+        .optional()
+        .describe("optional file name with extension for saving (e.g. 'deploy.sh', 'runbook.md')"),
+      language: z
+        .string()
+        .min(1)
+        .max(40)
+        .optional()
+        .describe("optional code/document language, e.g. 'bash', 'python', 'sql', 'markdown'"),
+    }),
+    execute: async ({ title, markdown, filename, language }) => {
+      // Pure hand-off: no mutation. The client canvas renders off this result.
+      return { ok: true, title, markdown, filename, language };
+    },
+  });
+
   return {
     // read / web (reused, stateless)
     web_search: webSearchTool,
@@ -265,6 +297,8 @@ export function buildAssistantGeneralTools(ctx: AssistantUserContext): ToolSet {
     list_team_tickets: listTeamTickets,
     list_tickets: listTickets,
     get_ticket: getTicket,
+    // Long-document hand-off to the editable canvas (no mutation)
+    draft_document: draftDocument,
     // Write actions (create/update/...) live in the RBAC operation registry
     // (lib/ai-operations) and are surfaced as propose_* tools by the caller.
   };

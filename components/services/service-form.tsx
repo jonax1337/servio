@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { ComboField } from "@/components/combo-field";
+import { IconPicker } from "@/components/icon-picker";
 import type { ComboOption } from "@/components/combobox";
 import {
   SERVICE_STATUSES,
@@ -91,6 +92,10 @@ export function ServiceForm({ options }: { options: FormOptions }) {
         <Input name="name" placeholder="e.g. Email & Calendar" required />
       </Field>
 
+      <Field label="Icon">
+        <IconPicker name="icon" defaultValue="LifeBuoy" />
+      </Field>
+
       <Field label="Description" error={fe.description}>
         <Textarea
           name="description"
@@ -122,12 +127,12 @@ export function ServiceForm({ options }: { options: FormOptions }) {
             noneLabel="No category"
           />
         </Field>
-        <Field label="Team" hint="Handles catalog requests for this service.">
+        <Field label="Group" hint="Handles catalog requests for this service.">
           <ComboField
             name="groupId"
             options={teamOpts}
             includeNone
-            noneLabel="No team"
+            noneLabel="No group"
           />
         </Field>
         <Field label="SLA">

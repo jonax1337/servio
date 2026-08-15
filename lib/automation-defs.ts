@@ -3,6 +3,8 @@
 export const TRIGGERS = [
   { value: "TICKET_CREATED", label: "When a ticket is created" },
   { value: "TICKET_UPDATED", label: "When a ticket is updated" },
+  { value: "TICKET_SLA_AT_RISK", label: "When a ticket's SLA is at risk" },
+  { value: "TICKET_SLA_BREACHED", label: "When a ticket's SLA is breached" },
 ] as const;
 
 export const MATCH_TYPES = [
@@ -23,6 +25,8 @@ export const CONDITION_FIELDS = [
   { value: "serviceId", label: "Service" },
   { value: "assigneeId", label: "Assignee" },
   { value: "requesterVip", label: "Requester is VIP" },
+  { value: "responseBreached", label: "Response SLA breached" },
+  { value: "resolveBreached", label: "Resolve SLA breached" },
 ] as const;
 
 export const OPERATORS = [
@@ -41,6 +45,8 @@ export const ACTION_TYPES = [
   { value: "escalate", label: "Escalate priority (+1)" },
   { value: "major_incident", label: "Declare Major Incident" },
   { value: "notify", label: "Notify agent" },
+  { value: "notify_group", label: "Notify ticket's group" },
+  { value: "webhook", label: "Call webhook (POST)" },
   { value: "internal_note", label: "Add internal note" },
 ] as const;
 

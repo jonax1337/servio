@@ -1,12 +1,18 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
-import { ArrowLeft, LifeBuoy, Timer, Ticket as TicketIcon } from "lucide-react";
+import { ArrowLeft, Timer, Ticket as TicketIcon } from "lucide-react";
+import { CatalogIcon } from "@/components/catalog/catalog-icon";
 import { db } from "@/lib/db";
 import { getFormOptions } from "@/lib/data/options";
+import { getEntityApprovals } from "@/lib/data/approvals";
+import { getSessionUser, isAgent, hasRole, type Role } from "@/lib/session";
 import { LinkButton } from "@/components/link-button";
 import { StatusBadge } from "@/components/status-badge";
 import { ServiceProperties } from "@/components/services/service-properties";
+import { ServiceEditDialog } from "@/components/services/service-edit-dialog";
+import { DeleteServiceButton } from "@/components/services/delete-service-button";
+import { EntityApprovals } from "@/components/approvals/entity-approvals";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   SERVICE_STATUS_META,
@@ -40,7 +46,7 @@ export default async function ServiceDetailPage({
 }) {
   const { id } = await params;
 
-  const [service, options] = await Promise.all([
+  const [service, options, me] = await Promise.all([
     db.service.findUnique({
       where: { id },
       include: {
@@ -56,8 +62,12 @@ export default async function ServiceDetailPage({
       },
     }),
     getFormOptions(),
+    getSessionUser(),
   ]);
   if (!service) notFound();
+  const isAgentUser = !!me && isAgent(me.role as Role);
+  const canManage = !!me && hasRole(me.role as Role, "MANAGER");
+  const approvals = await getEntityApprovals("SERVICE", service.id);
 
   return (
     <div className="grid gap-0 lg:h-[calc(100svh-3.5rem)] lg:grid-cols-[1fr_320px] lg:overflow-hidden">
@@ -73,13 +83,19 @@ export default async function ServiceDetailPage({
           <div className="ml-auto flex items-center gap-2">
             <StatusBadge map={CRITICALITY_META} value={service.criticality} dot />
             <StatusBadge map={SERVICE_STATUS_META} value={service.status} />
+            {isAgentUser ? (
+              <>
+                <ServiceEditDialog service={service} />
+                <DeleteServiceButton serviceId={service.id} serviceName={service.name} />
+              </>
+            ) : null}
           </div>
         </div>
 
         <div className="p-4 sm:p-6">
           <div className="flex items-start gap-3">
             <div className="grid size-11 shrink-0 place-items-center rounded-xl border bg-muted text-primary">
-              <LifeBuoy className="size-5.5" />
+              <CatalogIcon name={service.icon} className="size-5.5" />
             </div>
             <div className="min-w-0">
               <h1 className="font-display text-2xl font-semibold tracking-tight">
@@ -136,6 +152,19 @@ export default async function ServiceDetailPage({
               </div>
             )}
           </div>
+
+          {/* Approvals (ad-hoc sign-off) */}
+          <EntityApprovals
+            entityType="SERVICE"
+            entityId={service.id}
+            entityTitle={service.name}
+            approvals={approvals}
+            currentUserId={me?.id ?? ""}
+            isAdmin={me?.role === "ADMIN"}
+            canManage={canManage}
+            canRequest={isAgentUser}
+            agents={options.agents}
+          />
         </div>
       </div>
 

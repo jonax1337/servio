@@ -13,7 +13,14 @@ import {
   toggleWatch,
   toggleMajorIncident,
 } from "@/lib/actions/tickets";
-import { resolveGroupId, resolveCategoryId, resolveAgentId, parseTicketId } from "@/lib/ai-tools";
+import {
+  resolveGroupId,
+  resolveCategoryId,
+  resolveAgentId,
+  parseTicketId,
+  categoryNotFoundHint,
+  groupNotFoundHint,
+} from "@/lib/ai-tools";
 import { linkStagedAttachments } from "@/lib/portal-tickets";
 import {
   TICKET_TYPES,
@@ -23,7 +30,7 @@ import {
   ticketRef,
 } from "@/lib/constants";
 import type { AiOperation } from "../types";
-import { ok, err, str, toFormData, coerceEnum } from "../helpers";
+import { ok, err, str, toFormData, coerceEnum, richHtml } from "../helpers";
 
 /**
  * Tickets. Reference module shape — export `OPERATIONS: AiOperation[]`, one entry
@@ -86,11 +93,13 @@ export const OPERATIONS: AiOperation[] = [
 
       const categoryName = str(a.category);
       const category = categoryName ? await resolveCategoryId(categoryName) : null;
-      if (categoryName && !category) return err(`Category not found: ${a.category}`);
+      if (categoryName && !category)
+        return err(`Category not found: ${a.category}.${await categoryNotFoundHint(categoryName)}`);
 
       const teamName = str(a.team);
       const team = teamName ? await resolveGroupId(teamName) : null;
-      if (teamName && !team) return err(`Team not found: ${a.team}`);
+      if (teamName && !team)
+        return err(`Team not found: ${a.team}.${await groupNotFoundHint(teamName)}`);
 
       let requesterId = ctx.userId;
       const email = str(a.requesterEmail);
@@ -104,6 +113,7 @@ export const OPERATIONS: AiOperation[] = [
         {
           title,
           description: str(a.description) ?? "",
+          descriptionHtml: richHtml(a.description),
           type,
           priority,
           impact: "MEDIUM",
@@ -156,12 +166,12 @@ export const OPERATIONS: AiOperation[] = [
 
       if (field === "team") {
         const g = await resolveGroupId(value);
-        if (!g) return err(`Team not found: ${value}`);
+        if (!g) return err(`Team not found: ${value}.${await groupNotFoundHint(value)}`);
         realField = "groupId";
         realValue = g.id;
       } else if (field === "category") {
         const c = await resolveCategoryId(value);
-        if (!c) return err(`Category not found: ${value}`);
+        if (!c) return err(`Category not found: ${value}.${await categoryNotFoundHint(value)}`);
         realField = "categoryId";
         realValue = c.id;
       } else if (field === "assignee") {
@@ -228,7 +238,9 @@ export const OPERATIONS: AiOperation[] = [
       if (!text) return err("Comment text is required.");
       const internal = a.internal === true;
       await addTicketComment(
-        toFormData({ ticketId: ticket.id, bodyHtml: text, isInternal: internal }),
+        // Render the model's markdown to HTML so paragraphs / line breaks / lists
+        // survive (the comment field stores & renders `bodyHtml`).
+        toFormData({ ticketId: ticket.id, bodyHtml: richHtml(text) ?? text, isInternal: internal }),
       );
       // Attach the turn's staged files to the ticket (see ticket.create).
       if (a.attachFiles !== false && Array.isArray(a.attachmentIds) && a.attachmentIds.length) {

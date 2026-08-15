@@ -1,14 +1,24 @@
 import { db } from "@/lib/db";
 import { writeAudit, notify } from "@/lib/audit";
 import { getAutomationUserId } from "@/lib/system-user";
+import { statusChangeData } from "@/lib/sla";
+import { safeWebhookFetch } from "@/lib/safe-fetch";
+import { TICKET_STATUSES, ticketRef } from "@/lib/constants";
 import { parseJson, type Condition, type AutomationAction } from "@/lib/automation-defs";
 
 const PRIORITY_ORDER = ["LOW", "MEDIUM", "HIGH", "CRITICAL"] as const;
 
-type Trigger = "TICKET_CREATED" | "TICKET_UPDATED";
+type Trigger =
+  | "TICKET_CREATED"
+  | "TICKET_UPDATED"
+  | "TICKET_SLA_AT_RISK"
+  | "TICKET_SLA_BREACHED";
 
 async function loadTicket(id: number) {
-  return db.ticket.findUnique({ where: { id }, include: { requester: true } });
+  return db.ticket.findUnique({
+    where: { id },
+    include: { requester: true, group: true, assignee: true },
+  });
 }
 type TicketRow = NonNullable<Awaited<ReturnType<typeof loadTicket>>>;
 
@@ -60,10 +70,17 @@ export async function runAutomations(trigger: Trigger, ticketId: number) {
 
     for (const a of actions) {
       switch (a.type) {
-        case "set_status":
-          patch.status = a.value;
-          if (a.value === "RESOLVED") patch.resolvedAt = new Date();
+        case "set_status": {
+          // Validate the enum (a corrupt rule must never write a junk status),
+          // then apply the SAME SLA/resolution side-effects as the console so
+          // automations don't leave the SLA clock or resolution stamps stale.
+          const next = a.value;
+          if (next && TICKET_STATUSES.includes(next as (typeof TICKET_STATUSES)[number])) {
+            patch.status = next;
+            Object.assign(patch, statusChangeData(t, next));
+          }
           break;
+        }
         case "set_priority": patch.priority = a.value; break;
         case "assign": patch.assigneeId = a.value || null; break;
         case "set_group": patch.groupId = a.value || null; break;
@@ -79,6 +96,40 @@ export async function runAutomations(trigger: Trigger, ticketId: number) {
         case "notify":
           if (a.value) await notify(a.value, { type: "AUTOMATION", title: `Automation: ${rule.name}`, body: t.title, entity: "Ticket", entityId: String(ticketId) });
           break;
+        case "notify_group": {
+          // Notify every active agent in the ticket's assigned group.
+          if (t.groupId) {
+            const members = await db.groupMember.findMany({
+              where: { groupId: t.groupId, user: { isActive: true } },
+              select: { userId: true },
+            });
+            for (const m of members) {
+              await notify(m.userId, { type: "AUTOMATION", title: `Automation: ${rule.name}`, body: t.title, entity: "Ticket", entityId: String(ticketId) });
+            }
+          }
+          break;
+        }
+        case "webhook": {
+          // Best-effort outbound POST through the SSRF guard (rejects private /
+          // loopback / link-local / metadata hosts and refuses redirects). Never
+          // let a bad/blocked/slow URL break the rule run — swallow all errors.
+          if (a.value) {
+            try {
+              await safeWebhookFetch(a.value, {
+                ticketId: t.id,
+                ref: ticketRef(t.id, t.prefix || t.type),
+                title: t.title,
+                status: t.status,
+                priority: t.priority,
+                group: t.group?.name ?? null,
+                assignee: t.assignee?.name ?? null,
+              });
+            } catch {
+              /* best-effort — ignore SSRF-block / network / timeout errors */
+            }
+          }
+          break;
+        }
         case "internal_note": {
           const authorId = await getAutomationUserId();
           await db.ticketComment.create({ data: { ticketId, authorId, isInternal: true, body: a.value || `Automation "${rule.name}" ran.` } });

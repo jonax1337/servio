@@ -7,6 +7,34 @@ import type { LucideIcon } from "lucide-react";
 // Keep in sync with MAX_UPLOAD_MB / lib/files.ts MAX_UPLOAD_BYTES (server is authoritative).
 export const MAX_UPLOAD_BYTES = 15 * 1024 * 1024;
 
+/**
+ * `accept` allow-list offered by the file picker. This is a UX hint only — the
+ * server's lib/files.ts validateUpload is the authoritative gate. Kept broadly
+ * in sync with ALLOWED_MIME; expressed mostly as extensions so browsers that
+ * report generic MIME types still surface the right files. SVG is intentionally
+ * omitted (matches the server; XSS risk).
+ */
+export const UPLOAD_ACCEPT = [
+  // images
+  "image/*",
+  ".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".tif", ".tiff", ".ico", ".heic", ".heif",
+  // pdf + office (modern, legacy, opendocument)
+  ".pdf",
+  ".docx", ".xlsx", ".pptx", ".doc", ".xls", ".ppt", ".odt", ".ods", ".odp", ".rtf",
+  // text / data / config
+  ".txt", ".log", ".md", ".markdown", ".csv", ".tsv", ".json", ".xml",
+  ".yaml", ".yml", ".toml", ".ini", ".conf", ".env",
+  // web / code
+  ".html", ".htm", ".css", ".js", ".mjs", ".cjs", ".ts", ".tsx", ".jsx",
+  ".py", ".rb", ".go", ".rs", ".java", ".c", ".h", ".cpp", ".cc", ".cxx", ".hpp",
+  ".sh", ".bash", ".sql",
+  // archives + mail
+  ".zip", ".eml",
+  // audio / video
+  "audio/*", "video/*",
+  ".mp3", ".wav", ".ogg", ".oga", ".m4a", ".mp4", ".m4v", ".webm", ".mov",
+].join(",");
+
 export type AttachmentTarget =
   | { ticketId: number }
   | { commentId: string }

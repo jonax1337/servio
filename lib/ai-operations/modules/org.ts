@@ -18,6 +18,25 @@ import { ok, err, str, toFormData, coerceEnum } from "../helpers";
 
 export const OPERATIONS: AiOperation[] = [
   {
+    id: "group.list",
+    group: "Groups",
+    kind: "read",
+    minRole: "AGENT",
+    description:
+      "List the EXISTING teams / groups with their exact names. ALWAYS call this before routing a ticket/problem/change to a team — use one of the returned `name` values verbatim; never invent a team name.",
+    input: z.object({}),
+    run: async () => {
+      const rows = await db.group.findMany({
+        select: { name: true, type: true },
+        orderBy: { name: "asc" },
+        take: 300,
+      });
+      if (rows.length === 0) return ok("No teams/groups exist yet.", { teams: [] });
+      const teams = rows.map((r) => ({ name: r.name, type: r.type }));
+      return ok(`${teams.length} teams. Use the exact \`name\` when routing to a team.`, { teams });
+    },
+  },
+  {
     id: "group.create",
     group: "Groups",
     kind: "write",

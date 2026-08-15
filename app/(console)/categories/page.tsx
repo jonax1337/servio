@@ -7,6 +7,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { CreateCategoryDialog } from "@/components/categories/create-category-dialog";
 import { CategoryRowActions } from "@/components/categories/category-row-actions";
 import type { CategoryData } from "@/components/categories/category-form";
+import { CatalogIcon } from "@/components/catalog/catalog-icon";
 import { cn } from "@/lib/utils";
 
 export const metadata: Metadata = { title: "Categories" };
@@ -39,7 +40,12 @@ function Tree({
       {nodes.map((n) => (
         <li key={n.data.id} className="py-0.5">
           <div className={cn("group flex items-center gap-2.5 rounded-md px-2 py-1.5 hover:bg-muted/40", n.archived && "opacity-60")}>
-            <span className="size-2.5 shrink-0 rounded-full" style={{ background: n.data.color }} />
+            <span
+              className="grid size-6 shrink-0 place-items-center rounded-md border bg-muted"
+              style={{ color: n.data.color }}
+            >
+              <CatalogIcon name={n.data.icon} className="size-3.5" />
+            </span>
             <span className="font-medium">{n.data.name}</span>
             {n.data.description ? (
               <span className="truncate text-xs text-muted-foreground">{n.data.description}</span>
@@ -94,7 +100,7 @@ export default async function CategoriesPage() {
   const nodes: Node[] = categories.map((c) => {
     const refs = c._count.tickets + c._count.problems + c._count.changes + c._count.services + c._count.articles + c._count.catalogItems;
     return {
-      data: { id: c.id, name: c.name, description: c.description, color: c.color, parentId: c.parentId, groupId: c.groupId },
+      data: { id: c.id, name: c.name, description: c.description, color: c.color, icon: c.icon, parentId: c.parentId, groupId: c.groupId },
       team: c.group?.name ?? null,
       archived: c.archived,
       ticketCount: c._count.tickets,

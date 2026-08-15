@@ -18,6 +18,14 @@ export const TICKET_TRANSITIONS: TransitionMap = {
   CANCELLED: ["OPEN"], // reopen
 };
 
+export const PROBLEM_TRANSITIONS: TransitionMap = {
+  NEW: ["INVESTIGATING", "KNOWN_ERROR", "RESOLVED", "CLOSED"],
+  INVESTIGATING: ["KNOWN_ERROR", "RESOLVED", "CLOSED", "NEW"],
+  KNOWN_ERROR: ["RESOLVED", "CLOSED", "INVESTIGATING"],
+  RESOLVED: ["CLOSED", "INVESTIGATING"], // reopen to investigating
+  CLOSED: ["INVESTIGATING"], // reopen
+};
+
 export const CHANGE_TRANSITIONS: TransitionMap = {
   DRAFT: ["SUBMITTED"],
   SUBMITTED: ["APPROVAL", "DRAFT", "REJECTED"],

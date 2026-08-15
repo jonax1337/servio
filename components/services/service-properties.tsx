@@ -77,7 +77,7 @@ export function ServiceProperties({
     ...options.agents.map((a) => ({ value: a.id, label: a.name ?? a.email, avatar: initials(a.name ?? a.email), hint: a.email })),
   ];
   const catOpts: ComboOption[] = [none("No category"), ...options.categories.map((c) => ({ value: c.id, label: c.name }))];
-  const teamOpts: ComboOption[] = [none("No team"), ...options.groups.map((g) => ({ value: g.id, label: g.name }))];
+  const teamOpts: ComboOption[] = [none("No group"), ...options.groups.map((g) => ({ value: g.id, label: g.name }))];
   const slaOpts: ComboOption[] = [none("No SLA"), ...options.slas.map((s) => ({ value: s.id, label: s.name }))];
 
   return (
@@ -86,7 +86,7 @@ export function ServiceProperties({
       <Prop label="Criticality" serviceId={service.id} field="criticality" value={service.criticality} options={critOpts} />
       <Prop label="Owner" serviceId={service.id} field="ownerId" value={service.ownerId} options={ownerOpts} searchable placeholder="No owner" />
       <Prop label="Category" serviceId={service.id} field="categoryId" value={service.categoryId} options={catOpts} searchable placeholder="No category" />
-      <Prop label="Team" serviceId={service.id} field="groupId" value={service.groupId} options={teamOpts} searchable placeholder="No team" />
+      <Prop label="Group" serviceId={service.id} field="groupId" value={service.groupId} options={teamOpts} searchable placeholder="No group" />
       <Prop label="SLA" serviceId={service.id} field="slaId" value={service.slaId} options={slaOpts} searchable placeholder="No SLA" />
     </div>
   );

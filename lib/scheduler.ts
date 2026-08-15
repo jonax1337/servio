@@ -4,6 +4,7 @@ import { getSetting, getBoolSetting, getNumberSetting } from "@/lib/settings";
 import { pollImap } from "@/lib/mail-inbound/imap";
 import { processInboundMail } from "@/lib/mail-inbound/process";
 import { executeSyncRun } from "@/lib/sync-runner";
+import { runSlaEscalation } from "@/lib/sla-escalation";
 import type { InboundConfig } from "@/lib/mail-inbound/types";
 
 /**
@@ -20,11 +21,13 @@ const g = globalThis as unknown as {
     started: boolean;
     timer?: NodeJS.Timeout;
     syncTimer?: NodeJS.Timeout;
+    slaTimer?: NodeJS.Timeout;
   };
 };
 
 let polling = false;
 let syncing = false;
+let escalating = false;
 
 async function readInboundConfig(): Promise<InboundConfig | null> {
   if (!(await getBoolSetting("IMAP_ENABLED", false))) return null;
@@ -114,6 +117,21 @@ async function syncTick(): Promise<void> {
   }
 }
 
+async function slaEscalationTick(): Promise<void> {
+  if (escalating) return; // overlap guard — one sweep at a time
+  escalating = true;
+  try {
+    const res = await runSlaEscalation();
+    if (res.breached || res.atRisk) {
+      console.log(`[servio:sla-escalation] breached=${res.breached} at-risk=${res.atRisk}`);
+    }
+  } catch (e) {
+    console.error("[servio:sla-escalation] tick error:", e instanceof Error ? e.message : e);
+  } finally {
+    escalating = false;
+  }
+}
+
 export async function startScheduler(): Promise<void> {
   if (g.__servioScheduler?.started) return; // HMR / double-register guard
 
@@ -128,10 +146,18 @@ export async function startScheduler(): Promise<void> {
   const syncTimer = setInterval(() => void syncTick(), syncIntervalMs);
   if (typeof syncTimer.unref === "function") syncTimer.unref();
 
-  g.__servioScheduler = { started: true, timer, syncTimer };
+  // SLA escalation sweep — coarser cadence (minutes) is fine; it just needs to
+  // catch breaches/at-risk within a few minutes of the deadline.
+  const slaSeconds = await getNumberSetting("SLA_ESCALATION_TICK_SECONDS", 180);
+  const slaIntervalMs = Math.max(60, slaSeconds) * 1000;
+  const slaTimer = setInterval(() => void slaEscalationTick(), slaIntervalMs);
+  if (typeof slaTimer.unref === "function") slaTimer.unref();
+
+  g.__servioScheduler = { started: true, timer, syncTimer, slaTimer };
   console.log(
-    `[servio:scheduler] started (inbound poll every ${Math.round(intervalMs / 1000)}s, sync tick every ${Math.round(syncIntervalMs / 1000)}s)`,
+    `[servio:scheduler] started (inbound poll every ${Math.round(intervalMs / 1000)}s, sync tick every ${Math.round(syncIntervalMs / 1000)}s, sla sweep every ${Math.round(slaIntervalMs / 1000)}s)`,
   );
   void inboundTick(); // immediate first pass
   void syncTick();
+  void slaEscalationTick();
 }

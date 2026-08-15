@@ -16,6 +16,28 @@ const HEX = /^#[0-9a-fA-F]{6}$/;
 
 export const OPERATIONS: AiOperation[] = [
   {
+    id: "category.list",
+    group: "Categories",
+    kind: "read",
+    minRole: "AGENT",
+    description:
+      "List the EXISTING ticket/service categories with their exact names. ALWAYS call this before setting a category on a ticket/problem/change — use one of the returned `name` values verbatim; never invent a category or a 'Parent > Child' path.",
+    input: z.object({}),
+    run: async () => {
+      const rows = await db.category.findMany({
+        select: { name: true, parent: { select: { name: true } } },
+        orderBy: [{ parent: { name: "asc" } }, { name: "asc" }],
+        take: 300,
+      });
+      if (rows.length === 0) return ok("No categories exist yet.", { categories: [] });
+      const categories = rows.map((r) => ({ name: r.name, parent: r.parent?.name ?? null }));
+      return ok(
+        `${categories.length} categories. Use the exact \`name\` (not a path) when setting a category.`,
+        { categories },
+      );
+    },
+  },
+  {
     id: "category.create",
     group: "Categories",
     kind: "write",

@@ -113,7 +113,7 @@ export default async function TicketsPage({
     },
     { key: "priority", label: "Priority", options: PRIORITIES.map((p) => ({ value: p, label: PRIORITY_META[p].label })) },
     { key: "type", label: "Type", options: TICKET_TYPES.map((t) => ({ value: t, label: TICKET_TYPE_META[t].label })) },
-    { key: "group", label: "Team", options: opts.groups.map((g) => ({ value: g.id, label: g.name })) },
+    { key: "group", label: "Group", options: opts.groups.map((g) => ({ value: g.id, label: g.name })) },
     {
       key: "assignee",
       label: "Assignee",

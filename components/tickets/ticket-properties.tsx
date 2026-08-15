@@ -92,6 +92,7 @@ export function TicketProperties({
   aiEnabled = false,
   aiTeaser = false,
   triageEnabled = false,
+  allowedStatuses,
 }: {
   ticket: {
     id: number;
@@ -110,10 +111,15 @@ export function TicketProperties({
   aiEnabled?: boolean;
   aiTeaser?: boolean;
   triageEnabled?: boolean;
+  /** Statuses reachable from the current one under the workflow; others grey out. */
+  allowedStatuses?: string[];
 }) {
   // ── Options ──
+  const allowedSet = allowedStatuses ? new Set(allowedStatuses) : null;
   const statusOpts: ComboOption[] = TICKET_STATUSES.map((s) => ({
     value: s, label: TICKET_STATUS_META[s].label, tone: TICKET_STATUS_META[s].tone, icon: TICKET_STATUS_META[s].icon,
+    disabled: allowedSet ? !allowedSet.has(s) : false,
+    disabledReason: "Not allowed from the current status by the workflow.",
   }));
   const prioOpts: ComboOption[] = PRIORITIES.map((p) => ({
     value: p, label: PRIORITY_META[p].label, tone: PRIORITY_META[p].tone, icon: PRIORITY_META[p].icon,
@@ -123,11 +129,7 @@ export function TicketProperties({
     value: t, label: TICKET_TYPE_META[t].label, tone: TICKET_TYPE_META[t].tone, icon: TICKET_TYPE_META[t].icon,
   }));
   const none = (label: string): ComboOption => ({ value: "none", label });
-  const agentOpts: ComboOption[] = [
-    none("Unassigned"),
-    ...options.agents.map((a) => ({ value: a.id, label: a.name ?? a.email, avatar: initials(a.name ?? a.email), hint: a.email })),
-  ];
-  const groupOpts: ComboOption[] = [none("No team"), ...options.groups.map((g) => ({ value: g.id, label: g.name }))];
+  const groupOpts: ComboOption[] = [none("No group"), ...options.groups.map((g) => ({ value: g.id, label: g.name }))];
   const catOpts: ComboOption[] = [none("No category"), ...options.categories.map((c) => ({ value: c.id, label: c.name }))];
   const svcOpts: ComboOption[] = [none("No service"), ...options.services.map((s) => ({ value: s.id, label: s.name }))];
   const groupName = (id: string) => options.groups.find((g) => g.id === id)?.name ?? id;
@@ -171,8 +173,26 @@ export function TicketProperties({
   const dirtyKeys = DRAFT_KEYS.filter((k) => draft[k] !== base[k]);
   const anyDirty = dirtyKeys.length > 0;
 
+  // Assignee must be a member of the chosen group (any agent when there's no
+  // group). The currently-selected assignee is always kept so it still shows.
+  const memberIds = draft.groupId !== "none" ? new Set(options.groupMembers[draft.groupId] ?? []) : null;
+  const assigneeOpts: ComboOption[] = [
+    none("Unassigned"),
+    ...options.agents
+      .filter((a) => !memberIds || memberIds.has(a.id) || a.id === draft.assigneeId)
+      .map((a) => ({ value: a.id, label: a.name ?? a.email, avatar: initials(a.name ?? a.email), hint: a.email })),
+  ];
+
   function setField(k: DraftKey, v: string) {
-    setDraft((d) => ({ ...d, [k]: v }));
+    setDraft((d) => {
+      const next = { ...d, [k]: v };
+      // Changing to a group the current assignee isn't in clears the assignee.
+      if (k === "groupId" && v !== "none" && next.assigneeId !== "none") {
+        const members = new Set(options.groupMembers[v] ?? []);
+        if (!members.has(next.assigneeId)) next.assigneeId = "none";
+      }
+      return next;
+    });
   }
 
   function discard() {
@@ -182,7 +202,13 @@ export function TicketProperties({
   }
 
   function saveChanges() {
-    const nonStatus = dirtyKeys.filter((k) => k !== "status").map((field) => ({ field, value: draft[field] }));
+    // Persist groupId before assigneeId so the server validates the assignee
+    // against the NEW group, not the old one.
+    const saveRank = (k: DraftKey) => (k === "groupId" ? 0 : k === "assigneeId" ? 2 : 1);
+    const nonStatus = dirtyKeys
+      .filter((k) => k !== "status")
+      .sort((a, b) => saveRank(a) - saveRank(b))
+      .map((field) => ({ field, value: draft[field] }));
     const statusChanged = draft.status !== base.status;
     if (nonStatus.length === 0 && !statusChanged) return;
     const newStatus = draft.status;
@@ -356,8 +382,8 @@ export function TicketProperties({
 
       {/* Who owns it */}
       <div className="grid gap-3 border-t pt-3">
-        {prop("assigneeId", "Assignee", agentOpts, true, "Unassigned")}
-        {prop("groupId", "Team", groupOpts, true, "No team")}
+        {prop("assigneeId", "Assignee", assigneeOpts, true, "Unassigned")}
+        {prop("groupId", "Group", groupOpts, true, "No group")}
       </div>
 
       {/* How severe it is */}

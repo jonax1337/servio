@@ -215,6 +215,16 @@ export const APPROVAL_META: Record<string, Meta> = {
   REJECTED: { label: "Rejected", tone: "danger" },
 };
 
+// Entities that support generic, ad-hoc approvals (see the Approval model).
+export const APPROVAL_ENTITY_TYPES = ["TICKET", "PROBLEM", "CHANGE", "SERVICE"] as const;
+export type ApprovalEntityType = (typeof APPROVAL_ENTITY_TYPES)[number];
+export const APPROVAL_ENTITY_META: Record<ApprovalEntityType, { label: string; path: string }> = {
+  TICKET: { label: "Ticket", path: "/tickets" },
+  PROBLEM: { label: "Problem", path: "/problems" },
+  CHANGE: { label: "Change", path: "/changes" },
+  SERVICE: { label: "Service", path: "/services" },
+};
+
 // ---- Service --------------------------------------------------------------
 export const SERVICE_STATUSES = [
   "OPERATIONAL",
@@ -248,6 +258,12 @@ export const GROUP_TYPE_META: Record<string, Meta> = {
   TEAM: { label: "Team", tone: "indigo" },
   DEPARTMENT: { label: "Department", tone: "purple" },
   VENDOR: { label: "Vendor", tone: "info" },
+};
+
+export const GROUP_MEMBER_ROLES = ["MEMBER", "LEAD"] as const;
+export const GROUP_MEMBER_ROLE_META: Record<string, Meta> = {
+  MEMBER: { label: "Member", tone: "neutral" },
+  LEAD: { label: "Lead", tone: "indigo" },
 };
 
 // ---- Asset ----------------------------------------------------------------

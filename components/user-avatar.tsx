@@ -16,7 +16,7 @@ export function UserAvatar({
   email?: string | null;
   image?: string | null;
   className?: string;
-  size?: "sm" | "default" | "lg";
+  size?: "xs" | "sm" | "default" | "lg";
 }) {
   const display = name?.trim() || email?.trim() || "?";
   const style = avatarColor(name?.trim() || email?.trim());

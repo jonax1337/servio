@@ -7,6 +7,8 @@ import { db } from "@/lib/db";
 import { getSessionUser, isAgent, type Role } from "@/lib/session";
 import { writeAudit, notify } from "@/lib/audit";
 import { readRichBody, readRichField } from "@/lib/markdown";
+import { canTransitionConfigured } from "@/lib/workflow";
+import { isGroupMember } from "@/lib/assignment";
 import {
   PROBLEM_STATUSES,
   PRIORITIES,
@@ -33,7 +35,7 @@ export type ActionState = { error?: string; fieldErrors?: Record<string, string[
 
 export async function createProblem(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const me = await getSessionUser();
-  if (!me) return { error: "Not authenticated" };
+  if (!me || !isAgent(me.role as Role)) return { error: "Not authorised" };
 
   const parsed = createSchema.safeParse(Object.fromEntries(formData));
   if (!parsed.success) {
@@ -63,7 +65,7 @@ const updateSchema = z.object({
 
 export async function updateProblemField(formData: FormData) {
   const me = await getSessionUser();
-  if (!me) return;
+  if (!me || !isAgent(me.role as Role)) return;
   const parsed = updateSchema.safeParse(Object.fromEntries(formData));
   if (!parsed.success) return;
   const { id, field, value } = parsed.data;
@@ -73,8 +75,21 @@ export async function updateProblemField(formData: FormData) {
 
   const patch: Record<string, unknown> = { [field]: v };
   if (field === "status") {
+    const current = await db.problem.findUnique({ where: { id }, select: { status: true } });
+    if (!current) return;
+    // Enforce the configured lifecycle (built-in map + admin overrides + role).
+    if (!(await canTransitionConfigured("PROBLEM", current.status, value, me.role as Role))) return;
     if (value === "RESOLVED" || value === "CLOSED") patch.resolvedAt = new Date();
     if (value === "NEW" || value === "INVESTIGATING" || value === "KNOWN_ERROR") patch.resolvedAt = null;
+  }
+  // The assignee must belong to the problem's group (anyone when there's none).
+  if (field === "assigneeId" && v) {
+    const cur = await db.problem.findUnique({ where: { id }, select: { groupId: true } });
+    if (cur?.groupId && !(await isGroupMember(cur.groupId, v))) return;
+  }
+  if (field === "groupId" && v) {
+    const cur = await db.problem.findUnique({ where: { id }, select: { assigneeId: true } });
+    if (cur?.assigneeId && !(await isGroupMember(v, cur.assigneeId))) patch.assigneeId = null;
   }
 
   await db.problem.update({ where: { id }, data: patch });
@@ -114,4 +129,32 @@ export async function updateProblemDetails(formData: FormData) {
   await writeAudit({ userId: me.id, action: "UPDATE", entity: "Problem", entityId: id, summary: "Edited details" });
   revalidatePath(`/problems/${id}`);
   revalidatePath("/problems");
+}
+
+// ── Investigation fields (root cause, workaround) ────────────────────────────
+// Plain-text analysis fields that can be filled in / amended at any time as the
+// investigation progresses. Keyed by field name via EditableTextCard.
+
+const TEXT_FIELDS = ["rootCause", "workaround"] as const;
+const textSchema = z.object({
+  id: z.coerce.number(),
+  field: z.enum(TEXT_FIELDS),
+  value: z.string(),
+});
+
+const TEXT_LABELS: Record<(typeof TEXT_FIELDS)[number], string> = {
+  rootCause: "root cause",
+  workaround: "workaround",
+};
+
+export async function updateProblemText(formData: FormData) {
+  const me = await requireAgentP();
+  if (!me) return;
+  const parsed = textSchema.safeParse(Object.fromEntries(formData));
+  if (!parsed.success) return;
+  const { id, field } = parsed.data;
+  const value = parsed.data.value.trim() || null;
+  await db.problem.update({ where: { id }, data: { [field]: value } });
+  await writeAudit({ userId: me.id, action: "UPDATE", entity: "Problem", entityId: id, summary: `Updated ${TEXT_LABELS[field]}` });
+  revalidatePath(`/problems/${id}`);
 }

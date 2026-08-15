@@ -28,8 +28,26 @@ import type { AssistantScope } from "@/lib/actions/ai-assistant";
 export type SableState = "closed" | "min" | "max";
 export type SableOpenState = "min" | "max";
 
+/** A document shown in the canvas (session-only, no DB) — a draft Sable produced,
+ *  or a read-only preview of a pending proposal's body. */
+export type SableCanvasDoc = {
+  title: string;
+  markdown: string;
+  /** Optional saved-file name (with extension) hinted by the model. */
+  filename?: string;
+  /** Optional code/document language hint (e.g. 'bash', 'python'). */
+  language?: string;
+  /** Pre-rendered HTML body (e.g. a KB-article proposal) — shown as-is (sanitised)
+   *  instead of rendering `markdown`. */
+  html?: string;
+  /** Read-only preview of a proposal: hides the draft write-actions (save/publish),
+   *  leaving just Copy / Download / Close. */
+  preview?: boolean;
+};
+
 const LS_STATE = "sable:lastOpen";
 const LS_CONV = "sable:conversationId";
+const LS_PROJECT = "sable:projectId";
 
 function readLS(key: string): string | null {
   if (typeof window === "undefined") return null;
@@ -54,8 +72,12 @@ export type SableContextValue = {
   /** The active conversation id (null = a fresh, not-yet-created chat). */
   conversationId: string | null;
   scope: AssistantScope;
+  /** The active Sable Project the window is pinned to (null = none). */
+  projectId: string | null;
+  /** The active project's display name (session-only; header vault chip reads it). */
+  projectName: string | null;
   /** In-context surface for the next turn (e.g. the ticket the user opened Sable from). */
-  context?: { ticketId?: number };
+  context?: { ticketId?: number; projectId?: string };
   /** Open the window in a given state; optionally point it at a conversation/scope/context. */
   open: (
     state: Exclude<SableState, "closed">,
@@ -71,6 +93,23 @@ export type SableContextValue = {
   /** Point the window at an existing conversation (from the rail). */
   setConversation: (id: string | null) => void;
   setScope: (scope: AssistantScope) => void;
+  /**
+   * Pin the window to a Sable Project (id persisted, name session-only), or clear
+   * it with null. Pass the name so the header vault chip can label it cheaply.
+   */
+  setProject: (projectId: string | null, name?: string | null) => void;
+
+  /* ── Artifacts canvas (session-only; no DB in v1) ───────────────────────── */
+  /** Whether the editable document canvas is showing (max state only). */
+  canvasOpen: boolean;
+  /** The draft handed to the canvas (null = nothing to edit). */
+  canvasDoc: SableCanvasDoc | null;
+  /** Open the canvas with a draft (auto-maximises the window). */
+  openCanvas: (doc: SableCanvasDoc) => void;
+  /** Close the canvas (the chat/project-home reclaim the pane). */
+  closeCanvas: () => void;
+  /** Drop text into the chat composer (from the canvas "Insert into chat"). */
+  insertIntoComposer: (text: string) => void;
 };
 
 const SableCtx = createContext<SableContextValue | null>(null);
@@ -91,6 +130,15 @@ export function SableProvider({ children }: { children: ReactNode }) {
   );
   const [scope, setScope] = useState<AssistantScope>("GENERAL");
   const [contextOverride, setContextOverride] = useState<{ ticketId?: number } | undefined>(undefined);
+  // The Sable Project the window is pinned to, restored from a previous session.
+  const [projectId, setProjectId] = useState<string | null>(() => readLS(LS_PROJECT) || null);
+  // The active project's name — session-only (only the id is persisted). Resolved
+  // lazily by callers (rail lookup) via setProject(id, name).
+  const [projectName, setProjectName] = useState<string | null>(null);
+  // The Artifacts canvas (session-only — a drafted document the user edits beside
+  // the chat). Not persisted: it lives only for the current window session.
+  const [canvasDoc, setCanvasDoc] = useState<SableCanvasDoc | null>(null);
+  const [canvasOpen, setCanvasOpen] = useState(false);
 
   // Ticket context derived from the URL, e.g. /tickets/123 (not the list).
   const pathTicketId = useMemo(() => {
@@ -98,11 +146,14 @@ export function SableProvider({ children }: { children: ReactNode }) {
     return m ? Number(m[1]) : undefined;
   }, [pathname]);
 
-  // An explicit context (from a "Sable" link) wins; otherwise use the current page's ticket.
-  const context = useMemo<{ ticketId?: number } | undefined>(() => {
-    if (contextOverride) return contextOverride;
-    return pathTicketId ? { ticketId: pathTicketId } : undefined;
-  }, [contextOverride, pathTicketId]);
+  // An explicit context (from a "Sable" link) wins; otherwise use the current page's
+  // ticket. The pinned project (if any) rides alongside so a bound chat injects its
+  // instructions + files and its retrieval tool resolves.
+  const context = useMemo<{ ticketId?: number; projectId?: string } | undefined>(() => {
+    const base = contextOverride ?? (pathTicketId ? { ticketId: pathTicketId } : undefined);
+    if (projectId) return { ...(base ?? {}), projectId };
+    return base;
+  }, [contextOverride, pathTicketId, projectId]);
 
   const open = useCallback<SableContextValue["open"]>((next, opts) => {
     if (opts && "conversationId" in opts) {
@@ -136,6 +187,10 @@ export function SableProvider({ children }: { children: ReactNode }) {
     setConversationId(null);
     setContextOverride(undefined);
     writeLS(LS_CONV, null);
+    // A global new chat leaves any active vault — it starts project-less.
+    setProjectId(null);
+    setProjectName(null);
+    writeLS(LS_PROJECT, null);
   }, []);
 
   const setConversation = useCallback((id: string | null) => {
@@ -143,11 +198,49 @@ export function SableProvider({ children }: { children: ReactNode }) {
     writeLS(LS_CONV, id);
   }, []);
 
+  const setProject = useCallback((id: string | null, name?: string | null) => {
+    setProjectId(id);
+    setProjectName(id ? name ?? null : null);
+    writeLS(LS_PROJECT, id);
+  }, []);
+
+  const openCanvas = useCallback((doc: SableCanvasDoc) => {
+    setCanvasDoc(doc);
+    setCanvasOpen(true);
+    // The canvas needs the max layout's right pane — expand if we're minimised.
+    setState((s) => (s === "closed" ? s : "max"));
+  }, []);
+
+  const closeCanvas = useCallback(() => {
+    setCanvasOpen(false);
+  }, []);
+
+  // Drop text into the (single) live Sable composer. We write the value through
+  // React's native input tracker + dispatch an `input` event so assistant-ui's
+  // controlled textarea picks it up — no dependency on unstable composer APIs.
+  const insertIntoComposer = useCallback((text: string) => {
+    if (typeof document === "undefined") return;
+    const el = document.querySelector<HTMLTextAreaElement>(
+      'textarea[placeholder="Send a message..."]',
+    );
+    if (!el) return;
+    const proto = window.HTMLTextAreaElement.prototype;
+    const setter = Object.getOwnPropertyDescriptor(proto, "value")?.set;
+    const existing = el.value;
+    const next = existing.trim() ? `${existing.trimEnd()}\n\n${text}` : text;
+    if (setter) setter.call(el, next);
+    else el.value = next;
+    el.dispatchEvent(new Event("input", { bubbles: true }));
+    el.focus();
+  }, []);
+
   const value = useMemo<SableContextValue>(
     () => ({
       state,
       conversationId,
       scope,
+      projectId,
+      projectName,
       context,
       open,
       openLast,
@@ -157,8 +250,14 @@ export function SableProvider({ children }: { children: ReactNode }) {
       newChat,
       setConversation,
       setScope,
+      setProject,
+      canvasOpen,
+      canvasDoc,
+      openCanvas,
+      closeCanvas,
+      insertIntoComposer,
     }),
-    [state, conversationId, scope, context, open, openLast, minimize, maximize, close, newChat, setConversation],
+    [state, conversationId, scope, projectId, projectName, context, open, openLast, minimize, maximize, close, newChat, setConversation, setProject, canvasOpen, canvasDoc, openCanvas, closeCanvas, insertIntoComposer],
   );
 
   return <SableCtx.Provider value={value}>{children}</SableCtx.Provider>;

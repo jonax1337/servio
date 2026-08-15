@@ -131,7 +131,19 @@ General scope (`lib/assistant-tools.ts` + `lib/ai-tools.ts`):
 - `get_ticket` — full detail of one ticket: SLA due dates & breaches, impact/urgency, comments.
 - `search_tickets`, `search_problems`, `search_changes` — free-text search.
 - `search_knowledge_base` — internal KB articles.
+- `category_list`, `group_list` — the **real** category / team names, so the model sets an existing
+  one instead of inventing a `Parent > Child` path (`resolveCategoryId` also tolerates that path by
+  falling back to the leaf name; a "not found" reply suggests the closest matches).
 - `web_search`, `fetch_url` — public web + read a URL, for facts not documented in-house.
+  `web_search` uses a real provider API when configured — **Tavily** or **Brave** (clean,
+  LLM-friendly results) — else the keyless DuckDuckGo scraper (`lib/ai-tools.ts` `webSearch`; set
+  `WEB_SEARCH_PROVIDER` + the key in Settings → AI). `fetch_url` strips page chrome before reading.
+- `draft_document` — hand a long document or **script** to the read-only **canvas** (see
+  [Artifacts & the canvas](#artifacts--the-canvas)).
+
+The web pages, KB articles and project files a turn grounded on are aggregated into a **"Sources"**
+row rendered under the answer (a synthetic `cited_sources` part on the claude-code path;
+`SableSourcesCard`). Source URL schemes are validated (only `http(s)` / in-app relative paths).
 
 Admin scope adds (`lib/ai-admin-tools.ts`, `lib/ai-stats.ts`):
 
@@ -141,7 +153,8 @@ Admin scope adds (`lib/ai-admin-tools.ts`, `lib/ai-stats.ts`):
 - `search_people`, `search_groups`, `search_categories`, `search_services` — record lookups.
 
 Identity is always captured server-side (the acting agent's id and team memberships) — the model
-can never spoof "who am I".
+can never spoof "who am I". AI-authored bodies (comments, descriptions) are rendered from markdown to
+sanitised HTML (`lib/ai-operations/helpers.ts` `richHtml`) so paragraphs/lists/line breaks survive.
 
 ### Write operations (RBAC-gated, propose-only)
 
@@ -187,6 +200,45 @@ Client-supplied args are never trusted: they are re-validated at apply time. The
 mutation writes its own audit trail, so AI-driven changes are indistinguishable from — and as
 accountable as — manual ones. Approve/dismiss state is remembered per proposal in `localStorage`
 so a card can't be re-approved after the thread re-renders.
+
+Content-heavy proposals (a KB-article body, a long comment/description) get a **"Preview"** on the
+card that opens the full body read-only in the canvas.
+
+---
+
+## Artifacts & the canvas
+
+When Sable drafts something longer than a chat reply — a runbook, RCA, change doc, KB article, or a
+**script/file** — it calls `draft_document`, which opens a **read-only artifact canvas** beside the
+chat (Claude-style), never an editable field:
+
+- **Code/scripts** render syntax-highlighted with line numbers (`components/assistant/canvas-code.tsx`,
+  full `react-shiki` WASM engine so every language highlights) and a language badge; **prose** renders
+  as clean markdown.
+- Actions: **Copy**, **Download** (the file), **Insert into chat**, **Save to project** (a picker —
+  writes the artifact as a real project file via `saveArtifactToProject`), and for prose **Save as KB
+  article** (through the same approve-first proposal path).
+- To change an artifact the user asks Sable, which re-drafts it.
+
+Files: `components/assistant/sable-canvas.tsx` (+ `sable-provider` `canvasDoc`/`openCanvas`),
+`lib/assistant-tools.ts` (`draft_document`).
+
+---
+
+## Projects (persistent workspaces)
+
+Sable conversations can live inside a **Project** — a persistent, optionally **team-shared**
+workspace with its own **files/folders** (an internal knowledge base), **instructions**, and
+optional binding to a Change / Problem / Ticket. A project-bound chat injects the project's
+instructions + file list and can retrieve from its files (`project_search_files`). Uploaded files are
+extracted + indexed for retrieval and auto-tagged; office documents preview at high fidelity when a
+[Gotenberg service](deployment.md#-docker) is configured.
+
+- Schema: `AiProject` / `AiProjectFolder` / `AiProjectFile` / `AiProjectChunk`; `AiConversation.projectId`.
+- Access: `lib/ai-projects.ts` (`loadAccessibleProject` — owner or shared-group member); CRUD in
+  `lib/actions/ai-assistant.ts` + `lib/actions/ai-project-files.ts`.
+- UI: the rail's **Projects** section → a project **overview** (files + linked records + a real
+  composer). See [modules.md](modules.md) for the file map.
 
 ---
 
@@ -355,7 +407,10 @@ assistant-ui composer send button and caret. The Sable wordmark uses the app dis
 | Concern | Files |
 | --- | --- |
 | Window & state | `components/assistant/{sable-provider,sable-mount,sable-window,sable-fab,sable-chrome}.tsx` |
-| Chat surface | `components/assistant/{sable-thread,sable-tool-ui,proposal-card,sable-rail,typing-dots}.tsx` |
+| Chat surface | `components/assistant/{sable-thread,sable-tool-ui,proposal-card,sable-read-cards,sable-rail,composer-commands,typing-dots}.tsx` |
+| Artifacts / canvas | `components/assistant/{sable-canvas,canvas-code}.tsx`, `lib/assistant-tools.ts` (`draft_document`) |
+| Projects | `components/assistant/{project-home,project-rail-section,project-file-browser}.tsx`, `lib/ai-projects.ts`, `lib/actions/ai-project-files.ts` |
+| Office previews | `lib/office-convert.ts`, `app/api/files/[id]/{preview,pdf}/route.ts`, `lib/rag/render.ts`, `components/file-preview.tsx` |
 | assistant-ui thread | `components/thread.tsx` + `components/{markdown-text,reasoning,tool-fallback,tool-group,tooltip-icon-button,attachment,follow-up-suggestions}.tsx` |
 | Inline route | `app/(console)/assistant/{page,layout}.tsx` (route `/assistant`) |
 | Streaming route | `app/api/assistant/chat/route.ts` (POST, AGENT+) |
@@ -365,8 +420,8 @@ assistant-ui composer send button and caret. The Sable wordmark uses the app dis
 | Read tools | `lib/assistant-tools.ts`, `lib/ai-tools.ts`, `lib/ai-admin-tools.ts`, `lib/ai-stats.ts` |
 | Write operations | `lib/ai-operations/` (`registry.ts`, `types.ts`, `tools.ts`, `modules/*`) |
 | Portal | `components/portal/sable-widget.tsx`, `lib/portal-assistant.ts`, `lib/portal-tickets.ts`, `app/api/portal/assistant/{route,create/route}.ts` |
-| Settings UI | `app/(console)/settings/ai/page.tsx` |
-| Persistence | `prisma/schema.prisma` (`AiConversation`, `AiMessage`, `AiFolder`) + migration `20260809000000_vio_assistant_conversations` |
+| Settings UI | `app/(console)/settings/ai/page.tsx` (provider, model, web-search keys), `app/(console)/settings/uploads/page.tsx` (`GOTENBERG_URL`) |
+| Persistence | `prisma/schema.prisma` (`AiConversation`, `AiMessage`, `AiFolder`; `AiProject`/`AiProjectFolder`/`AiProjectFile`/`AiProjectChunk`) |
 
 ---
 

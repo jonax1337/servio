@@ -1,0 +1,56 @@
+name: servio
+
+# Servio full stack: the Next.js app + Gotenberg (LibreOffice) for high-fidelity
+# office previews. SQLite (on a volume) is the default DB; see the commented `db`
+# service to switch to Postgres.
+#
+#   docker compose up -d gotenberg     # just Gotenberg (use with local `next dev`)
+#   docker compose up --build          # the whole stack
+
+services:
+  gotenberg:
+    image: gotenberg/gotenberg:8
+    restart: unless-stopped
+    # Gotenberg listens on 3000 inside the container. Published on host :3001 so a
+    # local `next dev` (host :3000) can use it too — set GOTENBERG_URL=http://localhost:3001.
+    ports:
+      - "3001:3000"
+
+  web:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      - gotenberg
+    # Secrets & provider config come from your .env (AUTH_SECRET, AI keys, SMTP…).
+    env_file:
+      - .env
+    environment:
+      # Overrides for the container network: reach Gotenberg by service name, and
+      # keep the SQLite DB + uploaded blobs on the persistent /data volume.
+      GOTENBERG_URL: http://gotenberg:3000
+      DATABASE_URL: file:/data/servio.db
+      UPLOAD_DIR: /data/uploads
+    volumes:
+      - servio-data:/data
+    ports:
+      - "3000:3000"
+
+  # ── Optional: Postgres instead of the bundled SQLite ────────────────────────
+  # Servio's Prisma schema currently targets SQLite (prisma/schema.prisma →
+  # datasource provider = "sqlite"). To use Postgres: switch that provider to
+  # "postgresql", regenerate + migrate, uncomment this service, and set the web
+  # service's DATABASE_URL to postgresql://servio:servio@db:5432/servio.
+  #
+  # db:
+  #   image: postgres:16-alpine
+  #   restart: unless-stopped
+  #   environment:
+  #     POSTGRES_USER: servio
+  #     POSTGRES_PASSWORD: servio
+  #     POSTGRES_DB: servio
+  #   volumes:
+  #     - servio-pg:/var/lib/postgresql/data
+
+volumes:
+  servio-data:
+  # servio-pg:

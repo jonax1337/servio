@@ -7,6 +7,8 @@ import { db } from "@/lib/db";
 import { getSessionUser, isAgent, hasRole, type Role } from "@/lib/session";
 import { writeAudit, notify } from "@/lib/audit";
 import { canTransition, CHANGE_TRANSITIONS } from "@/lib/transitions";
+import { canTransitionConfigured } from "@/lib/workflow";
+import { isGroupMember } from "@/lib/assignment";
 import { selectApprovers, isEligibleApprover } from "@/lib/cab";
 import { readRichBody, readRichField } from "@/lib/markdown";
 import {
@@ -58,7 +60,7 @@ export async function createChange(
   formData: FormData,
 ): Promise<ActionState> {
   const me = await getSessionUser();
-  if (!me) return { error: "Not authenticated" };
+  if (!me || !isAgent(me.role as Role)) return { error: "Not authorised" };
 
   const parsed = createSchema.safeParse(Object.fromEntries(formData));
   if (!parsed.success) {
@@ -116,14 +118,23 @@ export async function updateChangeField(formData: FormData) {
     if (!current) return;
     // Guard the lifecycle: no jumping straight to APPROVED/SCHEDULED/etc.
     // Freigabe happens only through the CAB approval flow (decideApproval).
-    // Governed lifecycle → fail closed on an unknown status (never accept an
-    // arbitrary jump from a corrupt/renamed value).
-    if (!canTransition(CHANGE_TRANSITIONS, current.status, value, true)) return;
+    // Governed lifecycle (built-in map + admin overrides + role gate). Fails
+    // closed on an unknown status (never accept an arbitrary corrupt jump).
+    if (!(await canTransitionConfigured("CHANGE", current.status, value, me.role as Role))) return;
     // Back to DRAFT wipes the old CAB so the next submit builds a fresh one
     // (and stale REJECTED rows don't instantly re-reject).
     if (value === "DRAFT") await db.changeApproval.deleteMany({ where: { changeId: id } });
     if (value === "IN_PROGRESS" && !current.actualStart) patch.actualStart = new Date();
     if (value === "CLOSED" || value === "FAILED") patch.actualEnd = new Date();
+  }
+  // The assignee must belong to the change's group (anyone when there's none).
+  if (field === "assigneeId" && v) {
+    const cur = await db.change.findUnique({ where: { id }, select: { groupId: true } });
+    if (cur?.groupId && !(await isGroupMember(cur.groupId, v))) return;
+  }
+  if (field === "groupId" && v) {
+    const cur = await db.change.findUnique({ where: { id }, select: { assigneeId: true } });
+    if (cur?.assigneeId && !(await isGroupMember(v, cur.assigneeId))) patch.assigneeId = null;
   }
 
   await db.change.update({ where: { id }, data: patch });
@@ -337,4 +348,34 @@ export async function updateChangeDetails(formData: FormData) {
   await writeAudit({ userId: me.id, action: "UPDATE", entity: "Change", entityId: id, summary: "Edited details" });
   revalidatePath(`/changes/${id}`);
   revalidatePath("/changes");
+}
+
+// ── Planning fields (reason, implementation plan, rollback plan) ─────────────
+// The change record's free-text plans, amendable at any point in the lifecycle
+// (e.g. adding a rollback plan before the CAB, or after a REVIEW). Keyed by
+// field name via EditableTextCard.
+
+const CHANGE_TEXT_FIELDS = ["reason", "implementationPlan", "rollbackPlan"] as const;
+const changeTextSchema = z.object({
+  id: z.coerce.number(),
+  field: z.enum(CHANGE_TEXT_FIELDS),
+  value: z.string(),
+});
+
+const CHANGE_TEXT_LABELS: Record<(typeof CHANGE_TEXT_FIELDS)[number], string> = {
+  reason: "reason",
+  implementationPlan: "implementation plan",
+  rollbackPlan: "rollback plan",
+};
+
+export async function updateChangeText(formData: FormData) {
+  const me = await requireAgentC();
+  if (!me) return;
+  const parsed = changeTextSchema.safeParse(Object.fromEntries(formData));
+  if (!parsed.success) return;
+  const { id, field } = parsed.data;
+  const value = parsed.data.value.trim() || null;
+  await db.change.update({ where: { id }, data: { [field]: value } });
+  await writeAudit({ userId: me.id, action: "UPDATE", entity: "Change", entityId: id, summary: `Updated ${CHANGE_TEXT_LABELS[field]}` });
+  revalidatePath(`/changes/${id}`);
 }

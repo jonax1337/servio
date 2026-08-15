@@ -30,9 +30,11 @@ function label(seg: string) {
 export function AppTopbar({
   user,
   notifications,
+  sableEnabled = false,
 }: {
   user: { name: string; email: string; role: string; image?: string | null };
   notifications: number;
+  sableEnabled?: boolean;
 }) {
   const pathname = usePathname();
   const segments = pathname.split("/").filter(Boolean);
@@ -67,7 +69,7 @@ export function AppTopbar({
       </Breadcrumb>
 
       <div className="ml-auto flex items-center gap-1.5">
-        <CommandMenu role={user.role} />
+        <CommandMenu role={user.role} sableEnabled={sableEnabled} />
         <CreateMenu />
         <NotificationsMenu unreadCount={notifications} />
         <ThemeToggle />

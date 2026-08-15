@@ -35,6 +35,7 @@ export default async function ConsoleLayout({
               image: user.image,
             }}
             notifications={notifications}
+            sableEnabled={configured || teaser}
           />
           <main className="min-w-0 flex-1">{children}</main>
           <SableMount

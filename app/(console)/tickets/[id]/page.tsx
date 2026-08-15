@@ -3,21 +3,27 @@ import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import {
   ArrowLeft, Server, AlertTriangle, GitPullRequestArrow,
-  Flame, Link2, GitMerge, X, CheckCircle2, Users,
+  Flame, Link2, GitMerge, CheckCircle2, Users,
 } from "lucide-react";
 import { db } from "@/lib/db";
 import { getFormOptions } from "@/lib/data/options";
-import { getSessionUser, isAgent, type Role } from "@/lib/session";
+import { getEntityApprovals } from "@/lib/data/approvals";
+import { allowedTransitions } from "@/lib/workflow";
+import { getSessionUser, isAgent, hasRole, type Role } from "@/lib/session";
 import { LinkButton } from "@/components/link-button";
 import { StatusBadge, VipBadge, ToneBadge } from "@/components/status-badge";
 import { TicketProperties } from "@/components/tickets/ticket-properties";
+import { EntityCustomFields } from "@/components/custom-fields/entity-custom-fields";
+import { isFieldVisible, parseValues, entityFieldValues, type CustomFieldDef } from "@/lib/custom-fields";
 import { CommentThread } from "@/components/comments/comment-thread";
+import { EntityApprovals } from "@/components/approvals/entity-approvals";
 import { aiConfigured, aiTeaserEnabled } from "@/lib/ai";
 import { getBoolSetting } from "@/lib/settings";
 import { EditEntityDialog } from "@/components/edit-entity-dialog";
 import { addTicketComment, updateTicketDetails, unlinkTicket, unlinkAsset, unlinkRelation, setTicketProblem, setTicketChange, linkAsset } from "@/lib/actions/tickets";
 import { TicketActions } from "@/components/tickets/ticket-actions";
 import { LinkPicker } from "@/components/link-picker";
+import { LinkedChip as Chip, UnlinkButton as UnlinkBtn } from "@/components/linked-records";
 import { SlaBadge } from "@/components/tickets/sla-badge";
 import { UserAvatar } from "@/components/user-avatar";
 import { FormAnswers } from "@/components/tickets/form-answers";
@@ -54,7 +60,7 @@ export default async function TicketDetailPage({
   if (!Number.isFinite(ticketId)) notFound();
 
   const me = await getSessionUser();
-  const [ticket, options, audits, candidates, problemChoices, changeChoices, assetChoices] = await Promise.all([
+  const [ticket, options, audits, candidates, problemChoices, changeChoices, assetChoices, adHocApprovals, customFieldDefs] = await Promise.all([
     db.ticket.findUnique({
       where: { id: ticketId },
       include: {
@@ -105,8 +111,16 @@ export default async function TicketDetailPage({
       orderBy: { updatedAt: "desc" },
       take: 200,
     }),
+    getEntityApprovals("TICKET", ticketId),
+    db.customFieldDef.findMany({ where: { entityType: "TICKET", active: true }, orderBy: { order: "asc" } }),
   ]);
   if (!ticket) notFound();
+
+  // Custom fields: keep only defs whose visibility matches this ticket's built-in fields.
+  const cfValues = parseValues(ticket.customFields);
+  const visibleCustomFields = (customFieldDefs as CustomFieldDef[]).filter((def) =>
+    isFieldVisible(def, entityFieldValues(ticket)),
+  );
 
   const aiEnabled = await aiConfigured();
   const aiTeaser = !aiEnabled && (await aiTeaserEnabled()); // show buttons as a preview when disabled
@@ -115,6 +129,8 @@ export default async function TicketDetailPage({
   const triageEnabled = aiEnabled && (await getBoolSetting("AI_TICKET_TRIAGE", true));
   const isWatching = !!me && ticket.watchers.some((w) => w.userId === me.id);
   const isAgentUser = !!me && isAgent(me.role as Role);
+  const canManage = !!me && hasRole(me.role as Role, "MANAGER");
+  const allowedStatuses = me ? [...await allowedTransitions("TICKET", ticket.status, me.role as Role)] : undefined;
   const candidateOpts = candidates.map((c) => ({
     value: String(c.id),
     label: `${ticketRef(c.id, c.prefix)} — ${c.title}`,
@@ -339,6 +355,21 @@ export default async function TicketDetailPage({
           )}
           </div>
 
+          {/* Approvals (ad-hoc sign-off) */}
+          {isAgentUser ? (
+            <EntityApprovals
+              entityType="TICKET"
+              entityId={String(ticket.id)}
+              entityTitle={ticket.title}
+              approvals={adHocApprovals}
+              currentUserId={me?.id ?? ""}
+              isAdmin={me?.role === "ADMIN"}
+              canManage={canManage}
+              canRequest={isAgentUser}
+              agents={options.agents}
+            />
+          ) : null}
+
           {/* Comments & Activity */}
           <div className="mt-8">
             <CommentThread
@@ -384,9 +415,18 @@ export default async function TicketDetailPage({
         <Card className="mt-4">
           <CardHeader><CardTitle className="text-sm">Properties</CardTitle></CardHeader>
           <CardContent>
-            <TicketProperties ticket={ticket} options={options} aiEnabled={aiVisible} aiTeaser={aiTeaser} triageEnabled={triageEnabled} />
+            <TicketProperties ticket={ticket} options={options} aiEnabled={aiVisible} aiTeaser={aiTeaser} triageEnabled={triageEnabled} allowedStatuses={allowedStatuses} />
           </CardContent>
         </Card>
+
+        <EntityCustomFields
+          className="mt-4"
+          entityType="TICKET"
+          entityId={ticket.id}
+          defs={visibleCustomFields}
+          values={cfValues}
+          editable={isAgentUser}
+        />
 
         {/* Requester — a clickable user card that opens their profile (their open
             tickets + assigned assets). Watchers are surfaced via the Watch button. */}
@@ -472,42 +512,3 @@ function Meta({ label, value }: { label: string; value: string }) {
   );
 }
 
-function Chip({
-  href, icon, label, unlink,
-}: {
-  href: string;
-  icon: React.ReactNode;
-  label: string;
-  unlink: React.ReactNode;
-}) {
-  return (
-    <span className="group/chip inline-flex items-center rounded-lg border text-xs transition-colors hover:border-primary/40">
-      <Link href={href} className="inline-flex items-center gap-1.5 py-1 pl-2.5 pr-1.5">
-        {icon} {label}
-      </Link>
-      {unlink}
-    </span>
-  );
-}
-
-function UnlinkBtn({
-  action, fields,
-}: {
-  action: (formData: FormData) => void | Promise<void>;
-  fields: Record<string, string | number>;
-}) {
-  return (
-    <form action={action} className="flex">
-      {Object.entries(fields).map(([k, v]) => (
-        <input key={k} type="hidden" name={k} value={v} />
-      ))}
-      <button
-        type="submit"
-        aria-label="Unlink"
-        className="mr-1 grid size-5 place-items-center rounded text-muted-foreground opacity-0 transition-opacity hover:text-destructive group-hover/chip:opacity-100"
-      >
-        <X className="size-3.5" />
-      </button>
-    </form>
-  );
-}

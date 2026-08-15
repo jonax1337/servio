@@ -25,9 +25,6 @@ import {
   Archive,
   ArchiveRestore,
   MessageSquare,
-  Check,
-  X,
-  Loader2,
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -50,12 +47,17 @@ import {
   renameFolder,
   deleteFolder,
   moveConversation,
+  moveConversationToProject,
   renameConversation,
   archiveConversation,
+  deleteConversation,
   type ConversationSummary,
   type AiFolderSummary,
-  type AssistantScope,
+  type ProjectSummary,
 } from "@/lib/actions/ai-assistant";
+import { ProjectRailSection } from "./project-rail-section";
+import { NameDialog } from "./name-dialog";
+import { ConfirmDialog } from "@/components/confirm-dialog";
 
 /**
  * The premium conversation rail: a "New chat" action, search, user folders
@@ -68,24 +70,40 @@ export function SableRail({
   onNewChat,
   refreshKey,
   isAdmin = false,
-  scope = "GENERAL",
-  onScope,
+  activeProjectId = null,
+  onOpenProject,
+  onNewChatInProject,
+  onProjectsChanged,
 }: {
   activeId: string | null;
-  onSelect: (id: string) => void;
+  /**
+   * Select a conversation. `projectBinding` carries the chat's project (id+name,
+   * resolved from the rail's projects list) so the shell can follow the vault.
+   */
+  onSelect: (id: string, projectBinding: { id: string | null; name: string | null }) => void;
   onNewChat: () => void;
   /** Bumped by the shell after a turn / new chat so the rail refetches. */
   refreshKey: number;
   isAdmin?: boolean;
-  scope?: AssistantScope;
-  onScope?: (scope: AssistantScope) => void;
+  /** The project the window is pinned to (highlighted in the Projects section). */
+  activeProjectId?: string | null;
+  /** Open a project's home pane (vault) + pin the window to it, labelled by name. */
+  onOpenProject?: (id: string, name: string) => void;
+  /** Open a project's overview (its composer starts the chat). */
+  onNewChatInProject?: (id: string, name: string) => void;
+  /** Bumped after a project mutation so the header chip re-fetches. */
+  onProjectsChanged?: () => void;
 }) {
   const [convs, setConvs] = useState<ConversationSummary[]>([]);
   const [folders, setFolders] = useState<AiFolderSummary[]>([]);
+  // Mirror of the Projects section's loaded list, used to resolve a chat's
+  // project name when the vault must follow the selected conversation.
+  const [projects, setProjects] = useState<ProjectSummary[]>([]);
   const [query, setQuery] = useState("");
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [showArchived, setShowArchived] = useState(false);
   const [dragging, setDragging] = useState<ConversationSummary | null>(null);
+  const [createFolderOpen, setCreateFolderOpen] = useState(false);
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
 
@@ -107,11 +125,26 @@ export function SableRail({
     };
   }, [refreshKey]);
 
+  // Selecting a conversation binds the vault to that chat's project: resolve the
+  // project name from the loaded Projects list so the header chip + injected
+  // context follow the chat.
+  const selectConversation = useCallback(
+    (id: string) => {
+      const conv = convs.find((c) => c.id === id);
+      const pid = conv?.projectId ?? null;
+      const name = pid ? projects.find((p) => p.id === pid)?.name ?? null : null;
+      onSelect(id, { id: pid, name });
+    },
+    [convs, projects, onSelect],
+  );
+
   const q = query.trim().toLowerCase();
   const match = (c: ConversationSummary) => !q || c.title.toLowerCase().includes(q);
   const active = convs.filter((c) => !c.archived && match(c));
   const archived = convs.filter((c) => c.archived && match(c));
-  const ungrouped = active.filter((c) => !c.folderId);
+  // Chats pinned to a project live under that project (not here) — and chats in a
+  // folder live under the folder. "Chats" is only the truly-loose ones.
+  const ungrouped = active.filter((c) => !c.folderId && !c.projectId);
   // Plain const (this repo uses the React compiler — don't useMemo derived lists).
   const byFolder: Record<string, ConversationSummary[]> = {};
   for (const f of folders) byFolder[f.id] = [];
@@ -126,10 +159,27 @@ export function SableRail({
     const convId = String(e.active.id);
     const conv = convs.find((c) => c.id === convId);
     if (!conv || !overId) return;
+
+    // Dropped onto a project row → pin the conversation to that project (and clear
+    // any folder — folders and projects are mutually-exclusive groupings).
+    if (overId.startsWith("project:")) {
+      const projectId = overId.slice(8);
+      if (projectId === (conv.projectId ?? null)) return;
+      setConvs((cs) => cs.map((c) => (c.id === convId ? { ...c, projectId, folderId: null } : c)));
+      const res = await moveConversationToProject(convId, projectId);
+      if (!res.ok) {
+        toast.error(res.error ?? "Could not move");
+        void reload();
+      } else {
+        onProjectsChanged?.();
+      }
+      return;
+    }
+
     const target = overId === "ungrouped" ? null : overId.startsWith("folder:") ? overId.slice(7) : undefined;
-    if (target === undefined || target === (conv.folderId ?? null)) return;
-    // Optimistic move.
-    setConvs((cs) => cs.map((c) => (c.id === convId ? { ...c, folderId: target } : c)));
+    if (target === undefined || (target === (conv.folderId ?? null) && !conv.projectId)) return;
+    // Optimistic move into a folder / out to loose — also unpins from any project.
+    setConvs((cs) => cs.map((c) => (c.id === convId ? { ...c, folderId: target, projectId: null } : c)));
     const res = await moveConversation(convId, target);
     if (!res.ok) {
       toast.error(res.error ?? "Could not move");
@@ -139,8 +189,8 @@ export function SableRail({
     }
   }
 
-  async function onCreateFolder() {
-    const res = await createFolder();
+  async function onCreateFolder(name: string) {
+    const res = await createFolder(name);
     if (!res.ok) {
       toast.error(res.error ?? "Could not create folder");
       return;
@@ -157,24 +207,6 @@ export function SableRail({
       onDragEnd={onDragEnd}
     >
       <div className="flex h-full min-h-0 flex-col gap-3 p-3">
-        {isAdmin && onScope ? (
-          <div className="flex items-center rounded-lg border bg-background p-0.5 text-xs">
-            {(["GENERAL", "ADMIN"] as const).map((s) => (
-              <button
-                key={s}
-                type="button"
-                onClick={() => onScope(s)}
-                className={cn(
-                  "flex-1 rounded-md px-2 py-1 font-medium transition-colors",
-                  scope === s ? "bg-sable text-sable-foreground" : "text-muted-foreground hover:text-foreground",
-                )}
-              >
-                {s === "GENERAL" ? "General" : "Admin"}
-              </button>
-            ))}
-          </div>
-        ) : null}
-
         <Button
           type="button"
           onClick={onNewChat}
@@ -193,7 +225,23 @@ export function SableRail({
           />
         </div>
 
-        <div className="-mr-1 min-h-0 flex-1 space-y-4 overflow-y-auto pr-1">
+        {/* -mx-1/px-1: overflow-y-auto forces overflow-x:auto, which would clip a
+            drop-target's ring on the left/right — the padding gives it room, the
+            negative margin keeps the rows aligned with the rest of the rail. */}
+        <div className="-mx-1 min-h-0 flex-1 space-y-4 overflow-y-auto px-1">
+          {/* Projects */}
+          <ProjectRailSection
+            conversations={convs}
+            activeProjectId={activeProjectId}
+            activeConversationId={activeId}
+            onSelectConversation={selectConversation}
+            onOpenProject={(id, name) => onOpenProject?.(id, name)}
+            onNewChatInProject={(id, name) => onNewChatInProject?.(id, name)}
+            onProjectsChanged={onProjectsChanged}
+            onProjectsLoaded={setProjects}
+            refreshKey={refreshKey}
+          />
+
           {/* Folders */}
           <section className="space-y-0.5">
             <div className="flex items-center justify-between px-1.5 pb-0.5">
@@ -204,7 +252,7 @@ export function SableRail({
                 type="button"
                 size="icon-xs"
                 variant="ghost"
-                onClick={onCreateFolder}
+                onClick={() => setCreateFolderOpen(true)}
                 aria-label="New folder"
                 className="text-muted-foreground hover:text-foreground"
               >
@@ -212,9 +260,14 @@ export function SableRail({
               </Button>
             </div>
             {folders.length === 0 ? (
-              <p className="px-1.5 py-1 text-xs text-muted-foreground/70">
-                Drag a chat here to create groups.
-              </p>
+              <button
+                type="button"
+                onClick={() => setCreateFolderOpen(true)}
+                className="flex w-full flex-col items-center gap-1 rounded-lg border border-dashed border-border/60 px-3 py-3 text-center transition-colors hover:border-sable/40 hover:bg-sable-muted/30"
+              >
+                <FolderPlus className="size-4 text-muted-foreground/50" />
+                <span className="text-[11px] text-muted-foreground">Create a folder to group chats</span>
+              </button>
             ) : (
               folders.map((f) => (
                 <FolderNode
@@ -224,7 +277,7 @@ export function SableRail({
                   open={expanded[f.id] ?? false}
                   onToggle={() => setExpanded((s) => ({ ...s, [f.id]: !s[f.id] }))}
                   activeId={activeId}
-                  onSelect={onSelect}
+                  onSelect={selectConversation}
                   folders={folders}
                   onChanged={reload}
                 />
@@ -238,7 +291,7 @@ export function SableRail({
             label="Chats"
             chats={ungrouped}
             activeId={activeId}
-            onSelect={onSelect}
+            onSelect={selectConversation}
             folders={folders}
             onChanged={reload}
             emptyHint={active.length === 0 ? "No conversations yet." : undefined}
@@ -261,7 +314,7 @@ export function SableRail({
                       key={c.id}
                       conv={c}
                       active={c.id === activeId}
-                      onSelect={onSelect}
+                      onSelect={selectConversation}
                       folders={folders}
                       onChanged={reload}
                     />
@@ -280,6 +333,16 @@ export function SableRail({
           </div>
         ) : null}
       </DragOverlay>
+
+      <NameDialog
+        open={createFolderOpen}
+        onOpenChange={setCreateFolderOpen}
+        title="New folder"
+        label="Folder name"
+        placeholder="e.g. Incidents"
+        submitLabel="Create folder"
+        onSubmit={onCreateFolder}
+      />
     </DndContext>
   );
 }
@@ -314,7 +377,16 @@ function ChatSection({
       </div>
       {chats.length === 0 ? (
         emptyHint ? (
-          <p className="px-1.5 py-1 text-xs text-muted-foreground/70">{emptyHint}</p>
+          <div
+            className={cn(
+              "m-1 flex flex-col items-center gap-1 rounded-lg border border-dashed px-3 py-4 text-center transition-colors",
+              isOver ? "border-sable/40 bg-sable-muted/40" : "border-border/60",
+            )}
+          >
+            <MessageSquare className="size-4 text-muted-foreground/50" />
+            <span className="text-xs text-muted-foreground">{emptyHint}</span>
+            <span className="text-[11px] text-muted-foreground/70">Start a chat to see it here.</span>
+          </div>
         ) : null
       ) : (
         chats.map((c) => (
@@ -352,101 +424,91 @@ function FolderNode({
   onChanged: () => void;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: `folder:${folder.id}` });
-  const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState(folder.name);
+  const [renaming, setRenaming] = useState(false);
 
-  async function commitRename() {
-    const next = draft.trim();
-    setEditing(false);
-    if (!next || next === folder.name) {
-      setDraft(folder.name);
-      return;
-    }
+  async function rename(next: string) {
+    if (next === folder.name) return;
     const res = await renameFolder(folder.id, next);
     if (res.ok) onChanged();
-    else {
-      toast.error(res.error ?? "Could not rename");
-      setDraft(folder.name);
-    }
+    else toast.error(res.error ?? "Could not rename");
   }
 
   return (
     <div
       ref={setNodeRef}
-      className={cn("rounded-lg transition-colors", isOver && "bg-sable-muted/60 ring-1 ring-border")}
+      className={cn("rounded-lg transition-colors", isOver && "bg-sable-muted/60 ring-1 ring-sable/30")}
     >
       <div
         className={cn(
           "group/folder flex items-center gap-1 rounded-lg px-1.5 py-1 transition-colors hover:bg-muted/60",
         )}
       >
-        {editing ? (
-          <div className="flex flex-1 items-center gap-1">
-            <Folder className="size-3.5 shrink-0 text-muted-foreground" />
-            <Input
-              autoFocus
-              value={draft}
-              onChange={(e) => setDraft(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") { e.preventDefault(); void commitRename(); }
-                else if (e.key === "Escape") { e.preventDefault(); setEditing(false); setDraft(folder.name); }
+        <button
+          type="button"
+          onClick={onToggle}
+          className="flex min-w-0 flex-1 items-center gap-1.5 text-left"
+        >
+          <ChevronRight className={cn("size-3 shrink-0 text-muted-foreground transition-transform", open && "rotate-90")} />
+          <Folder className="size-3.5 shrink-0 text-muted-foreground" />
+          <span className="min-w-0 flex-1 truncate text-sm font-medium">{folder.name}</span>
+          {chats.length ? (
+            <span className="text-[11px] text-muted-foreground">{chats.length}</span>
+          ) : null}
+        </button>
+        <DropdownMenu>
+          <DropdownMenuTrigger
+            render={
+              <Button
+                type="button"
+                size="icon-xs"
+                variant="ghost"
+                aria-label="Folder options"
+                className="shrink-0 opacity-0 transition-opacity group-hover/folder:opacity-100 aria-expanded:opacity-100"
+              />
+            }
+          >
+            <MoreHorizontal className="size-3.5" />
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem onClick={() => setRenaming(true)}>
+              <Pencil className="size-3.5" /> Rename
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              variant="destructive"
+              onClick={async () => {
+                const res = await deleteFolder(folder.id);
+                if (res.ok) onChanged();
+                else toast.error(res.error ?? "Could not delete");
               }}
-              onBlur={commitRename}
-              className="h-6 flex-1 text-sm"
-            />
-          </div>
-        ) : (
-          <>
-            <button
-              type="button"
-              onClick={onToggle}
-              className="flex min-w-0 flex-1 items-center gap-1.5 text-left"
             >
-              <ChevronRight className={cn("size-3 shrink-0 text-muted-foreground transition-transform", open && "rotate-90")} />
-              <Folder className="size-3.5 shrink-0 text-muted-foreground" />
-              <span className="min-w-0 flex-1 truncate text-sm font-medium">{folder.name}</span>
-              {chats.length ? (
-                <span className="text-[11px] text-muted-foreground">{chats.length}</span>
-              ) : null}
-            </button>
-            <DropdownMenu>
-              <DropdownMenuTrigger
-                render={
-                  <Button
-                    type="button"
-                    size="icon-xs"
-                    variant="ghost"
-                    aria-label="Folder options"
-                    className="shrink-0 opacity-0 transition-opacity group-hover/folder:opacity-100 aria-expanded:opacity-100"
-                  />
-                }
-              >
-                <MoreHorizontal className="size-3.5" />
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuItem onClick={() => { setDraft(folder.name); setEditing(true); }}>
-                  <Pencil className="size-3.5" /> Rename
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  variant="destructive"
-                  onClick={async () => {
-                    const res = await deleteFolder(folder.id);
-                    if (res.ok) onChanged();
-                    else toast.error(res.error ?? "Could not delete");
-                  }}
-                >
-                  <Trash2 className="size-3.5" /> Delete folder
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </>
-        )}
+              <Trash2 className="size-3.5" /> Delete folder
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
+
+      <NameDialog
+        open={renaming}
+        onOpenChange={setRenaming}
+        title="Rename folder"
+        label="Folder name"
+        initialValue={folder.name}
+        submitLabel="Rename"
+        onSubmit={rename}
+      />
 
       {open ? (
         <div className="ml-3 border-l pl-1">
           {chats.length === 0 ? (
-            <p className="px-1.5 py-1 text-xs text-muted-foreground/70">Empty — drag chats here.</p>
+            <div
+              className={cn(
+                "m-1 flex flex-col items-center gap-1 rounded-lg border border-dashed px-3 py-3 text-center transition-colors",
+                isOver ? "border-sable/40 bg-sable-muted/40" : "border-border/60",
+              )}
+            >
+              <MessageSquare className="size-3.5 text-muted-foreground/50" />
+              <span className="text-[11px] text-muted-foreground">Drop a chat here</span>
+            </div>
           ) : (
             chats.map((c) => (
               <ChatRow
@@ -479,25 +541,20 @@ function ChatRow({
   onChanged: () => void;
 }) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: conv.id });
-  const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState(conv.title);
-  const [pending, setPending] = useState(false);
+  const [renaming, setRenaming] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
-  async function commitRename() {
-    const next = draft.trim();
-    setEditing(false);
-    if (!next || next === conv.title) {
-      setDraft(conv.title);
-      return;
-    }
-    setPending(true);
+  async function rename(next: string) {
+    if (next === conv.title) return;
     const res = await renameConversation(conv.id, next);
-    setPending(false);
     if (res.ok) onChanged();
-    else {
-      toast.error(res.error ?? "Could not rename");
-      setDraft(conv.title);
-    }
+    else toast.error(res.error ?? "Could not rename");
+  }
+
+  async function remove() {
+    const res = await deleteConversation(conv.id);
+    if (res.ok) onChanged();
+    else toast.error(res.error ?? "Could not delete");
   }
 
   async function move(folderId: string | null) {
@@ -512,31 +569,8 @@ function ChatRow({
     else toast.error(res.error ?? "Could not update");
   }
 
-  if (editing) {
-    return (
-      <div className="flex items-center gap-1 px-1.5 py-1">
-        <Input
-          autoFocus
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") { e.preventDefault(); void commitRename(); }
-            else if (e.key === "Escape") { e.preventDefault(); setEditing(false); setDraft(conv.title); }
-          }}
-          className="h-7 text-sm"
-          disabled={pending}
-        />
-        <Button type="button" size="icon-xs" variant="ghost" onClick={commitRename} disabled={pending} aria-label="Save">
-          {pending ? <Loader2 className="size-3 animate-spin" /> : <Check className="size-3" />}
-        </Button>
-        <Button type="button" size="icon-xs" variant="ghost" onClick={() => { setEditing(false); setDraft(conv.title); }} aria-label="Cancel">
-          <X className="size-3" />
-        </Button>
-      </div>
-    );
-  }
-
   return (
+    <>
     <div
       ref={setNodeRef}
       className={cn(
@@ -579,7 +613,7 @@ function ChatRow({
           <MoreHorizontal className="size-3.5" />
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
-          <DropdownMenuItem onClick={() => { setDraft(conv.title); setEditing(true); }}>
+          <DropdownMenuItem onClick={() => setRenaming(true)}>
             <Pencil className="size-3.5" /> Rename
           </DropdownMenuItem>
           <DropdownMenuSub>
@@ -610,8 +644,29 @@ function ChatRow({
               <><Archive className="size-3.5" /> Archive</>
             )}
           </DropdownMenuItem>
+          <DropdownMenuItem variant="destructive" onClick={() => setConfirmDelete(true)}>
+            <Trash2 className="size-3.5" /> Delete
+          </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
     </div>
+    <ConfirmDialog
+      open={confirmDelete}
+      onOpenChange={setConfirmDelete}
+      onConfirm={remove}
+      title="Delete chat?"
+      description="This permanently deletes the conversation and all its messages. This cannot be undone."
+      confirmLabel="Delete chat"
+    />
+    <NameDialog
+      open={renaming}
+      onOpenChange={setRenaming}
+      title="Rename chat"
+      label="Chat name"
+      initialValue={conv.title}
+      submitLabel="Rename"
+      onSubmit={rename}
+    />
+    </>
   );
 }

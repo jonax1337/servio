@@ -3,12 +3,14 @@ import { z } from "zod";
 import net from "node:net";
 import { lookup } from "node:dns/promises";
 import { db } from "@/lib/db";
+import { getSetting } from "@/lib/settings";
 import { ticketRef, problemRef, changeRef, TICKET_STATUSES, PRIORITIES, IMPACT_URGENCY } from "@/lib/constants";
 
 /**
- * Keyless web tools for the AI chat agent — DuckDuckGo HTML endpoint (no API key,
- * data stays self-hosted). Best-effort HTML scraping; results can be empty if DDG
- * rate-limits, which the agent handles gracefully.
+ * Web tools for the AI chat agent. Search uses a real provider API when one is
+ * configured (Tavily or Brave — clean, LLM-friendly results), otherwise falls
+ * back to the keyless DuckDuckGo HTML endpoint (data stays self-hosted, but
+ * best-effort scraping that can be empty if DDG rate-limits). See `webSearch`.
  */
 
 const UA =
@@ -75,6 +77,60 @@ export async function duckDuckGoSearch(query: string, limit = 5): Promise<WebRes
   return results;
 }
 
+/** Tavily — an LLM-oriented search API (clean title/url/content). */
+async function tavilySearch(query: string, limit: number, key: string): Promise<WebResult[]> {
+  const res = await fetch("https://api.tavily.com/search", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ api_key: key, query, max_results: limit, search_depth: "basic" }),
+  });
+  if (!res.ok) return [];
+  const data = (await res.json()) as { results?: { title?: string; url?: string; content?: string }[] };
+  return (data.results ?? [])
+    .filter((r) => r.url)
+    .map((r) => ({ title: r.title ?? r.url!, url: r.url!, snippet: (r.content ?? "").slice(0, 500) }));
+}
+
+/** Brave Search API (web results with descriptions). */
+async function braveSearch(query: string, limit: number, key: string): Promise<WebResult[]> {
+  const res = await fetch(
+    `https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(query)}&count=${limit}`,
+    { headers: { "X-Subscription-Token": key, Accept: "application/json" } },
+  );
+  if (!res.ok) return [];
+  const data = (await res.json()) as { web?: { results?: { title?: string; url?: string; description?: string }[] } };
+  return (data.web?.results ?? [])
+    .filter((r) => r.url)
+    .map((r) => ({ title: stripTags(r.title ?? r.url!), url: r.url!, snippet: stripTags(r.description ?? "") }));
+}
+
+/**
+ * Web search with a real provider when configured, else DuckDuckGo. Set
+ * `WEB_SEARCH_PROVIDER` (tavily|brave|duckduckgo|auto — default auto) and the
+ * matching `TAVILY_API_KEY` / `BRAVE_API_KEY` (Settings or env). A provider error
+ * or empty result quietly falls back to DDG so search never hard-fails.
+ */
+export async function webSearch(query: string, limit = 6): Promise<WebResult[]> {
+  const provider = ((await getSetting("WEB_SEARCH_PROVIDER")) ?? "auto").toLowerCase();
+  const [tavilyKey, braveKey] = await Promise.all([
+    getSetting("TAVILY_API_KEY"),
+    getSetting("BRAVE_API_KEY"),
+  ]);
+  try {
+    if ((provider === "tavily" || provider === "auto") && tavilyKey) {
+      const r = await tavilySearch(query, limit, tavilyKey);
+      if (r.length) return r;
+    }
+    if ((provider === "brave" || provider === "auto") && braveKey) {
+      const r = await braveSearch(query, limit, braveKey);
+      if (r.length) return r;
+    }
+  } catch {
+    /* provider failed — fall back to DDG below */
+  }
+  return duckDuckGoSearch(query, limit);
+}
+
 function ipv4ToInt(ip: string): number {
   const p = ip.split(".").map(Number);
   return (((p[0] << 24) >>> 0) + (p[1] << 16) + (p[2] << 8) + p[3]) >>> 0;
@@ -134,7 +190,7 @@ async function assertPublicUrl(raw: string): Promise<{ ok: true; url: URL } | { 
   return { ok: true, url };
 }
 
-export async function fetchUrlText(url: string, maxChars = 4000): Promise<string> {
+export async function fetchUrlText(url: string, maxChars = 6000): Promise<string> {
   // Follow redirects manually so each hop is re-validated (SSRF via redirect).
   let current = url;
   for (let hop = 0; hop < 4; hop++) {
@@ -157,9 +213,15 @@ export async function fetchUrlText(url: string, maxChars = 4000): Promise<string
       return `Unsupported content type: ${ct || "unknown"}`;
     }
     const html = await res.text();
-    const text = stripTags(
-      html.replace(/<script[\s\S]*?<\/script>/gi, "").replace(/<style[\s\S]*?<\/style>/gi, ""),
-    );
+    // Drop script/style AND common boilerplate (nav/header/footer/aside/forms) so
+    // the model reads the article body, not the chrome — then strip to plain text.
+    const cleaned = html
+      .replace(/<script[\s\S]*?<\/script>/gi, "")
+      .replace(/<style[\s\S]*?<\/style>/gi, "")
+      .replace(/<noscript[\s\S]*?<\/noscript>/gi, "")
+      .replace(/<(nav|header|footer|aside|form)\b[\s\S]*?<\/\1>/gi, "")
+      .replace(/<svg[\s\S]*?<\/svg>/gi, "");
+    const text = stripTags(cleaned);
     return text.slice(0, maxChars) || "(no readable text)";
   }
   return "Too many redirects.";
@@ -167,10 +229,10 @@ export async function fetchUrlText(url: string, maxChars = 4000): Promise<string
 
 export const webSearchTool = tool({
   description:
-    "Search the public web (DuckDuckGo) for current or external information that is NOT in the ticket. Returns top results with title, url and snippet.",
+    "Search the public web for current or external information that is NOT in the org's own data. Returns top results with title, url and snippet; call fetch_url on a result to read its full page when the snippet isn't enough.",
   inputSchema: z.object({ query: z.string().describe("the search query") }),
   execute: async ({ query }) => {
-    const results = await duckDuckGoSearch(query, 5);
+    const results = await webSearch(query, 6);
     return results.length ? results : [{ title: "No results found", url: "", snippet: "" }];
   },
 });
@@ -319,7 +381,20 @@ export async function resolveGroupId(name: string) {
 }
 export async function resolveCategoryId(name: string) {
   const q = name.trim();
-  return db.category.findFirst({ where: { OR: [{ name: q }, { name: { contains: q } }] }, select: { id: true, name: true } });
+  // The org directory prints sub-categories as a "Parent > Child" path, so the AI
+  // often passes e.g. "Network > VPN" — but a category resolves by its own (leaf)
+  // name. Fall back to the last path segment. Prefer an exact match, then contains.
+  const leaf = q.split(/\s*[>\/›»]\s*/).pop()?.trim() || q;
+  return (
+    (await db.category.findFirst({
+      where: { OR: [{ name: q }, { name: leaf }] },
+      select: { id: true, name: true },
+    })) ??
+    (await db.category.findFirst({
+      where: { name: { contains: leaf } },
+      select: { id: true, name: true },
+    }))
+  );
 }
 export async function resolveAgentId(name: string) {
   const q = name.trim();
@@ -327,6 +402,46 @@ export async function resolveAgentId(name: string) {
     where: { role: { in: ["ADMIN", "MANAGER", "AGENT"] }, OR: [{ name: { contains: q } }, { email: q }] },
     select: { id: true, name: true },
   });
+}
+
+/**
+ * Rank candidate names by rough closeness to a query (handles "Parent > Child"
+ * paths by matching the leaf): exact > substring > token-overlap. Used to turn a
+ * bare "X not found" into an actionable "did you mean …?" so Sable self-corrects.
+ */
+export function rankSuggestions(names: string[], q: string, n = 3): string[] {
+  const query = q.toLowerCase().trim();
+  const leaf = query.split(/\s*[>/›»]\s*/).pop()?.trim() || query;
+  const qTokens = new Set(leaf.split(/\W+/).filter(Boolean));
+  return names
+    .map((name) => {
+      const l = name.toLowerCase();
+      let score = 0;
+      if (l === leaf) score = 100;
+      else if (l.includes(leaf) || leaf.includes(l)) score = 60;
+      else score = 20 * l.split(/\W+/).filter((t) => qTokens.has(t)).length;
+      return { name, score };
+    })
+    .filter((s) => s.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, n)
+    .map((s) => s.name);
+}
+
+/** A "did you mean …? / available: …" suffix for a category-not-found error. */
+export async function categoryNotFoundHint(q: string): Promise<string> {
+  const names = (await db.category.findMany({ select: { name: true } })).map((c) => c.name);
+  const sug = rankSuggestions(names, q);
+  if (sug.length) return ` Did you mean: ${sug.join(", ")}?`;
+  return names.length ? ` Available categories: ${names.slice(0, 12).join(", ")}.` : "";
+}
+
+/** A "did you mean …? / available: …" suffix for a team/group-not-found error. */
+export async function groupNotFoundHint(q: string): Promise<string> {
+  const names = (await db.group.findMany({ select: { name: true } })).map((g) => g.name);
+  const sug = rankSuggestions(names, q);
+  if (sug.length) return ` Did you mean: ${sug.join(", ")}?`;
+  return names.length ? ` Available teams: ${names.slice(0, 12).join(", ")}.` : "";
 }
 export function parseTicketId(ref: string): number | null {
   const m = String(ref).match(/(\d+)/);

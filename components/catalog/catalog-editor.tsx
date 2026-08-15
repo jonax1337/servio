@@ -15,8 +15,7 @@ import { Combobox, type ComboOption } from "@/components/combobox";
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger,
 } from "@/components/ui/dialog";
-import { CatalogIcon, CATALOG_ICON_NAMES } from "@/components/catalog/catalog-icon";
-import { cn } from "@/lib/utils";
+import { IconPicker } from "@/components/icon-picker";
 
 type Opt = { value: string; label: string }[];
 const FIELD_TYPE_OPTIONS: ComboOption[] = FIELD_TYPES.map((t) => ({ value: t, label: t }));
@@ -26,27 +25,6 @@ export type CatalogItemData = {
   isPublished: boolean; requiresApproval: boolean; approverId: string | null;
   fields: ServiceField[];
 };
-
-function IconPicker({ value, onChange }: { value: string; onChange: (v: string) => void }) {
-  return (
-    <div className="flex flex-wrap gap-1.5 rounded-lg border p-2">
-      {CATALOG_ICON_NAMES.map((n) => (
-        <button
-          key={n}
-          type="button"
-          aria-label={n}
-          onClick={() => onChange(n)}
-          className={cn(
-            "grid size-9 place-items-center rounded-md border transition-colors",
-            value === n ? "border-primary bg-primary/10 text-primary" : "border-transparent text-muted-foreground hover:bg-muted",
-          )}
-        >
-          <CatalogIcon name={n} className="size-4.5" />
-        </button>
-      ))}
-    </div>
-  );
-}
 
 function slug(s: string) {
   return s.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "") || "field";

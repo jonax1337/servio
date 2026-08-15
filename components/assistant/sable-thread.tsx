@@ -2,8 +2,8 @@
 /* eslint-disable react-hooks/refs -- the conversation-id ref is read only inside
    the send-time transport callback (deferred), not during render. */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Loader2 } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { Boxes, Loader2 } from "lucide-react";
 import { AssistantRuntimeProvider } from "@assistant-ui/react";
 import { useChatRuntime, AssistantChatTransport } from "@assistant-ui/react-ai-sdk";
 import type { UIMessage } from "@ai-sdk/react";
@@ -19,22 +19,51 @@ import {
 
 const THREAD_COMPONENTS = { ToolFallback: SableToolUI };
 
-// Tappable starter prompts shown on an empty chat, tuned per scope.
-const GENERAL_SUGGESTIONS = [
+// Tappable starter prompts shown on an empty chat. One unified set now that the
+// GENERAL/ADMIN chat scope toggle is gone (admin ops surface in the normal chat,
+// gated per-operation by the acting user's role).
+const STARTER_SUGGESTIONS = [
   "What tickets are assigned to me?",
   "What should I pick up from my team's queue?",
   "Summarise this ticket and suggest a next step",
-];
-const ADMIN_SUGGESTIONS = [
-  "How many tickets are open by team?",
-  "Show SLA breaches in the last 7 days",
-  "Which category has the most tickets this month?",
 ];
 
 type SableMetadata = {
   proposals?: AssistantProposal[];
   toolCalls?: { name: string; input: unknown }[];
 };
+
+type UIPart = UIMessage<SableMetadata>["parts"][number];
+
+/**
+ * Rebuild the read-tool parts of a persisted assistant turn so their activity
+ * chips — and Sable's generative cards (notably the `draft_document` artifact) —
+ * survive a reload, not just the live stream. `propose_*` write tools are
+ * deliberately NOT resurrected: an approval card must only be actionable during
+ * its live turn (re-approving a stale proposal on reload would double-apply).
+ *
+ * A drafted document's output is the pass-through of its input, so we synthesise
+ * `{ ok, ...input }` — the card then renders fully off the reconstructed part
+ * even though only the tool INPUT was persisted.
+ */
+function toolPartsOf(toolCalls: { name: string; input: unknown }[] | undefined, msgIdx: number): UIPart[] {
+  if (!Array.isArray(toolCalls)) return [];
+  const out: UIPart[] = [];
+  toolCalls.forEach((tc, j) => {
+    if (typeof tc.name !== "string" || tc.name.startsWith("propose_")) return;
+    const input = (tc.input ?? {}) as Record<string, unknown>;
+    const output =
+      tc.name === "draft_document" ? { ok: true, ...input } : null;
+    out.push({
+      type: `tool-${tc.name}`,
+      toolCallId: `h${msgIdx}-t${j}`,
+      state: "output-available",
+      input,
+      output,
+    } as unknown as UIPart);
+  });
+  return out;
+}
 
 /** Convert a persisted transcript into assistant-ui / useChat UI messages. */
 function hydrate(
@@ -48,7 +77,12 @@ function hydrate(
   return rows.map((m, i) => ({
     id: `h${i}`,
     role: m.role,
-    parts: [{ type: "text", text: m.content }],
+    // Read-tool parts first (chips + cards), then the answer — mirrors the live
+    // layout where tool activity precedes the reply.
+    parts: [
+      ...(m.role === "assistant" ? toolPartsOf(m.toolCalls, i) : []),
+      { type: "text", text: m.content } as UIPart,
+    ],
     metadata:
       m.role === "assistant" ? { proposals: m.proposals, toolCalls: m.toolCalls } : undefined,
   }));
@@ -65,12 +99,21 @@ export function SableThread({
   conversationId,
   scope,
   context,
+  overview,
+  projectName,
+  onOpenOverview,
   onConversationCreated,
   onActivity,
 }: {
   conversationId: string | null;
   scope: AssistantScope;
-  context?: { ticketId?: number };
+  context?: { ticketId?: number; projectId?: string };
+  /** Project overview (files + links) shown in the empty state when project-bound. */
+  overview?: ReactNode;
+  /** Active project name → a chip inside the composer (shown once a chat is under way). */
+  projectName?: string | null;
+  /** Chip click → back to the project overview. */
+  onOpenOverview?: () => void;
   onConversationCreated?: (id: string) => void;
   onActivity?: () => void;
 }) {
@@ -107,6 +150,9 @@ export function SableThread({
       scope={scope}
       context={context}
       initialMessages={initial}
+      overview={overview}
+      projectName={projectName}
+      onOpenOverview={onOpenOverview}
       onConversationCreated={onConversationCreated}
       onActivity={onActivity}
     />
@@ -118,13 +164,19 @@ function ThreadRuntime({
   scope,
   context,
   initialMessages,
+  overview,
+  projectName,
+  onOpenOverview,
   onConversationCreated,
   onActivity,
 }: {
   initialConversationId: string | null;
   scope: AssistantScope;
-  context?: { ticketId?: number };
+  context?: { ticketId?: number; projectId?: string };
   initialMessages: UIMessage<SableMetadata>[];
+  overview?: ReactNode;
+  projectName?: string | null;
+  onOpenOverview?: () => void;
   onConversationCreated?: (id: string) => void;
   onActivity?: () => void;
 }) {
@@ -138,7 +190,9 @@ function ThreadRuntime({
     async ({ messages }: { messages: UIMessage<SableMetadata>[] }) => {
       let cid = convIdRef.current;
       if (!cid) {
-        const res = await createConversation(scope);
+        // Pin a freshly-created chat to the active project (if any) so it lands in
+        // that project's pinned list, mirroring the rail's "New chat in project".
+        const res = await createConversation(scope, context?.projectId ?? null);
         if (!res.ok) throw new Error(res.error ?? "Could not start a chat");
         cid = res.conversation.id;
         convIdRef.current = cid;
@@ -192,14 +246,28 @@ function ThreadRuntime({
     };
   }, []);
 
+  const projectChip = projectName ? (
+    <button
+      type="button"
+      onClick={onOpenOverview}
+      className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-sable/25 bg-sable-muted/40 py-0.5 pr-2.5 pl-1.5 text-xs font-medium text-sable transition-colors hover:bg-sable-muted/70"
+      title={`Back to ${projectName}`}
+    >
+      <Boxes className="size-3.5 shrink-0" />
+      <span className="truncate font-display">{projectName}</span>
+    </button>
+  ) : null;
+
   return (
     <div ref={containerRef} className="flex min-h-0 min-w-0 flex-1 flex-col">
       <AssistantRuntimeProvider runtime={runtime}>
         <SableConversationContext.Provider value={convId ?? ""}>
           <Thread
             components={THREAD_COMPONENTS}
-            suggestions={scope === "ADMIN" ? ADMIN_SUGGESTIONS : GENERAL_SUGGESTIONS}
+            suggestions={STARTER_SUGGESTIONS}
             editable={false}
+            overview={overview}
+            composerChip={projectChip}
           />
         </SableConversationContext.Provider>
       </AssistantRuntimeProvider>

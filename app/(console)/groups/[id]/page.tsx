@@ -1,13 +1,19 @@
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
-import { ArrowLeft, Users, Mail, Ticket as TicketIcon } from "lucide-react";
+import { ArrowLeft, Users, Mail, Ticket as TicketIcon, Trash2 } from "lucide-react";
 import { db } from "@/lib/db";
+import { getFormOptions } from "@/lib/data/options";
+import { getSessionUser, hasRole, type Role } from "@/lib/session";
 import { LinkButton } from "@/components/link-button";
 import { StatusBadge } from "@/components/status-badge";
 import { UserAvatar } from "@/components/user-avatar";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { StatCard } from "@/components/stat-card";
 import { AutoAssignControl } from "@/components/groups/auto-assign-control";
+import { GroupEditDialog } from "@/components/groups/group-edit-dialog";
+import { GroupMembers } from "@/components/groups/group-members";
+import { ConfirmButton } from "@/components/confirm-dialog";
+import { deleteGroup } from "@/lib/actions/groups";
 import { GROUP_TYPE_META, OPEN_TICKET_STATUSES } from "@/lib/constants";
 
 export const dynamic = "force-dynamic";
@@ -29,18 +35,27 @@ export default async function GroupDetailPage({
 }) {
   const { id } = await params;
 
-  const group = await db.group.findUnique({
-    where: { id },
-    include: {
-      manager: true,
-      members: { include: { user: true }, orderBy: { role: "asc" } },
-    },
-  });
+  const [group, me, options] = await Promise.all([
+    db.group.findUnique({
+      where: { id },
+      include: {
+        manager: true,
+        members: { include: { user: true }, orderBy: { role: "asc" } },
+      },
+    }),
+    getSessionUser(),
+    getFormOptions(),
+  ]);
   if (!group) notFound();
+  const canManage = !!me && hasRole(me.role as Role, "MANAGER");
 
   const openTickets = await db.ticket.count({
     where: { groupId: group.id, status: { in: [...OPEN_TICKET_STATUSES] } },
   });
+
+  // Agents not already in the group — the pool for the "add member" picker.
+  const memberIds = new Set(group.members.map((m) => m.userId));
+  const candidates = options.agents.filter((a) => !memberIds.has(a.id));
 
   return (
     <>
@@ -56,6 +71,24 @@ export default async function GroupDetailPage({
           {group.name}
         </h1>
         <StatusBadge map={GROUP_TYPE_META} value={group.type} dot />
+        {canManage ? (
+          <div className="ml-auto flex items-center gap-2">
+            <GroupEditDialog group={group} agents={options.agents} />
+            <ConfirmButton
+              action={deleteGroup}
+              fields={{ id: group.id }}
+              title="Delete group"
+              description={`Permanently delete "${group.name}"? Members are removed; tickets, changes and other records are kept but unassigned from this group.`}
+              confirmLabel="Delete group"
+              triggerVariant="outline"
+              triggerSize="icon-sm"
+              triggerLabel="Delete group"
+              triggerClassName="text-muted-foreground hover:border-destructive/40 hover:text-destructive"
+            >
+              <Trash2 className="size-4" />
+            </ConfirmButton>
+          </div>
+        ) : null}
       </div>
 
       <div className="p-4 sm:p-6">
@@ -82,7 +115,9 @@ export default async function GroupDetailPage({
               <CardTitle className="text-sm">Members · {group.members.length}</CardTitle>
             </CardHeader>
             <CardContent>
-              {group.members.length === 0 ? (
+              {canManage ? (
+                <GroupMembers groupId={group.id} members={group.members} candidates={candidates} />
+              ) : group.members.length === 0 ? (
                 <p className="text-sm text-muted-foreground">No members yet.</p>
               ) : (
                 <div className="grid gap-1">
