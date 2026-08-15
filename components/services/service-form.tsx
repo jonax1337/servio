@@ -122,12 +122,12 @@ export function ServiceForm({ options }: { options: FormOptions }) {
             noneLabel="No category"
           />
         </Field>
-        <Field label="Team" hint="Handles catalog requests for this service.">
+        <Field label="Group" hint="Handles catalog requests for this service.">
           <ComboField
             name="groupId"
             options={teamOpts}
             includeNone
-            noneLabel="No team"
+            noneLabel="No group"
           />
         </Field>
         <Field label="SLA">

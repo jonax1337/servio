@@ -338,3 +338,33 @@ export async function updateChangeDetails(formData: FormData) {
   revalidatePath(`/changes/${id}`);
   revalidatePath("/changes");
 }
+
+// ── Planning fields (reason, implementation plan, rollback plan) ─────────────
+// The change record's free-text plans, amendable at any point in the lifecycle
+// (e.g. adding a rollback plan before the CAB, or after a REVIEW). Keyed by
+// field name via EditableTextCard.
+
+const CHANGE_TEXT_FIELDS = ["reason", "implementationPlan", "rollbackPlan"] as const;
+const changeTextSchema = z.object({
+  id: z.coerce.number(),
+  field: z.enum(CHANGE_TEXT_FIELDS),
+  value: z.string(),
+});
+
+const CHANGE_TEXT_LABELS: Record<(typeof CHANGE_TEXT_FIELDS)[number], string> = {
+  reason: "reason",
+  implementationPlan: "implementation plan",
+  rollbackPlan: "rollback plan",
+};
+
+export async function updateChangeText(formData: FormData) {
+  const me = await requireAgentC();
+  if (!me) return;
+  const parsed = changeTextSchema.safeParse(Object.fromEntries(formData));
+  if (!parsed.success) return;
+  const { id, field } = parsed.data;
+  const value = parsed.data.value.trim() || null;
+  await db.change.update({ where: { id }, data: { [field]: value } });
+  await writeAudit({ userId: me.id, action: "UPDATE", entity: "Change", entityId: id, summary: `Updated ${CHANGE_TEXT_LABELS[field]}` });
+  revalidatePath(`/changes/${id}`);
+}

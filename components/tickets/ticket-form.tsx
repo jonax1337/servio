@@ -84,7 +84,7 @@ export function TicketForm({
         <Field label="Assignee">
           <ComboField name="assigneeId" defaultValue={currentUserId} options={agentOpts} includeNone noneLabel="Unassigned" />
         </Field>
-        <Field label="Team"><ComboField name="groupId" options={groupOpts} includeNone noneLabel="No team" /></Field>
+        <Field label="Group"><ComboField name="groupId" options={groupOpts} includeNone noneLabel="No group" /></Field>
         <Field label="Category"><ComboField name="categoryId" options={catOpts} includeNone noneLabel="No category" /></Field>
         <Field label="Service"><ComboField name="serviceId" options={svcOpts} includeNone noneLabel="No service" /></Field>
       </div>

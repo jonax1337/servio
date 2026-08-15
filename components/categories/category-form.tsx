@@ -92,7 +92,7 @@ export function CategoryForm({
         error={fe.groupId}
         hint="Optional. Recorded so Sable knows who owns this category — it does not auto-route tickets."
       >
-        <ComboField name="groupId" options={teamOpts} defaultValue={category?.groupId ?? undefined} includeNone noneLabel="— No team —" />
+        <ComboField name="groupId" options={teamOpts} defaultValue={category?.groupId ?? undefined} includeNone noneLabel="— No group —" />
       </Field>
 
       <Field label="Description" error={fe.description}>

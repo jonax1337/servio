@@ -115,3 +115,31 @@ export async function updateProblemDetails(formData: FormData) {
   revalidatePath(`/problems/${id}`);
   revalidatePath("/problems");
 }
+
+// ── Investigation fields (root cause, workaround) ────────────────────────────
+// Plain-text analysis fields that can be filled in / amended at any time as the
+// investigation progresses. Keyed by field name via EditableTextCard.
+
+const TEXT_FIELDS = ["rootCause", "workaround"] as const;
+const textSchema = z.object({
+  id: z.coerce.number(),
+  field: z.enum(TEXT_FIELDS),
+  value: z.string(),
+});
+
+const TEXT_LABELS: Record<(typeof TEXT_FIELDS)[number], string> = {
+  rootCause: "root cause",
+  workaround: "workaround",
+};
+
+export async function updateProblemText(formData: FormData) {
+  const me = await requireAgentP();
+  if (!me) return;
+  const parsed = textSchema.safeParse(Object.fromEntries(formData));
+  if (!parsed.success) return;
+  const { id, field } = parsed.data;
+  const value = parsed.data.value.trim() || null;
+  await db.problem.update({ where: { id }, data: { [field]: value } });
+  await writeAudit({ userId: me.id, action: "UPDATE", entity: "Problem", entityId: id, summary: `Updated ${TEXT_LABELS[field]}` });
+  revalidatePath(`/problems/${id}`);
+}

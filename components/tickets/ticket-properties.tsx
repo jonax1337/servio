@@ -127,7 +127,7 @@ export function TicketProperties({
     none("Unassigned"),
     ...options.agents.map((a) => ({ value: a.id, label: a.name ?? a.email, avatar: initials(a.name ?? a.email), hint: a.email })),
   ];
-  const groupOpts: ComboOption[] = [none("No team"), ...options.groups.map((g) => ({ value: g.id, label: g.name }))];
+  const groupOpts: ComboOption[] = [none("No group"), ...options.groups.map((g) => ({ value: g.id, label: g.name }))];
   const catOpts: ComboOption[] = [none("No category"), ...options.categories.map((c) => ({ value: c.id, label: c.name }))];
   const svcOpts: ComboOption[] = [none("No service"), ...options.services.map((s) => ({ value: s.id, label: s.name }))];
   const groupName = (id: string) => options.groups.find((g) => g.id === id)?.name ?? id;
@@ -357,7 +357,7 @@ export function TicketProperties({
       {/* Who owns it */}
       <div className="grid gap-3 border-t pt-3">
         {prop("assigneeId", "Assignee", agentOpts, true, "Unassigned")}
-        {prop("groupId", "Team", groupOpts, true, "No team")}
+        {prop("groupId", "Group", groupOpts, true, "No group")}
       </div>
 
       {/* How severe it is */}

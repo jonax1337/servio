@@ -35,7 +35,7 @@ type Row = {
 
 const FIELD_OPTS: ComboOption[] = [
   { value: "assigneeId", label: "Assignee" },
-  { value: "groupId", label: "Team" },
+  { value: "groupId", label: "Group" },
   { value: "priority", label: "Priority" },
   { value: "status", label: "Status" },
 ];
@@ -95,7 +95,7 @@ export function TicketsTable({
   function valueOptsFor(f: string): ComboOption[] {
     if (f === "priority") return PRIORITIES.map((p) => ({ value: p, label: PRIORITY_META[p].label, tone: PRIORITY_META[p].tone }));
     if (f === "status") return BULK_STATUSES.map((s) => ({ value: s, label: TICKET_STATUS_META[s].label, tone: TICKET_STATUS_META[s].tone }));
-    if (f === "groupId") return [{ value: "none", label: "No team" }, ...groups];
+    if (f === "groupId") return [{ value: "none", label: "No group" }, ...groups];
     return [{ value: "none", label: "Unassigned" }, ...agents];
   }
   function changeField(f: string) {

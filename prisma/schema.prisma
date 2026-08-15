@@ -56,6 +56,8 @@ model User {
   assignedProblems Problem[]  @relation("ProblemAssignee")
   assignedChanges  Change[]   @relation("ChangeAssignee")
   approvals       ChangeApproval[]
+  entityApprovals    Approval[] @relation("ApprovalApprover")
+  requestedApprovals Approval[] @relation("ApprovalRequester")
   ownedAssets     Asset[]     @relation("AssetOwner")
   ownedServices   Service[]   @relation("ServiceOwner")
   catalogApprovals CatalogItem[] @relation("CatalogApprover")
@@ -767,6 +769,35 @@ model ChangeApproval {
   approver User   @relation(fields: [approverId], references: [id])
 
   @@unique([changeId, approverId])
+}
+
+// ---------------------------------------------------------------------------
+// Generic ad-hoc approvals
+// ---------------------------------------------------------------------------
+
+/// A polymorphic, manually-requested approval that can hang off ANY entity
+/// (Ticket, Problem, Change, Service). Distinct from the two automated flows —
+/// the Change CAB (ChangeApproval) and catalog approvals (TicketApproval) —
+/// which stay as-is. This one is governance/sign-off: it records a decision,
+/// notifies, and drops an audit trail, but never drives the entity lifecycle.
+model Approval {
+  id            String    @id @default(cuid())
+  entityType    String    // TICKET | PROBLEM | CHANGE | SERVICE
+  entityId      String    // stringified entity id (Int entities stored as text)
+  title         String    @default("") // what is being approved (free text)
+  approverId    String
+  requestedById String?
+  status        String    @default("PENDING") // PENDING | APPROVED | REJECTED
+  comment       String?
+  decidedAt     DateTime?
+  createdAt     DateTime  @default(now())
+
+  approver    User  @relation("ApprovalApprover", fields: [approverId], references: [id])
+  requestedBy User? @relation("ApprovalRequester", fields: [requestedById], references: [id])
+
+  @@unique([entityType, entityId, approverId])
+  @@index([entityType, entityId])
+  @@index([approverId, status])
 }
 
 // ---------------------------------------------------------------------------

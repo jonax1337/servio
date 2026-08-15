@@ -7,11 +7,13 @@ import {
 } from "lucide-react";
 import { db } from "@/lib/db";
 import { getFormOptions } from "@/lib/data/options";
-import { getSessionUser, isAgent, type Role } from "@/lib/session";
+import { getEntityApprovals } from "@/lib/data/approvals";
+import { getSessionUser, isAgent, hasRole, type Role } from "@/lib/session";
 import { LinkButton } from "@/components/link-button";
 import { StatusBadge, VipBadge, ToneBadge } from "@/components/status-badge";
 import { TicketProperties } from "@/components/tickets/ticket-properties";
 import { CommentThread } from "@/components/comments/comment-thread";
+import { EntityApprovals } from "@/components/approvals/entity-approvals";
 import { aiConfigured, aiTeaserEnabled } from "@/lib/ai";
 import { getBoolSetting } from "@/lib/settings";
 import { EditEntityDialog } from "@/components/edit-entity-dialog";
@@ -55,7 +57,7 @@ export default async function TicketDetailPage({
   if (!Number.isFinite(ticketId)) notFound();
 
   const me = await getSessionUser();
-  const [ticket, options, audits, candidates, problemChoices, changeChoices, assetChoices] = await Promise.all([
+  const [ticket, options, audits, candidates, problemChoices, changeChoices, assetChoices, adHocApprovals] = await Promise.all([
     db.ticket.findUnique({
       where: { id: ticketId },
       include: {
@@ -106,6 +108,7 @@ export default async function TicketDetailPage({
       orderBy: { updatedAt: "desc" },
       take: 200,
     }),
+    getEntityApprovals("TICKET", ticketId),
   ]);
   if (!ticket) notFound();
 
@@ -116,6 +119,7 @@ export default async function TicketDetailPage({
   const triageEnabled = aiEnabled && (await getBoolSetting("AI_TICKET_TRIAGE", true));
   const isWatching = !!me && ticket.watchers.some((w) => w.userId === me.id);
   const isAgentUser = !!me && isAgent(me.role as Role);
+  const canManage = !!me && hasRole(me.role as Role, "MANAGER");
   const candidateOpts = candidates.map((c) => ({
     value: String(c.id),
     label: `${ticketRef(c.id, c.prefix)} — ${c.title}`,
@@ -339,6 +343,21 @@ export default async function TicketDetailPage({
             <p className="text-sm text-muted-foreground">No linked records yet.</p>
           )}
           </div>
+
+          {/* Approvals (ad-hoc sign-off) */}
+          {isAgentUser ? (
+            <EntityApprovals
+              entityType="TICKET"
+              entityId={String(ticket.id)}
+              entityTitle={ticket.title}
+              approvals={adHocApprovals}
+              currentUserId={me?.id ?? ""}
+              isAdmin={me?.role === "ADMIN"}
+              canManage={canManage}
+              canRequest={isAgentUser}
+              agents={options.agents}
+            />
+          ) : null}
 
           {/* Comments & Activity */}
           <div className="mt-8">
