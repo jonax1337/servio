@@ -12,7 +12,9 @@ import { ticketRef, APPROVAL_ENTITY_TYPES, APPROVAL_ENTITY_META, type ApprovalEn
 
 export async function decideApproval(formData: FormData) {
   const me = await getSessionUser();
-  if (!me) return;
+  // Deciding a request flips a ticket's lifecycle — agent+ only, mirroring the
+  // ad-hoc decideEntityApproval policy. The approver/admin + SoD checks follow.
+  if (!me || !isAgent(me.role as Role)) return;
   const approvalId = String(formData.get("approvalId") ?? "");
   const decision = String(formData.get("decision") ?? "");
   const comment = String(formData.get("comment") ?? "").trim() || null;

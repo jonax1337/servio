@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { guard, ok, apiError, preflight, principalIsAgent } from "@/lib/api";
+import { guard, ok, apiError, preflight, principalIsAgent, validateTicketAssignee } from "@/lib/api";
 import { writeAudit } from "@/lib/audit";
 import { pauseData, resumeData } from "@/lib/sla";
 import { canTransition, TICKET_TRANSITIONS } from "@/lib/transitions";
@@ -60,6 +60,13 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   }
   const parsed = patchSchema.safeParse(body);
   if (!parsed.success) return apiError(422, "Validation failed", parsed.error.flatten().fieldErrors);
+
+  // Validate a (re)assignment up front so a bad assigneeId is a 422, not a 500
+  // on the FK, and so we never assign a non-agent or an out-of-group user.
+  if (parsed.data.assigneeId) {
+    const reason = await validateTicketAssignee(parsed.data.assigneeId, existing.groupId);
+    if (reason) return apiError(422, "Validation failed", { assigneeId: [reason] });
+  }
 
   const data = { ...parsed.data } as Record<string, unknown>;
   const to = parsed.data.status;

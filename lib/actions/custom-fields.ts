@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { getSessionUser, hasRole, isAgent, type Role } from "@/lib/session";
+import { getSessionUser, getCurrentUser, hasRole, isAgent, type Role } from "@/lib/session";
 import { writeAudit } from "@/lib/audit";
 import { MATCH_TYPES } from "@/lib/automation-defs";
 import {
@@ -12,8 +12,10 @@ import {
 } from "@/lib/custom-fields";
 
 async function requireManager() {
-  const me = await getSessionUser();
-  return me && hasRole(me.role as Role, "MANAGER") ? me : null;
+  // DB-truth: rehydrate role + isActive so a demoted/deactivated user with a
+  // live JWT can't keep manager-level custom-field admin.
+  const me = await getCurrentUser();
+  return me && me.isActive && hasRole(me.role as Role, "MANAGER") ? me : null;
 }
 
 // Where a change to an entity's custom fields needs to be reflected.

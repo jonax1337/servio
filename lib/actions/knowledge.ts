@@ -5,7 +5,7 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { sanitizeCommentHtml, htmlToText } from "@/lib/markdown";
-import { getSessionUser, isAgent, type Role } from "@/lib/session";
+import { getSessionUser, getCurrentUser, hasRole, isAgent, type Role } from "@/lib/session";
 import { writeAudit } from "@/lib/audit";
 import { ARTICLE_STATUSES, ARTICLE_VISIBILITIES } from "@/lib/constants";
 
@@ -189,16 +189,33 @@ export async function updateArticle(_prev: ArticleState, formData: FormData): Pr
 
 export async function changeArticleStatus(formData: FormData) {
   const me = await requireAgent();
-  if (!me) return;
+  if (!me) throw new Error("You need agent access to change an article's status.");
 
   const id = String(formData.get("id") ?? "");
   const status = String(formData.get("status") ?? "");
-  if (!ARTICLE_STATUSES.includes(status as (typeof ARTICLE_STATUSES)[number])) return;
+  if (!ARTICLE_STATUSES.includes(status as (typeof ARTICLE_STATUSES)[number])) {
+    throw new Error("Unknown article status.");
+  }
 
   const article = await db.article.findUnique({ where: { id } });
-  if (!article) return;
+  if (!article) throw new Error("Article not found.");
 
   const publishing = status === "PUBLISHED";
+
+  // Publishing pushes the article to the (potentially public) portal, so it is
+  // an editorial approval — not a self-service action. Require a DISTINCT
+  // reviewer with MANAGER+ and re-check the role against the CURRENT DB user
+  // (never the stale JWT). Record who approved and when.
+  if (publishing) {
+    const row = await getCurrentUser();
+    if (!row || !row.isActive || !hasRole(row.role as Role, "MANAGER")) {
+      throw new Error("Publishing an article requires manager approval.");
+    }
+    if (article.authorId && article.authorId === row.id) {
+      throw new Error("An article must be published by a different reviewer than its author.");
+    }
+  }
+
   await db.article.update({
     where: { id },
     data: {
@@ -206,6 +223,9 @@ export async function changeArticleStatus(formData: FormData) {
       published: publishing, // keep the denormalized mirror in lock-step
       // stamp first publish time; keep it once set
       publishedAt: publishing && !article.publishedAt ? new Date() : article.publishedAt,
+      // record the reviewer who approved this publish
+      approvedById: publishing ? me.id : article.approvedById,
+      approvedAt: publishing ? new Date() : article.approvedAt,
     },
   });
 
@@ -218,13 +238,14 @@ export async function changeArticleStatus(formData: FormData) {
 
 export async function deleteArticle(formData: FormData) {
   const me = await requireAgent();
-  if (!me) return;
+  if (!me) throw new Error("You need agent access to delete articles.");
   const id = String(formData.get("id") ?? "");
   const article = await db.article.findUnique({ where: { id }, select: { title: true } });
-  await db.article.delete({ where: { id } }).catch(() => {});
-  if (article) {
-    await writeAudit({ userId: me.id, action: "DELETE", entity: "Article", entityId: id, summary: `Deleted article "${article.title}"` });
-  }
+  if (!article) throw new Error("Article not found.");
+  // Let a delete failure surface (like deleteAsset/deleteGroup) instead of
+  // silently swallowing it and pretending the article was removed.
+  await db.article.delete({ where: { id } });
+  await writeAudit({ userId: me.id, action: "DELETE", entity: "Article", entityId: id, summary: `Deleted article "${article.title}"` });
   revalidatePath("/knowledge");
   redirect("/knowledge");
 }

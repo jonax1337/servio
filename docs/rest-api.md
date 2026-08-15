@@ -84,8 +84,13 @@ and may act org-wide; a plain `USER` is scoped to their own objects.
 | User (`USER`) | only tickets they requested | files as **themselves only** (server-controlled fields ignored, defaults applied) | **not allowed** — returns `404` |
 
 To avoid leaking existence, a non-agent requesting a ticket they don't own gets
-`404`, not `403`. Assets are **not** actor-scoped — any valid token with the right
-scope can read/write assets.
+`404`, not `403`. **Assets and Services are agent-only**: a non-agent (`USER`) token
+gets `403` on every `/assets` and `/services` request — the CMDB and catalog are
+agent data and cannot be enumerated by a plain user token.
+
+When an agent sets `assigneeId` on ticket create/update, the assignee is validated
+(must be an active `AGENT` who — if the ticket has a group — belongs to that group);
+an invalid assignee returns `422`, not a `500`.
 
 ### Revoking a token
 
@@ -143,10 +148,17 @@ only for validation failures:
 | `204` | `OPTIONS` preflight |
 | `400` | Malformed JSON body |
 | `401` | Missing or invalid token |
-| `403` | Token lacks the required scope |
+| `403` | Token lacks the required scope, or is a non-agent hitting an agent-only resource (`/assets`, `/services`) |
 | `404` | Resource not found (or hidden from a non-agent) |
 | `409` | Illegal ticket status transition |
-| `422` | Zod validation failed (`details` holds field errors) |
+| `422` | Zod validation failed, or an invalid `assigneeId` (`details` holds field errors) |
+| `429` | Rate limit exceeded — a `Retry-After` header is returned |
+
+The API is rate-limited per token (falling back to client IP) with an in-memory
+sliding window; a `429` carries `Retry-After`. Limits are per-process and env-tunable
+(`API_RATE_LIMIT`, `API_RATE_WINDOW_MS`) — see the multi-instance caveat in
+[deployment.md](./deployment.md). Login is separately throttled with failed-attempt
+lockout + backoff. Token creation/revocation is **ADMIN-only**.
 
 ---
 

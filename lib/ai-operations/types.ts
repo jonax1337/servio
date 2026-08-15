@@ -25,8 +25,8 @@ export type AiOpResult =
  *
  * Authority is the app's real RBAC: `minRole` mirrors the underlying action, so
  * Sable can do exactly what the acting user could do in the UI — no more. `adminOnly`
- * now requires the ADMIN role (no separate chat scope), so system-wide config ops
- * surface in the normal chat for admins only.
+ * requires the ADMIN role AND an ADMIN-scoped conversation (defence in depth), so
+ * system-wide config ops surface only for admins chatting in the Admin scope.
  */
 export type AiOperation = {
   /** Stable dot id, e.g. "category.create". Tool name = id with dots→underscores. */
@@ -36,7 +36,7 @@ export type AiOperation = {
   kind: "read" | "write";
   /** Minimum role, mirroring the underlying action's own RBAC check. */
   minRole: Role;
-  /** When true, requires the ADMIN role (no separate chat scope). */
+  /** When true, requires the ADMIN role AND an ADMIN-scoped conversation. */
   adminOnly?: boolean;
   /** Tool description shown to the model. */
   description: string;

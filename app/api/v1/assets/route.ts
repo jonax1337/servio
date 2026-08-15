@@ -1,7 +1,7 @@
 import type { Prisma } from "@prisma/client";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { guard, ok, apiError, preflight, paginate, pageMeta } from "@/lib/api";
+import { guard, ok, apiError, preflight, paginate, pageMeta, principalIsAgent } from "@/lib/api";
 import { writeAudit } from "@/lib/audit";
 import { serializeAsset } from "../_serializers";
 import { ASSET_TYPES, ASSET_STATUSES } from "@/lib/constants";
@@ -16,6 +16,8 @@ export function OPTIONS() {
 export async function GET(req: Request) {
   const auth = await guard(req, "read");
   if ("response" in auth) return auth.response;
+  // The CMDB is agent data. Non-agent tokens must not enumerate assets (BOLA).
+  if (!principalIsAgent(auth.principal)) return apiError(403, "Assets are restricted to agent tokens.");
 
   const url = new URL(req.url);
   const { page, perPage, skip, take } = paginate(url.searchParams);
@@ -54,6 +56,7 @@ const createSchema = z.object({
 export async function POST(req: Request) {
   const auth = await guard(req, "write");
   if ("response" in auth) return auth.response;
+  if (!principalIsAgent(auth.principal)) return apiError(403, "Assets are restricted to agent tokens.");
 
   let body: unknown;
   try {

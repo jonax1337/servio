@@ -31,6 +31,9 @@ export function parseFormSchema(json: string | null | undefined): ServiceField[]
   }
 }
 
+/** Upper bound on a single free-text answer, to cap stored form payloads. */
+export const MAX_ANSWER_LEN = 5000;
+
 /** Validate submitted answers against a schema. Returns {values, errors}. */
 export function validateAnswers(
   fields: ServiceField[],
@@ -50,8 +53,16 @@ export function validateAnswers(
       errors[f.key] = "This field is required";
       continue;
     }
+    if (v.length > MAX_ANSWER_LEN) {
+      errors[f.key] = `Answer is too long (max ${MAX_ANSWER_LEN} characters)`;
+      continue;
+    }
     if (f.type === "number" && v && Number.isNaN(Number(v))) {
       errors[f.key] = "Must be a number";
+      continue;
+    }
+    if (f.type === "select" && v && Array.isArray(f.options) && !f.options.includes(v)) {
+      errors[f.key] = "Invalid selection";
       continue;
     }
     values[f.key] = v;

@@ -1,6 +1,13 @@
 import { NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 import { db } from "@/lib/db";
+import { checkApiRate } from "@/lib/rate-limit";
+
+// A pre-computed bcrypt hash of a fixed dummy string. When no token matches the
+// presented prefix we still run one bcrypt.compare against this so the failure
+// path costs roughly the same as a real single-candidate verify — this keeps
+// timing constant and avoids leaking "prefix exists" via response latency.
+const DUMMY_HASH = "$2b$10$sxF5LralJ4wtjwA8f2Vi5OEU6oR8u52rCQmM0SLzreIDJadPuJf6m";
 
 export type ApiPrincipal = {
   tokenId: string;
@@ -23,13 +30,17 @@ export async function authenticateApi(req: Request): Promise<ApiPrincipal | null
   if (!match) return null;
   const raw = match[1].trim();
 
-  const candidates = await db.apiToken.findMany({
+  // Look up ONLY by exact prefix. A miss fails immediately — we never fall back
+  // to scanning + bcrypt-comparing every active token (that turned any bad
+  // token into an O(N) bcrypt DoS). To keep the timing of a prefix-miss close
+  // to a prefix-hit, we still burn one bcrypt compare before returning.
+  const pool = await db.apiToken.findMany({
     where: { revoked: false, prefix: raw.slice(0, 18) },
   });
-  // fall back to scanning all active tokens if prefix scheme differs
-  const pool = candidates.length
-    ? candidates
-    : await db.apiToken.findMany({ where: { revoked: false } });
+  if (!pool.length) {
+    await bcrypt.compare(raw, DUMMY_HASH);
+    return null;
+  }
 
   for (const t of pool) {
     if (t.expiresAt && t.expiresAt.getTime() < Date.now()) continue;
@@ -59,6 +70,34 @@ export function requireScope(principal: ApiPrincipal, scope: string) {
   return principal.scopes.includes(scope) || principal.scopes.includes("admin");
 }
 
+/**
+ * Validate a ticket assignee before writing it. An assignee must be an existing,
+ * active AGENT (or higher) and — when the ticket has a group — a member of that
+ * group. Returns null when valid, or a human-readable reason otherwise. Callers
+ * should surface a 422 rather than letting a bad FK bubble up as a 500.
+ */
+export async function validateTicketAssignee(
+  assigneeId: string,
+  groupId: string | null,
+): Promise<string | null> {
+  const user = await db.user.findUnique({
+    where: { id: assigneeId },
+    select: { isActive: true, role: true },
+  });
+  if (!user) return "assigneeId does not reference an existing user.";
+  if (!user.isActive) return "assigneeId references a deactivated user.";
+  if ((AGENT_RANK[user.role] ?? 0) < AGENT_RANK.AGENT)
+    return "assigneeId must reference an agent.";
+  if (groupId) {
+    const member = await db.groupMember.findUnique({
+      where: { groupId_userId: { groupId, userId: assigneeId } },
+      select: { userId: true },
+    });
+    if (!member) return "assigneeId must be a member of the ticket's group.";
+  }
+  return null;
+}
+
 // Bearer-token APIs don't use cookies, but keep the origin configurable rather
 // than hard-wiring a wildcard so deployments can lock it down.
 const CORS = {
@@ -82,11 +121,35 @@ export function preflight() {
   return new NextResponse(null, { status: 204, headers: CORS });
 }
 
+/** Best-effort client IP from proxy headers (single-node deploy). */
+function clientIp(req: Request): string {
+  const fwd = req.headers.get("x-forwarded-for");
+  if (fwd) return fwd.split(",")[0].trim();
+  return req.headers.get("x-real-ip")?.trim() || "unknown";
+}
+
 /** Standard auth guard used by every protected route. */
 export async function guard(
   req: Request,
   scope: "read" | "write",
 ): Promise<{ principal: ApiPrincipal } | { response: NextResponse }> {
+  // Throttle the Bearer entry point before doing any DB work. Key by the raw
+  // token when present (so one noisy token can't exhaust the shared IP bucket),
+  // else by client IP for unauthenticated/malformed requests.
+  const authz = req.headers.get("authorization") ?? "";
+  const tokenMatch = authz.match(/^Bearer\s+(.+)$/i);
+  const rateKey = tokenMatch ? `t:${tokenMatch[1].trim().slice(0, 18)}` : `ip:${clientIp(req)}`;
+  const limited = checkApiRate(rateKey);
+  if (limited) {
+    const retryAfter = Math.ceil(limited.retryAfterMs / 1000);
+    return {
+      response: NextResponse.json(
+        { error: { message: "Rate limit exceeded. Slow down and retry later." } },
+        { status: 429, headers: { ...CORS, "Retry-After": String(retryAfter) } },
+      ),
+    };
+  }
+
   const principal = await authenticateApi(req);
   if (!principal) {
     return {

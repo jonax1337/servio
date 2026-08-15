@@ -1,5 +1,8 @@
-import { lookup } from "node:dns/promises";
+import { lookup as dnsLookup } from "node:dns/promises";
 import net from "node:net";
+import http from "node:http";
+import https from "node:https";
+import type { LookupFunction } from "node:net";
 
 // ---------------------------------------------------------------------------
 // SSRF guard for outbound webhooks. Admin-configured URLs are still attacker-
@@ -55,12 +58,166 @@ export async function assertSafePublicUrl(raw: string): Promise<URL> {
   if (url.protocol !== "https:" && url.protocol !== "http:") {
     throw new Error("Only http(s) URLs are allowed");
   }
-  const addrs = await lookup(url.hostname, { all: true });
+  const addrs = await dnsLookup(url.hostname, { all: true });
   if (addrs.length === 0) throw new Error("Host did not resolve");
   for (const a of addrs) {
     if (isPrivateAddress(a.address)) throw new Error("URL resolves to a private/reserved address");
   }
   return url;
+}
+
+// ---------------------------------------------------------------------------
+// safeFetch: SSRF-hard outbound HTTP that closes the DNS-rebinding / TOCTOU gap.
+//
+// assertSafePublicUrl() alone is racy: between the pre-check resolve and the
+// actual fetch, DNS can rebind the host to an internal IP (or a round-robin set
+// can hand the socket a private address). Here we resolve the host ONCE, pin the
+// connection to a validated IP via a custom socket `lookup`, and — belt and
+// braces — reject in the connect callback if the peer the socket actually
+// reached is not in the validated set. The original Host/SNI is preserved so
+// virtual-hosted and TLS endpoints still work. Redirects are never followed
+// (a public host must not be able to 302 us onto an internal one).
+// ---------------------------------------------------------------------------
+
+export type SafeFetchOptions = {
+  method?: string;
+  headers?: Record<string, string>;
+  body?: string | Uint8Array;
+  timeoutMs?: number;
+  /** Hard cap on the response body we will buffer. Default 5 MiB. */
+  maxBytes?: number;
+};
+
+export type SafeFetchResponse = {
+  ok: boolean;
+  status: number;
+  headers: Record<string, string>;
+  text: string;
+};
+
+const DEFAULT_TIMEOUT_MS = 10_000;
+const DEFAULT_MAX_BYTES = 5 * 1024 * 1024; // 5 MiB
+
+/**
+ * SSRF-hardened fetch. Resolves the host once, validates every candidate
+ * address, pins the connection to those validated IPs, verifies the connected
+ * peer, forbids redirects, and enforces a byte cap + timeout. Throws on any
+ * unsafe condition (private target, rebinding, redirect, oversize, timeout).
+ */
+export async function safeFetch(rawUrl: string, opts: SafeFetchOptions = {}): Promise<SafeFetchResponse> {
+  const url = await assertSafePublicUrl(rawUrl);
+  const method = (opts.method ?? "GET").toUpperCase();
+  const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+  const maxBytes = opts.maxBytes ?? DEFAULT_MAX_BYTES;
+
+  // The validated address set for THIS request. The custom lookup only ever
+  // hands the socket layer one of these, and the connect check re-asserts it.
+  const validated = (await dnsLookup(url.hostname, { all: true })).filter((a) => !isPrivateAddress(a.address));
+  if (validated.length === 0) throw new Error("URL resolves to a private/reserved address");
+  const validatedSet = new Set(validated.map((a) => a.address));
+
+  // Custom lookup pins connect() to a validated IP and re-checks it (defence in
+  // depth against a resolver that would otherwise return a fresh, rebound answer).
+  const pinnedLookup: LookupFunction = (_hostname, _options, callback) => {
+    const chosen = validated[0];
+    if (!chosen || isPrivateAddress(chosen.address)) {
+      callback(new Error("URL resolves to a private/reserved address"), "", 0);
+      return;
+    }
+    callback(null, chosen.address, chosen.family);
+  };
+
+  const isHttps = url.protocol === "https:";
+  const transport = isHttps ? https : http;
+  const port = url.port ? Number(url.port) : isHttps ? 443 : 80;
+
+  const headers: Record<string, string> = { ...(opts.headers ?? {}) };
+  // Preserve the original Host so virtual hosts / TLS SNI keep working even
+  // though we connect by IP.
+  headers.host = headers.host ?? url.host;
+
+  return await new Promise<SafeFetchResponse>((resolve, reject) => {
+    let settled = false;
+    const done = (fn: () => void) => {
+      if (settled) return;
+      settled = true;
+      fn();
+    };
+
+    const req = transport.request(
+      {
+        protocol: url.protocol,
+        hostname: url.hostname, // used for TLS SNI / certificate validation
+        servername: isHttps ? url.hostname : undefined,
+        port,
+        method,
+        path: `${url.pathname}${url.search}`,
+        headers,
+        lookup: pinnedLookup,
+        timeout: timeoutMs,
+      },
+      (res) => {
+        // Verify the socket actually connected to a validated peer.
+        const peer = res.socket.remoteAddress ?? "";
+        const normalizedPeer = peer.replace(/^::ffff:/i, "");
+        if (
+          isPrivateAddress(normalizedPeer) ||
+          (!validatedSet.has(peer) && !validatedSet.has(normalizedPeer))
+        ) {
+          res.destroy();
+          req.destroy();
+          done(() => reject(new Error("Connected peer is not a validated public address")));
+          return;
+        }
+        // Never follow redirects: a validated host must not bounce us internal.
+        if (res.statusCode && res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+          res.destroy();
+          req.destroy();
+          done(() => reject(new Error("Redirect responses are not allowed")));
+          return;
+        }
+
+        const chunks: Buffer[] = [];
+        let received = 0;
+        res.on("data", (chunk: Buffer) => {
+          received += chunk.length;
+          if (received > maxBytes) {
+            res.destroy();
+            req.destroy();
+            done(() => reject(new Error("Response exceeded the maximum allowed size")));
+            return;
+          }
+          chunks.push(chunk);
+        });
+        res.on("end", () => {
+          const outHeaders: Record<string, string> = {};
+          for (const [k, v] of Object.entries(res.headers)) {
+            if (typeof v === "string") outHeaders[k] = v;
+            else if (Array.isArray(v)) outHeaders[k] = v.join(", ");
+          }
+          const status = res.statusCode ?? 0;
+          done(() =>
+            resolve({
+              ok: status >= 200 && status < 300,
+              status,
+              headers: outHeaders,
+              text: Buffer.concat(chunks).toString("utf8"),
+            }),
+          );
+        });
+        res.on("error", (e) => done(() => reject(e)));
+      },
+    );
+
+    req.on("timeout", () => {
+      req.destroy();
+      done(() => reject(new Error("Request timed out")));
+    });
+    req.on("error", (e) => done(() => reject(e)));
+
+    if (opts.body != null) req.write(opts.body);
+    req.end();
+  });
 }
 
 /**
@@ -70,18 +227,12 @@ export async function assertSafePublicUrl(raw: string): Promise<URL> {
  * try/catch if best-effort.
  */
 export async function safeWebhookFetch(rawUrl: string, body: unknown, timeoutMs = 5000): Promise<void> {
-  await assertSafePublicUrl(rawUrl);
-  const ctrl = new AbortController();
-  const to = setTimeout(() => ctrl.abort(), timeoutMs);
-  try {
-    await fetch(rawUrl, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(body),
-      redirect: "error", // a validated host must not bounce us to an internal one
-      signal: ctrl.signal,
-    });
-  } finally {
-    clearTimeout(to);
-  }
+  // Route through safeFetch so the connection is IP-pinned (no DNS rebinding),
+  // redirects are refused, and the response is capped.
+  await safeFetch(rawUrl, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+    timeoutMs,
+  });
 }

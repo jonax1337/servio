@@ -5,7 +5,8 @@ import { sendMail, tplTicketReceived, mailBrand, quoteHtml, textToHtmlParagraphs
 import { runAutomations } from "@/lib/automations";
 import { autoAssignTicket } from "@/lib/assignment";
 import { slaCreateData } from "@/lib/sla";
-import { parseFormSchema, validateAnswers, answersToText } from "@/lib/service-forms";
+import { parseFormSchema, validateAnswers, answersToText, MAX_ANSWER_LEN } from "@/lib/service-forms";
+import { isAgent, type Role } from "@/lib/session";
 import { prefixForType, ticketRef } from "@/lib/constants";
 import { attachDataUrlsToTicket, type IntakeFile } from "@/lib/attachment-intake";
 
@@ -141,6 +142,14 @@ export async function createCatalogRequestFor(
   if (item.requiresApproval && !item.approverId) {
     return { ok: false, error: "This item requires approval but has no approver configured. Please contact IT." };
   }
+  // Re-check the approver is still active + an agent at REQUEST time, not just at
+  // edit time — the configured approver may have been deactivated or demoted since.
+  if (item.requiresApproval && item.approverId) {
+    const approver = await db.user.findUnique({ where: { id: item.approverId }, select: { role: true, isActive: true } });
+    if (!approver || !approver.isActive || !isAgent(approver.role as Role)) {
+      return { ok: false, error: "This item requires approval but its approver is no longer available. Please contact IT." };
+    }
+  }
 
   const fields = parseFormSchema(item.formSchema);
   const data: Record<string, string> = {};
@@ -151,16 +160,25 @@ export async function createCatalogRequestFor(
   }
 
   const summary = answersToText(fields, values);
+  // Empty-schema items (the default) render a single free-text box submitted as
+  // `f_details`. That value isn't part of the schema, so validateAnswers drops it
+  // — capture it here so the user's typed request is never silently lost.
+  const freeText = fields.length === 0 ? String(rawAnswers.details ?? "").trim().slice(0, MAX_ANSWER_LEN) : "";
+  if (freeText) values.details = freeText;
+  const detailText = summary || freeText;
+  const description = detailText
+    ? `Catalog request: ${item.name}.\n\n${detailText}`
+    : `Catalog request: ${item.name}.`;
   const triage = await db.group.findFirst({ where: { name: "Service Desk" } });
   // Pre-route: the service's team, else the category's team, else Service Desk triage.
   const routeGroupId = item.service?.groupId ?? item.category?.groupId ?? triage?.id ?? null;
   const needsApproval = item.requiresApproval && !!item.approverId;
-  const sla = await slaCreateData({ priority: "MEDIUM" });
+  const sla = await slaCreateData({ serviceId: item.serviceId, priority: "MEDIUM" });
 
   const ticket = await db.ticket.create({
     data: {
       title: `${item.name} request`,
-      description: `Catalog request: ${item.name}.`,
+      description,
       type: "REQUEST",
       prefix: "REQ",
       status: needsApproval ? "PENDING" : "NEW",

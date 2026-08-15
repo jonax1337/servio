@@ -1,7 +1,7 @@
 import type { Prisma } from "@prisma/client";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { guard, ok, apiError, preflight, paginate, pageMeta, principalIsAgent } from "@/lib/api";
+import { guard, ok, apiError, preflight, paginate, pageMeta, principalIsAgent, validateTicketAssignee } from "@/lib/api";
 import { writeAudit } from "@/lib/audit";
 import { slaCreateData } from "@/lib/sla";
 import { serializeTicket } from "../_serializers";
@@ -80,6 +80,12 @@ export async function POST(req: Request) {
   if (!parsed.success) return apiError(422, "Validation failed", parsed.error.flatten().fieldErrors);
 
   const isAgentPrincipal = principalIsAgent(auth.principal);
+  // Only agents may set assigneeId; validate it up front so a bad id is a 422,
+  // not a 500 on the FK, and never assigns a non-agent (no group on create).
+  if (isAgentPrincipal && parsed.data.assigneeId) {
+    const reason = await validateTicketAssignee(parsed.data.assigneeId, null);
+    if (reason) return apiError(422, "Validation failed", { assigneeId: [reason] });
+  }
   // Non-agents can only file tickets as themselves; agents may set requesterId.
   const requesterId = isAgentPrincipal
     ? parsed.data.requesterId ?? auth.principal.userId

@@ -73,12 +73,16 @@ model User {
   savedViews         SavedView[]             @relation("SavedViewOwner")
   dashboards         Dashboard[]             @relation("DashboardOwner")
   articles           Article[]
+  articlesApproved   Article[]               @relation("ArticleApprovedBy")
+  changesCreated     Change[]                @relation("ChangeCreatedBy")
   articleRevisions   ArticleRevision[]
   attachments        Attachment[]            @relation("AttachmentUploader")
   syncSource         SyncSource?             @relation(fields: [syncSourceId], references: [id])
 
+  @@unique([syncSourceId, externalId])
   @@index([role])
   @@index([syncSourceId])
+  @@index([externalId])
 }
 
 /// Admin-managed runtime configuration (SMTP, AI, branding, uploads, …).
@@ -494,6 +498,7 @@ model Ticket {
   pendingSince     DateTime? // set while PENDING/ON_HOLD so the clock can pause
   pausedMs         Int       @default(0) // accumulated paused time
   escalatedAt      DateTime? // set when SLA-breach escalation has fired (marker so it fires once)
+  slaAtRiskNotifiedAt DateTime? // set when SLA-at-risk notification has fired (idempotency marker)
   firstResponseAt  DateTime?
   resolvedAt       DateTime?
   closedAt         DateTime?
@@ -532,6 +537,10 @@ model Ticket {
   @@index([assigneeId])
   @@index([requesterId])
   @@index([requestedByUserId])
+  @@index([groupId])
+  @@index([createdAt])
+  @@index([resolvedAt])
+  @@index([resolveDueAt])
 }
 
 model TicketComment {
@@ -721,6 +730,7 @@ model Change {
   rollbackPlan       String?
   customFields       String    @default("{}") // JSON object of custom-field key -> value (CustomFieldDef, entityType=CHANGE)
   assigneeId         String?
+  createdById        String?
   groupId            String?
   categoryId         String?
   problemId          Int?
@@ -732,6 +742,7 @@ model Change {
   updatedAt          DateTime  @updatedAt
 
   assignee   User?            @relation("ChangeAssignee", fields: [assigneeId], references: [id])
+  createdBy  User?            @relation("ChangeCreatedBy", fields: [createdById], references: [id])
   group      Group?           @relation(fields: [groupId], references: [id])
   category   Category?        @relation(fields: [categoryId], references: [id])
   problem    Problem?         @relation(fields: [problemId], references: [id])
@@ -890,6 +901,7 @@ model Asset {
   tickets       TicketAsset[]
   changes       ChangeAsset[]
 
+  @@unique([syncSourceId, externalId])
   @@index([type])
   @@index([status])
   @@index([syncSourceId])
@@ -924,6 +936,8 @@ model AssetRelation {
   target Asset @relation("RelationTarget", fields: [targetId], references: [id], onDelete: Cascade)
 
   @@unique([sourceId, targetId, type])
+  @@index([sourceId])
+  @@index([targetId])
 }
 
 model TicketAsset {
@@ -1083,7 +1097,7 @@ model EmailMessage {
   body       String // plaintext twin
   bodyHtml   String? // HTML variant (multipart/alternative)
   template   String    @default("generic")
-  status     String    @default("QUEUED") // QUEUED | SENT | FAILED | RECEIVED
+  status     String    @default("QUEUED") // QUEUED | SENT | SIMULATED | FAILED | RECEIVED
   error      String?
   // ── RFC 2822 threading metadata (the load-bearing part of a real mail thread) ──
   messageId  String?   @unique // generated on send, captured on receive
@@ -1149,13 +1163,16 @@ model Article {
   published   Boolean   @default(false) // denormalized mirror of (status === PUBLISHED)
   categoryId  String?
   authorId    String?
+  approvedById String?
   views       Int       @default(0)
   publishedAt DateTime?
+  approvedAt  DateTime?
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 
   category    Category?         @relation(fields: [categoryId], references: [id])
   author      User?             @relation(fields: [authorId], references: [id])
+  approvedBy  User?             @relation("ArticleApprovedBy", fields: [approvedById], references: [id])
   revisions   ArticleRevision[]
   attachments Attachment[]
 

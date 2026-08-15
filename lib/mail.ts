@@ -104,30 +104,68 @@ export async function sendMail(input: SendInput): Promise<void> {
       const headers: Record<string, string> = { "Message-ID": messageId };
       if (input.inReplyTo) headers["In-Reply-To"] = input.inReplyTo;
       if (input.references) headers["References"] = input.references;
-      await transport.sendMail({
-        from: from ?? "Servio <servio@localhost>",
-        to: input.toName ? `${input.toName} <${input.to}>` : input.to,
-        cc: input.cc?.length ? input.cc : undefined,
-        bcc: input.bcc?.length ? input.bcc : undefined,
-        replyTo: input.replyTo || undefined,
-        subject: input.subject,
-        text: input.body,
-        html: input.html || undefined, // nodemailer builds multipart/alternative
-        headers,
-        attachments: mailAttachments,
+      // Retry with exponential backoff so a transient SMTP blip (connection
+      // reset, greylisting, brief timeout) doesn't permanently drop a
+      // notification. The final failure still surfaces as FAILED below.
+      await sendWithRetry(() =>
+        transport.sendMail({
+          from: from ?? "Servio <servio@localhost>",
+          to: input.toName ? `${input.toName} <${input.to}>` : input.to,
+          cc: input.cc?.length ? input.cc : undefined,
+          bcc: input.bcc?.length ? input.bcc : undefined,
+          replyTo: input.replyTo || undefined,
+          subject: input.subject,
+          text: input.body,
+          html: input.html || undefined, // nodemailer builds multipart/alternative
+          headers,
+          attachments: mailAttachments,
+        }),
+      );
+      await db.emailMessage.update({
+        where: { id: msg.id },
+        data: { status: "SENT", sentAt: new Date() },
+      });
+    } else {
+      // No SMTP configured → simulated delivery. Marked distinctly (SIMULATED,
+      // not SENT) so the outbox never claims an email actually left the system.
+      await db.emailMessage.update({
+        where: { id: msg.id },
+        data: { status: "SIMULATED", sentAt: new Date() },
       });
     }
-    // No SMTP configured → simulated delivery (visible in the outbox).
-    await db.emailMessage.update({
-      where: { id: msg.id },
-      data: { status: "SENT", sentAt: new Date() },
-    });
   } catch (e) {
     await db.emailMessage.update({
       where: { id: msg.id },
       data: { status: "FAILED", error: e instanceof Error ? e.message : String(e) },
     });
   }
+}
+
+/** Delays (ms) between send attempts — exponential backoff for transient SMTP faults. */
+const SMTP_RETRY_DELAYS_MS = [500, 2000, 5000];
+
+/**
+ * Invoke `send` and, on failure, retry with exponential backoff. Rethrows the
+ * last error after the final attempt so the caller records the row as FAILED.
+ */
+async function sendWithRetry(send: () => Promise<unknown>): Promise<void> {
+  let lastErr: unknown;
+  for (let attempt = 0; attempt <= SMTP_RETRY_DELAYS_MS.length; attempt++) {
+    try {
+      await send();
+      return;
+    } catch (e) {
+      lastErr = e;
+      const delay = SMTP_RETRY_DELAYS_MS[attempt];
+      if (delay == null) break; // exhausted retries
+      console.warn(
+        `[mail] SMTP send failed (attempt ${attempt + 1}/${SMTP_RETRY_DELAYS_MS.length + 1}); retrying in ${delay}ms:`,
+        e instanceof Error ? e.message : String(e),
+      );
+      await new Promise((r) => setTimeout(r, delay));
+    }
+  }
+  throw lastErr;
 }
 
 /**

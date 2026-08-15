@@ -4,13 +4,15 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { getSessionUser, hasRole, type Role } from "@/lib/session";
+import { getCurrentUser, hasRole, type Role } from "@/lib/session";
 import { writeAudit } from "@/lib/audit";
 
 /** Category management is a MANAGER+ operation (mirrors catalog-admin). */
 async function requireManager() {
-  const me = await getSessionUser();
-  return me && hasRole(me.role as Role, "MANAGER") ? me : null;
+  // DB-truth: rehydrate role + isActive so a demoted/deactivated user with a
+  // live JWT can't keep manager-level category admin.
+  const me = await getCurrentUser();
+  return me && me.isActive && hasRole(me.role as Role, "MANAGER") ? me : null;
 }
 
 const optionalId = z
@@ -107,8 +109,27 @@ export async function updateCategory(
   }
   const { id, ...data } = parsed.data;
 
-  // A category cannot be its own parent.
-  const parentId = data.parentId === id ? null : data.parentId;
+  // A category cannot be its own parent, nor sit under one of its own
+  // descendants — walk the proposed parent's ancestor chain and reject if we
+  // ever reach `id`. Guards against both a direct self-parent and a deeper cycle.
+  let parentId = data.parentId;
+  if (parentId) {
+    let cursor: string | null = parentId;
+    const seen = new Set<string>();
+    while (cursor) {
+      if (cursor === id) {
+        parentId = null; // would create a cycle — detach instead
+        break;
+      }
+      if (seen.has(cursor)) break; // pre-existing cycle: stop, don't loop forever
+      seen.add(cursor);
+      const node: { parentId: string | null } | null = await db.category.findUnique({
+        where: { id: cursor },
+        select: { parentId: true },
+      });
+      cursor = node?.parentId ?? null;
+    }
+  }
 
   await db.category.update({
     where: { id },

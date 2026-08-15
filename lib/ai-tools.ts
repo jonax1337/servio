@@ -1,7 +1,6 @@
 import { tool } from "ai";
 import { z } from "zod";
-import net from "node:net";
-import { lookup } from "node:dns/promises";
+import { safeFetch } from "@/lib/safe-fetch";
 import { db } from "@/lib/db";
 import { getSetting } from "@/lib/settings";
 import { ticketRef, problemRef, changeRef, TICKET_STATUSES, PRIORITIES, IMPACT_URGENCY } from "@/lib/constants";
@@ -131,100 +130,37 @@ export async function webSearch(query: string, limit = 6): Promise<WebResult[]> 
   return duckDuckGoSearch(query, limit);
 }
 
-function ipv4ToInt(ip: string): number {
-  const p = ip.split(".").map(Number);
-  return (((p[0] << 24) >>> 0) + (p[1] << 16) + (p[2] << 8) + p[3]) >>> 0;
-}
-
-/** Block loopback, private, link-local, CGNAT, and unspecified IPv4 ranges. */
-function isBlockedV4(ip: string): boolean {
-  const n = ipv4ToInt(ip);
-  const inRange = (base: string, maskBits: number) => {
-    const mask = maskBits === 0 ? 0 : (0xffffffff << (32 - maskBits)) >>> 0;
-    return (n & mask) === (ipv4ToInt(base) & mask);
-  };
-  return (
-    inRange("0.0.0.0", 8) ||        // "this" network
-    inRange("10.0.0.0", 8) ||       // private
-    inRange("100.64.0.0", 10) ||    // CGNAT
-    inRange("127.0.0.0", 8) ||      // loopback
-    inRange("169.254.0.0", 16) ||   // link-local (cloud metadata)
-    inRange("172.16.0.0", 12) ||    // private
-    inRange("192.168.0.0", 16)      // private
-  );
-}
-
-/** True if an IP must not be fetched (SSRF guard). */
-function isBlockedIp(ip: string): boolean {
-  const mapped = ip.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/i); // IPv4-mapped IPv6
-  if (mapped) return isBlockedV4(mapped[1]);
-  if (net.isIPv4(ip)) return isBlockedV4(ip);
-  const s = ip.toLowerCase();
-  if (s === "::1" || s === "::") return true;                 // loopback / unspecified
-  if (/^fe[89ab]/.test(s)) return true;                       // fe80::/10 link-local
-  if (/^f[cd]/.test(s)) return true;                          // fc00::/7 unique-local
-  return false;
-}
-
-/** Validate a URL is public & fetchable (SSRF guard: resolve DNS, reject internal IPs). */
-async function assertPublicUrl(raw: string): Promise<{ ok: true; url: URL } | { ok: false; reason: string }> {
-  let url: URL;
-  try {
-    url = new URL(raw);
-  } catch {
-    return { ok: false, reason: "invalid URL" };
-  }
-  if (url.protocol !== "http:" && url.protocol !== "https:") {
-    return { ok: false, reason: "only http/https is allowed" };
-  }
-  let addrs: { address: string }[];
-  try {
-    addrs = await lookup(url.hostname, { all: true });
-  } catch {
-    return { ok: false, reason: "DNS resolution failed" };
-  }
-  if (addrs.length === 0) return { ok: false, reason: "no DNS records" };
-  if (addrs.some((a) => isBlockedIp(a.address))) {
-    return { ok: false, reason: "target resolves to a private/internal address" };
-  }
-  return { ok: true, url };
-}
-
 export async function fetchUrlText(url: string, maxChars = 6000): Promise<string> {
-  // Follow redirects manually so each hop is re-validated (SSRF via redirect).
-  let current = url;
-  for (let hop = 0; hop < 4; hop++) {
-    const check = await assertPublicUrl(current);
-    if (!check.ok) return `Blocked URL: ${check.reason}.`;
-    let res: Response;
-    try {
-      res = await fetch(check.url, { headers: { "User-Agent": UA }, redirect: "manual" });
-    } catch (e) {
-      return `Failed to fetch: ${e instanceof Error ? e.message : "error"}`;
-    }
-    if (res.status >= 300 && res.status < 400) {
-      const loc = res.headers.get("location");
-      if (!loc) return "Redirect without a location.";
-      current = new URL(loc, check.url).toString();
-      continue;
-    }
-    const ct = res.headers.get("content-type") ?? "";
-    if (!ct.includes("text/html") && !ct.includes("text/plain")) {
-      return `Unsupported content type: ${ct || "unknown"}`;
-    }
-    const html = await res.text();
-    // Drop script/style AND common boilerplate (nav/header/footer/aside/forms) so
-    // the model reads the article body, not the chrome — then strip to plain text.
-    const cleaned = html
-      .replace(/<script[\s\S]*?<\/script>/gi, "")
-      .replace(/<style[\s\S]*?<\/style>/gi, "")
-      .replace(/<noscript[\s\S]*?<\/noscript>/gi, "")
-      .replace(/<(nav|header|footer|aside|form)\b[\s\S]*?<\/\1>/gi, "")
-      .replace(/<svg[\s\S]*?<\/svg>/gi, "");
-    const text = stripTags(cleaned);
-    return text.slice(0, maxChars) || "(no readable text)";
+  // This tool is reachable from the USER-scoped portal, so the URL is fully
+  // attacker-controlled. safeFetch closes the TOCTOU/DNS-rebinding hole: it
+  // resolves once, pins the socket to the validated IP, verifies the connected
+  // peer, refuses redirects (so a public page can't 302 us onto an internal
+  // host), and caps the body + timeout.
+  let res: Awaited<ReturnType<typeof safeFetch>>;
+  try {
+    res = await safeFetch(url, {
+      headers: { "User-Agent": UA },
+      timeoutMs: 10_000,
+      maxBytes: 2 * 1024 * 1024,
+    });
+  } catch (e) {
+    return `Failed to fetch: ${e instanceof Error ? e.message : "error"}`;
   }
-  return "Too many redirects.";
+  const ct = res.headers["content-type"] ?? "";
+  if (!ct.includes("text/html") && !ct.includes("text/plain")) {
+    return `Unsupported content type: ${ct || "unknown"}`;
+  }
+  const html = res.text;
+  // Drop script/style AND common boilerplate (nav/header/footer/aside/forms) so
+  // the model reads the article body, not the chrome — then strip to plain text.
+  const cleaned = html
+    .replace(/<script[\s\S]*?<\/script>/gi, "")
+    .replace(/<style[\s\S]*?<\/style>/gi, "")
+    .replace(/<noscript[\s\S]*?<\/noscript>/gi, "")
+    .replace(/<(nav|header|footer|aside|form)\b[\s\S]*?<\/\1>/gi, "")
+    .replace(/<svg[\s\S]*?<\/svg>/gi, "");
+  const text = stripTags(cleaned);
+  return text.slice(0, maxChars) || "(no readable text)";
 }
 
 export const webSearchTool = tool({
@@ -244,6 +180,12 @@ export const fetchUrlTool = tool({
   execute: async ({ url }) => ({ text: await fetchUrlText(url) }),
 });
 
+/**
+ * AGENT-ONLY trust boundary: this returns INTERNAL-visibility articles (it does
+ * not filter on `visibility`), so it must NEVER be added to the USER-scoped
+ * portal tool set. The portal exposes only published PUBLIC articles via its own
+ * read-only path. Keep this out of any portal/USER agent wiring.
+ */
 export const knowledgeSearchTool = tool({
   description:
     "Search the internal Knowledge Base (published how-to and troubleshooting articles) for guidance and known solutions. Prefer this over the web for anything the company documents itself.",

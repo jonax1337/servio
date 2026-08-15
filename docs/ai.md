@@ -180,17 +180,17 @@ Coverage by module:
 
 Authority is **the app's real RBAC**. Each operation's `minRole` mirrors the underlying UI
 action, so Sable can do exactly what the acting user could do by hand — no more. Operations flagged
-`adminOnly` require the **ADMIN role**. `setting.update` refuses any key that looks
-secret (contains `KEY`/`PASS`/`SECRET`/`TOKEN`).
+`adminOnly` require the **ADMIN role _and_ an ADMIN-scoped conversation** (defence in depth).
+`setting.update` refuses any key that looks secret (contains `KEY`/`PASS`/`SECRET`/`TOKEN`) **and
+hard-refuses the self-locked privacy keys `AI_ALLOW_EXTERNAL` / `AI_PROVIDER`** so a prompt-injection
+can never steer an admin into opening the off-box data path — change those in the Settings UI only.
 
-> **Gating is role-only — the chat `scope` does not enforce anything.** `availableOperations` /
-> `buildOperationTools` / `runOperation` (`lib/ai-operations/tools.ts`) all *accept* a `scope`
-> (`GENERAL`/`ADMIN`) argument, but it is **plumbed through unused**: an operation is offered — and,
-> on approve, re-checked — purely against the acting user's role (`minRole`, plus `adminOnly` ⇒
-> ADMIN). The General/Admin scope is a **UI convenience** (which tab you're on, the system prompt you
-> get), *not* a security boundary. An ADMIN chatting in the General scope is still offered every
-> operation their role allows — so never rely on `scope` to hide or refuse an operation; only `minRole`
-> / `adminOnly` do that.
+> **`adminOnly` ops are gated by role AND scope.** `availableOperations` / `runOperation`
+> (`lib/ai-operations/tools.ts`) filter and re-check `adminOnly` operations against **both**
+> `hasRole(role, 'ADMIN')` **and** `scope === 'ADMIN'` — at propose time and again at approve time.
+> An ADMIN chatting in the General scope is **not** offered system-wide config ops; they must switch
+> to the Admin scope. Non-`adminOnly` operations are still gated purely by `minRole`. (Historical note:
+> the `scope` argument used to be plumbed through unused — it is now enforced.)
 
 ---
 

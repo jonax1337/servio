@@ -22,6 +22,8 @@ import { sanitizeCommentHtml, htmlToText, parseMentionIds } from "@/lib/markdown
 import { format } from "date-fns";
 import { runAutomations } from "@/lib/automations";
 import { autoAssignTicket, isGroupMember } from "@/lib/assignment";
+import { canActOnTicket } from "@/lib/authz";
+import { assertRequiredCustomFields, entityFieldValues, type CustomFieldDef } from "@/lib/custom-fields";
 import {
   slaCreateData, pauseData, resumeData, firstResponseData, statusChangeData,
 } from "@/lib/sla";
@@ -36,6 +38,14 @@ import {
   changeRef,
   prefixForType,
 } from "@/lib/constants";
+
+/** Load a ticket's owner/group and confirm the actor may act on it. Void-returns
+ *  (silent abort) match the actions' existing unauthorized behaviour. */
+async function ensureCanAct(ticketId: number, me: { id: string; role: string }): Promise<boolean> {
+  const t = await db.ticket.findUnique({ where: { id: ticketId }, select: { assigneeId: true, groupId: true } });
+  if (!t) return false;
+  return canActOnTicket(me, t);
+}
 
 const optionalId = z
   .string()
@@ -61,9 +71,27 @@ const createSchema = z.object({
   categoryId: optionalId,
   serviceId: optionalId,
   slaId: optionalId,
+  // Optional map of custom-field values (key → string) supplied at creation.
+  customFields: z.record(z.string(), z.string()).optional(),
 });
 
 export type ActionState = { error?: string; fieldErrors?: Record<string, string[]> } | undefined;
+
+/**
+ * Enforce required, currently-visible custom fields for a to-be-created entity.
+ * Throws (aborting the create) when a required field is missing so the action's
+ * caller surfaces the error instead of silently persisting an incomplete ticket.
+ */
+async function enforceRequiredCustomFields(
+  entityType: "TICKET" | "PROBLEM" | "CHANGE",
+  values: Record<string, string> | undefined,
+  entity: Record<string, unknown>,
+) {
+  const defs = await db.customFieldDef.findMany({ where: { entityType, active: true } });
+  if (defs.length === 0) return;
+  const res = assertRequiredCustomFields(defs as CustomFieldDef[], values ?? {}, entityFieldValues(entity));
+  if (!res.ok) throw new Error(res.error);
+}
 
 /**
  * Non-redirecting core of ticket creation. Runs the FULL pipeline —
@@ -77,6 +105,15 @@ export async function createTicketCore(
   data: z.infer<typeof createSchema>,
   actorId: string,
 ) {
+  // Reject an incomplete ticket up front: required, currently-visible custom
+  // fields must be present. Runs against the ticket's built-in values so a field
+  // hidden by its visibility conditions isn't enforced.
+  const { customFields, ...core } = data;
+  await enforceRequiredCustomFields("TICKET", customFields, {
+    type: data.type, priority: data.priority, impact: data.impact, urgency: data.urgency,
+    source: data.source, categoryId: data.categoryId,
+  });
+
   // Resolve the SLA and stamp response/resolve deadlines at creation time.
   const sla = await slaCreateData({ slaId: data.slaId, serviceId: data.serviceId, priority: data.priority });
   // "Requested on behalf of" only matters when the reporter differs from the
@@ -88,7 +125,10 @@ export async function createTicketCore(
   const ticket = await db.ticket.create({
     // `prefix` is fixed here from the initial type and never changes afterwards,
     // so switching the type later leaves the ticket's ref number untouched.
-    data: { ...data, requestedByUserId, prefix: prefixForType(data.type), ...sla, status: "NEW" },
+    data: {
+      ...core, requestedByUserId, prefix: prefixForType(data.type), ...sla, status: "NEW",
+      ...(customFields ? { customFields: JSON.stringify(customFields) } : {}),
+    },
     include: { requester: true, assignee: true },
   });
 
@@ -128,12 +168,26 @@ export async function createTicket(_prev: ActionState, formData: FormData): Prom
   const me = await requireAgent();
   if (!me) return { error: "Not authorised" };
 
-  const parsed = createSchema.safeParse(Object.fromEntries(formData));
+  const raw = Object.fromEntries(formData) as Record<string, unknown>;
+  // Custom-field inputs post as `cf_<key>` — collect them into the schema's map.
+  const customFields: Record<string, string> = {};
+  for (const [k, v] of formData.entries()) {
+    if (k.startsWith("cf_") && typeof v === "string") customFields[k.slice(3)] = v;
+  }
+  if (Object.keys(customFields).length) raw.customFields = customFields;
+
+  const parsed = createSchema.safeParse(raw);
   if (!parsed.success) {
     return { error: "Please fix the errors below.", fieldErrors: parsed.error.flatten().fieldErrors };
   }
 
-  const ticket = await createTicketCore(parsed.data, me.id);
+  let ticket;
+  try {
+    ticket = await createTicketCore(parsed.data, me.id);
+  } catch (e) {
+    // Required-custom-field (or other create-time) validation aborts here.
+    return { error: e instanceof Error ? e.message : "Could not create the ticket." };
+  }
 
   revalidatePath("/tickets");
   redirect(`/tickets/${ticket.id}`);
@@ -158,6 +212,20 @@ export async function updateTicketField(formData: FormData) {
   const isRelation = field.endsWith("Id");
   const v = isRelation && (value === "none" || value === "") ? null : value;
 
+  // Authorization: only ADMIN/MANAGER, or the assignee / a member of the ticket's
+  // group, may mutate a ticket.
+  if (!(await ensureCanAct(id, me))) return;
+
+  // Validate String-backed "enum" values against lib/constants.ts so a forged
+  // POST can't write an off-list priority/impact/urgency/type.
+  const ENUM_FIELDS: Record<string, readonly string[]> = {
+    priority: PRIORITIES,
+    impact: IMPACT_URGENCY,
+    urgency: IMPACT_URGENCY,
+    type: TICKET_TYPES,
+  };
+  if (field in ENUM_FIELDS && !ENUM_FIELDS[field].includes(value)) return;
+
   const patch: Record<string, unknown> = { [field]: v };
   if (field === "status") {
     const current = await db.ticket.findUnique({ where: { id } });
@@ -166,6 +234,19 @@ export async function updateTicketField(formData: FormData) {
     if (!(await canTransitionConfigured("TICKET", current.status, value, me.role as Role))) return;
     // Shared with the automation engine so both keep the SLA clock consistent.
     Object.assign(patch, statusChangeData(current, value));
+  }
+  // Verify a relation FK actually exists before writing it (a bogus id would
+  // otherwise 500 on the FK constraint or dangle).
+  if (isRelation && v) {
+    const relExists: Record<string, () => Promise<boolean>> = {
+      assigneeId: async () => !!(await db.user.findUnique({ where: { id: v }, select: { id: true } })),
+      groupId: async () => !!(await db.group.findUnique({ where: { id: v }, select: { id: true } })),
+      categoryId: async () => !!(await db.category.findUnique({ where: { id: v }, select: { id: true } })),
+      serviceId: async () => !!(await db.service.findUnique({ where: { id: v }, select: { id: true } })),
+      slaId: async () => !!(await db.sLA.findUnique({ where: { id: v }, select: { id: true } })),
+    };
+    const check = relExists[field];
+    if (check && !(await check())) return;
   }
   // The assignee must belong to the ticket's group (anyone when there's no group).
   if (field === "assigneeId" && v) {
@@ -177,6 +258,38 @@ export async function updateTicketField(formData: FormData) {
   if (field === "groupId" && v) {
     const current = await db.ticket.findUnique({ where: { id }, select: { assigneeId: true } });
     if (current?.assigneeId && !(await isGroupMember(v, current.assigneeId))) patch.assigneeId = null;
+  }
+
+  // SLA recompute: changing priority/service/SLA on an OPEN ticket must re-stamp
+  // the response/resolve deadlines, banking already-paused time and preserving a
+  // recorded first response — otherwise the clock goes stale against the new SLA.
+  if (field === "priority" || field === "serviceId" || field === "slaId") {
+    const current = await db.ticket.findUnique({
+      where: { id },
+      select: {
+        status: true, priority: true, serviceId: true, slaId: true, firstResponseAt: true,
+      },
+    });
+    if (current && !["RESOLVED", "CLOSED", "CANCELLED"].includes(current.status)) {
+      const next = {
+        priority: field === "priority" ? value : current.priority,
+        serviceId: field === "serviceId" ? v : current.serviceId,
+        slaId: field === "slaId" ? v : current.slaId,
+      };
+      const sla = await slaCreateData({ slaId: next.slaId, serviceId: next.serviceId, priority: next.priority });
+      if ("slaId" in sla) {
+        // Fresh deadlines anchored to now. Bank (keep) already-accumulated paused
+        // time and any current pause anchor untouched; if a first response already
+        // landed, freeze the response clock rather than re-opening it.
+        Object.assign(patch, sla);
+        if (current.firstResponseAt) {
+          patch.responseDueAt = null;
+        }
+      } else if (field === "slaId" && v === null) {
+        // Explicitly cleared the SLA → clear the deadlines it drove.
+        Object.assign(patch, { responseDueAt: null, resolveDueAt: null, dueAt: null });
+      }
+    }
   }
 
   const ticket = await db.ticket.update({
@@ -252,6 +365,8 @@ export async function addTicketComment(formData: FormData) {
     body = String(formData.get("body") ?? "").trim();
   }
   if (!id || !body) return;
+  // Only the assignee / a group member / MANAGER+ may add to a ticket's thread.
+  if (!(await ensureCanAct(id, me))) return;
 
   // Re-parent files staged on the ticket while composing onto this comment.
   // Guarded to the author's own not-yet-attached drafts on THIS ticket (nothing
@@ -437,8 +552,10 @@ function parseEmails(v: FormDataEntryValue | null): string[] {
 /**
  * Everyone on a public reply's To/Cc becomes a portal participant, so the whole
  * conversation is shared and the recipient list is remembered. Unknown addresses
- * are created as lightweight contacts. Forward-only "notified" contacts and the
- * requester/actor are skipped.
+ * are created as lightweight, INACTIVE contacts (participant-only: they can be
+ * emailed and appear on the thread, but can't sign in — a real account is minted
+ * only through the proper invite/sync flow). Forward-only "notified" contacts and
+ * the requester/actor are skipped.
  */
 async function addReplyParticipants(ticketId: number, emails: string[], actorId: string, requesterId: string) {
   for (const email of [...new Set(emails.map((e) => e.toLowerCase()))]) {
@@ -449,7 +566,10 @@ async function addReplyParticipants(ticketId: number, emails: string[], actorId:
     });
     if (notified) continue;
     let user = await db.user.findUnique({ where: { email }, select: { id: true } });
-    if (!user) user = await db.user.create({ data: { email, name: email.split("@")[0], role: "USER", isActive: true }, select: { id: true } });
+    // Auto-provisioned from an outbound recipient → inactive contact, not an
+    // active login. This avoids silently creating usable accounts for arbitrary
+    // addresses an agent CC's.
+    if (!user) user = await db.user.create({ data: { email, name: email.split("@")[0], role: "USER", isActive: false }, select: { id: true } });
     if (user.id === actorId || user.id === requesterId) continue;
     await db.ticketParticipant.upsert({
       where: { ticketId_userId: { ticketId, userId: user.id } },
@@ -482,8 +602,12 @@ export async function escalateTicket(formData: FormData) {
   if (!id) return;
   const t = await db.ticket.findUnique({ where: { id } });
   if (!t) return;
+  if (!(await canActOnTicket(me, t))) return;
   const next = PRIORITY_ORDER[Math.min(PRIORITY_ORDER.indexOf(t.priority as (typeof PRIORITY_ORDER)[number]) + 1, 3)];
-  await db.ticket.update({ where: { id }, data: { priority: next, status: t.status === "NEW" ? "OPEN" : t.status } });
+  // Route the implicit NEW→OPEN through the configured lifecycle instead of
+  // forcing it; if the transition isn't allowed for this role, leave status as-is.
+  const toOpen = t.status === "NEW" && (await canTransitionConfigured("TICKET", "NEW", "OPEN", me.role as Role));
+  await db.ticket.update({ where: { id }, data: { priority: next, status: toOpen ? "OPEN" : t.status } });
   await writeAudit({ userId: me.id, action: "UPDATE", entity: "Ticket", entityId: id, summary: `Escalated priority to ${next}` });
   if (t.assigneeId) await notify(t.assigneeId, { type: "ESCALATION", title: `Ticket escalated to ${next}`, body: t.title, entity: "Ticket", entityId: String(id) });
   await notifyWatchers(id, me.id, { type: "ESCALATION", title: `Ticket escalated to ${next}`, body: t.title, entity: "Ticket", entityId: String(id) });
@@ -498,10 +622,14 @@ export async function toggleMajorIncident(formData: FormData) {
   if (!id) return;
   const t = await db.ticket.findUnique({ where: { id }, include: { assignee: true } });
   if (!t) return;
+  if (!(await canActOnTicket(me, t))) return;
   const now = !t.isMajorIncident;
+  // Route the implicit NEW→OPEN through the configured lifecycle rather than
+  // forcing it (leave status untouched when the transition isn't allowed).
+  const toOpen = t.status === "NEW" && (await canTransitionConfigured("TICKET", "NEW", "OPEN", me.role as Role));
   await db.ticket.update({
     where: { id },
-    data: now ? { isMajorIncident: true, priority: "CRITICAL", status: t.status === "NEW" ? "OPEN" : t.status } : { isMajorIncident: false },
+    data: now ? { isMajorIncident: true, priority: "CRITICAL", status: toOpen ? "OPEN" : t.status } : { isMajorIncident: false },
   });
   await writeAudit({ userId: me.id, action: "UPDATE", entity: "Ticket", entityId: id, summary: now ? "Declared a Major Incident" : "Cleared Major Incident" });
   if (now) {
@@ -530,6 +658,10 @@ export async function linkTicket(formData: FormData) {
   const targetId = Number(formData.get("targetId"));
   const type = String(formData.get("type") || "RELATED");
   if (!id || !targetId || id === targetId) return;
+  if (!(await ensureCanAct(id, me))) return;
+  // Validate the target ticket exists before linking to it.
+  const target = await db.ticket.findUnique({ where: { id: targetId }, select: { id: true } });
+  if (!target) return;
   await db.ticketLink.upsert({
     where: { ticketId_linkedTicketId: { ticketId: id, linkedTicketId: targetId } },
     create: { ticketId: id, linkedTicketId: targetId, type },
@@ -545,6 +677,7 @@ export async function unlinkTicket(formData: FormData) {
   const linkId = String(formData.get("linkId"));
   const ticketId = Number(formData.get("ticketId"));
   if (!linkId) return;
+  if (ticketId && !(await ensureCanAct(ticketId, me))) return;
   await db.ticketLink.delete({ where: { id: linkId } }).catch(() => {});
   revalidatePath(`/tickets/${ticketId}`);
 }
@@ -561,48 +694,65 @@ export async function mergeTicket(formData: FormData) {
     include: { comments: { orderBy: { createdAt: "asc" } }, watchers: true },
   });
   if (!source) return;
+  // Only ADMIN/MANAGER, or the source's assignee / a member of its group, may merge it.
+  if (!(await canActOnTicket(me, source))) return;
+  // Don't re-merge a ticket that's already merged/cancelled.
+  if (source.mergedIntoId || source.status === "CANCELLED") return;
 
-  // 1) Carry the source's description + comments into the target (attributed to original authors)
-  await db.ticketComment.create({
-    data: {
-      ticketId: targetId, authorId: me.id, isInternal: true,
-      body: `⤵︎ Merged from ${ticketRef(source.id, source.type)} — "${source.title}"\n\n${source.description || "(no description)"}`,
-    },
+  // Pre-validate the target: it must exist and not itself be merged/cancelled, and
+  // merging into it must not form a cycle (target already points back at the source).
+  const target = await db.ticket.findUnique({
+    where: { id: targetId },
+    select: { id: true, mergedIntoId: true, status: true },
   });
-  for (const c of source.comments) {
-    await db.ticketComment.create({
+  if (!target || target.status === "CANCELLED") return;
+  if (target.mergedIntoId === id || source.mergedIntoId === targetId) return;
+
+  // All writes in one transaction so a partial merge can't leave orphaned comments
+  // with the source still open.
+  await db.$transaction(async (tx) => {
+    // 1) Carry the source's description + comments into the target (attributed to original authors)
+    await tx.ticketComment.create({
       data: {
-        ticketId: targetId, authorId: c.authorId, isInternal: c.isInternal,
-        body: `[from ${ticketRef(source.id, source.type)}] ${c.body}`,
-        createdAt: c.createdAt,
+        ticketId: targetId, authorId: me.id, isInternal: true,
+        body: `⤵︎ Merged from ${ticketRef(source.id, source.type)} — "${source.title}"\n\n${source.description || "(no description)"}`,
       },
     });
-  }
+    for (const c of source.comments) {
+      await tx.ticketComment.create({
+        data: {
+          ticketId: targetId, authorId: c.authorId, isInternal: c.isInternal,
+          body: `[from ${ticketRef(source.id, source.type)}] ${c.body}`,
+          createdAt: c.createdAt,
+        },
+      });
+    }
 
-  // 2) Move watchers + any linked assets over to the target
-  for (const w of source.watchers) {
-    await db.ticketWatcher.upsert({
-      where: { ticketId_userId: { ticketId: targetId, userId: w.userId } },
-      create: { ticketId: targetId, userId: w.userId },
-      update: {},
-    });
-  }
-  const srcAssets = await db.ticketAsset.findMany({ where: { ticketId: id } });
-  for (const a of srcAssets) {
-    await db.ticketAsset.upsert({
-      where: { ticketId_assetId: { ticketId: targetId, assetId: a.assetId } },
-      create: { ticketId: targetId, assetId: a.assetId },
-      update: {},
-    });
-  }
+    // 2) Move watchers + any linked assets over to the target
+    for (const w of source.watchers) {
+      await tx.ticketWatcher.upsert({
+        where: { ticketId_userId: { ticketId: targetId, userId: w.userId } },
+        create: { ticketId: targetId, userId: w.userId },
+        update: {},
+      });
+    }
+    const srcAssets = await tx.ticketAsset.findMany({ where: { ticketId: id } });
+    for (const a of srcAssets) {
+      await tx.ticketAsset.upsert({
+        where: { ticketId_assetId: { ticketId: targetId, assetId: a.assetId } },
+        create: { ticketId: targetId, assetId: a.assetId },
+        update: {},
+      });
+    }
 
-  // 3) Close the source as merged, and cross-link
-  await db.ticket.update({ where: { id }, data: { mergedIntoId: targetId, status: "CANCELLED", closedAt: new Date() } });
-  await db.ticketComment.create({ data: { ticketId: id, authorId: me.id, isInternal: true, body: `Merged into ${ticketRef(targetId)}. Comments, watchers and assets were carried over.` } });
-  await db.ticketLink.upsert({
-    where: { ticketId_linkedTicketId: { ticketId: targetId, linkedTicketId: id } },
-    create: { ticketId: targetId, linkedTicketId: id, type: "DUPLICATE" },
-    update: { type: "DUPLICATE" },
+    // 3) Close the source as merged, and cross-link
+    await tx.ticket.update({ where: { id }, data: { mergedIntoId: targetId, status: "CANCELLED", closedAt: new Date() } });
+    await tx.ticketComment.create({ data: { ticketId: id, authorId: me.id, isInternal: true, body: `Merged into ${ticketRef(targetId)}. Comments, watchers and assets were carried over.` } });
+    await tx.ticketLink.upsert({
+      where: { ticketId_linkedTicketId: { ticketId: targetId, linkedTicketId: id } },
+      create: { ticketId: targetId, linkedTicketId: id, type: "DUPLICATE" },
+      update: { type: "DUPLICATE" },
+    });
   });
   await writeAudit({ userId: me.id, action: "UPDATE", entity: "Ticket", entityId: id, summary: `Merged into ${ticketRef(targetId)}` });
 
@@ -627,6 +777,7 @@ export async function setTicketResolution(formData: FormData) {
 
   const current = await db.ticket.findUnique({ where: { id } });
   if (!current) return;
+  if (!(await canActOnTicket(me, current))) return;
   if (!(await canTransitionConfigured("TICKET", current.status, status, me.role as Role))) return;
 
   const now = new Date();
@@ -688,6 +839,7 @@ export async function unlinkAsset(formData: FormData) {
   const ticketId = Number(formData.get("ticketId"));
   const assetId = String(formData.get("assetId") ?? "");
   if (!ticketId || !assetId) return;
+  if (!(await ensureCanAct(ticketId, me))) return;
   await db.ticketAsset.delete({ where: { ticketId_assetId: { ticketId, assetId } } }).catch(() => {});
   revalidatePath(`/tickets/${ticketId}`);
 }
@@ -698,6 +850,7 @@ export async function unlinkRelation(formData: FormData) {
   const ticketId = Number(formData.get("ticketId"));
   const kind = String(formData.get("kind") ?? "");
   if (!ticketId || !["problem", "change"].includes(kind)) return;
+  if (!(await ensureCanAct(ticketId, me))) return;
   await db.ticket.update({ where: { id: ticketId }, data: kind === "problem" ? { problemId: null } : { changeId: null } });
   revalidatePath(`/tickets/${ticketId}`);
   revalidatePath("/problems");
@@ -716,6 +869,9 @@ export async function setTicketProblem(formData: FormData) {
   const raw = String(formData.get("problemId") ?? "").trim();
   const problemId = raw && raw !== "none" ? Number(raw) : null;
   if (!ticketId) return;
+  if (!(await ensureCanAct(ticketId, me))) return;
+  // Validate the target problem exists before linking.
+  if (problemId && !(await db.problem.findUnique({ where: { id: problemId }, select: { id: true } }))) return;
   await db.ticket.update({ where: { id: ticketId }, data: { problemId } });
   await writeAudit({
     userId: me.id, action: "UPDATE", entity: "Ticket", entityId: ticketId,
@@ -734,6 +890,9 @@ export async function setTicketChange(formData: FormData) {
   const raw = String(formData.get("changeId") ?? "").trim();
   const changeId = raw && raw !== "none" ? Number(raw) : null;
   if (!ticketId) return;
+  if (!(await ensureCanAct(ticketId, me))) return;
+  // Validate the target change exists before linking.
+  if (changeId && !(await db.change.findUnique({ where: { id: changeId }, select: { id: true } }))) return;
   await db.ticket.update({ where: { id: ticketId }, data: { changeId } });
   await writeAudit({
     userId: me.id, action: "UPDATE", entity: "Ticket", entityId: ticketId,
@@ -751,6 +910,9 @@ export async function linkAsset(formData: FormData) {
   const ticketId = Number(formData.get("ticketId"));
   const assetId = String(formData.get("assetId") ?? "").trim();
   if (!ticketId || !assetId) return;
+  if (!(await ensureCanAct(ticketId, me))) return;
+  // Validate the target asset exists before linking.
+  if (!(await db.asset.findUnique({ where: { id: assetId }, select: { id: true } }))) return;
   await db.ticketAsset.upsert({
     where: { ticketId_assetId: { ticketId, assetId } },
     create: { ticketId, assetId },
@@ -769,6 +931,7 @@ export async function addTask(formData: FormData) {
   const ticketId = Number(formData.get("ticketId"));
   const title = String(formData.get("title") ?? "").trim();
   if (!ticketId || !title) return;
+  if (!(await ensureCanAct(ticketId, me))) return;
   const count = await db.task.count({ where: { ticketId } });
   await db.task.create({ data: { ticketId, title, order: count } });
   revalidatePath(`/tickets/${ticketId}`);
@@ -780,6 +943,7 @@ export async function toggleTask(formData: FormData) {
   const taskId = String(formData.get("taskId"));
   const task = await db.task.findUnique({ where: { id: taskId } });
   if (!task) return;
+  if (task.ticketId && !(await ensureCanAct(task.ticketId, me))) return;
   await db.task.update({ where: { id: taskId }, data: { done: !task.done } });
   revalidatePath(`/tickets/${task.ticketId}`);
 }
@@ -790,6 +954,7 @@ export async function deleteTask(formData: FormData) {
   const taskId = String(formData.get("taskId"));
   const task = await db.task.findUnique({ where: { id: taskId } });
   if (!task) return;
+  if (task.ticketId && !(await ensureCanAct(task.ticketId, me))) return;
   await db.task.delete({ where: { id: taskId } });
   revalidatePath(`/tickets/${task.ticketId}`);
 }
@@ -811,8 +976,9 @@ export async function addWorkLog(formData: FormData): Promise<WorkLogState> {
   }
 
   // Ensure the ticket exists so a bogus id can't trigger an FK-constraint 500.
-  const ticket = await db.ticket.findUnique({ where: { id: ticketId }, select: { id: true } });
+  const ticket = await db.ticket.findUnique({ where: { id: ticketId }, select: { id: true, assigneeId: true, groupId: true } });
   if (!ticket) return { error: "Ticket not found." };
+  if (!(await canActOnTicket(me, ticket))) return { error: "Not authorised" };
 
   await db.workLog.create({ data: { ticketId, userId: me.id, minutes, note, billable } });
   await writeAudit({ userId: me.id, action: "UPDATE", entity: "Ticket", entityId: ticketId, summary: `Logged ${minutes} min` });
@@ -838,6 +1004,7 @@ export async function updateTicketDetails(formData: FormData) {
   const id = Number(formData.get("id"));
   const title = String(formData.get("title") ?? "").trim();
   if (!id || title.length < 3) return;
+  if (!(await ensureCanAct(id, me))) return;
 
   // Rich description twin when HTML is supplied (e.g. inbound email); otherwise plaintext.
   const rawHtml = formData.get("descriptionHtml");
@@ -864,8 +1031,9 @@ export async function setTicketDueDate(formData: FormData) {
   const raw = String(formData.get("dueDate") ?? "").trim();
   const dueDate = raw ? new Date(raw) : null;
   if (dueDate && Number.isNaN(dueDate.getTime())) return;
-  const exists = await db.ticket.findUnique({ where: { id }, select: { id: true } });
+  const exists = await db.ticket.findUnique({ where: { id }, select: { id: true, assigneeId: true, groupId: true } });
   if (!exists) return;
+  if (!(await canActOnTicket(me, exists))) return;
   await db.ticket.update({ where: { id }, data: { dueDate } });
   await writeAudit({ userId: me.id, action: "UPDATE", entity: "Ticket", entityId: id, summary: dueDate ? "Set due date" : "Cleared due date" });
   revalidatePath(`/tickets/${id}`);
@@ -892,6 +1060,7 @@ export async function addParticipant(formData: FormData) {
 
   const ticket = await db.ticket.findUnique({ where: { id: ticketId }, include: { requester: true } });
   if (!ticket) return;
+  if (!(await canActOnTicket(me, ticket))) return;
   const target = await db.user.findUnique({ where: { id: userId }, select: { id: true, name: true, email: true, isActive: true } });
   if (!target || !target.isActive) return;
 
@@ -943,9 +1112,12 @@ export async function forwardComment(_prev: ForwardState, formData: FormData): P
 
   const ticket = await db.ticket.findUnique({
     where: { id: ticketId },
-    select: { id: true, type: true, title: true, requester: { select: { email: true } } },
+    select: { id: true, type: true, title: true, assigneeId: true, groupId: true, requester: { select: { email: true } } },
   });
   if (!ticket) return { error: "Ticket not found." };
+  // Guard the external-exfiltration path: only ADMIN/MANAGER, the assignee, or a
+  // member of the ticket's group may forward this thread off-platform.
+  if (!(await canActOnTicket(me, ticket))) return { error: "Not authorised" };
   const comment = await db.ticketComment.findFirst({
     where: { id: commentId, ticketId },
     include: { author: { select: { name: true, email: true } } },
@@ -1037,8 +1209,9 @@ export async function setTicketPending(formData: FormData) {
   const noteInternal = formData.get("isInternal") === "on";
   if (!id || !["PENDING", "ON_HOLD"].includes(status) || !reason) return;
 
-  const current = await db.ticket.findUnique({ where: { id }, select: { status: true, pendingSince: true } });
+  const current = await db.ticket.findUnique({ where: { id }, select: { status: true, pendingSince: true, assigneeId: true, groupId: true } });
   if (!current) return;
+  if (!(await canActOnTicket(me, current))) return;
   if (!(await canTransitionConfigured("TICKET", current.status, status, me.role as Role))) return;
 
   await db.ticket.update({

@@ -42,6 +42,46 @@ function looksLikeHtml(text: string): boolean {
   return /<\/?[a-z][\s\S]*>/i.test(text);
 }
 
+type ResolvedArticle = { id: string; title: string; status: string; published: boolean; publishedAt: Date | null };
+
+/**
+ * Deterministically resolve a single article for a destructive op. Prefer an
+ * explicit `id` or `slug` (both unique); otherwise match the title EXACTLY (never a
+ * fuzzy `contains`, which can silently hit the wrong record). If an exact title
+ * matches more than one article, we refuse and ask the caller to disambiguate rather
+ * than guessing. Returns either the resolved record or an error string to surface.
+ */
+async function resolveArticle(ref: {
+  id?: string;
+  slug?: string;
+  title?: string;
+}): Promise<{ article: ResolvedArticle } | { error: string }> {
+  const select = { id: true, title: true, status: true, published: true, publishedAt: true } as const;
+
+  const id = str(ref.id);
+  if (id) {
+    const article = await db.article.findUnique({ where: { id }, select });
+    return article ? { article } : { error: `Article not found: ${id}` };
+  }
+
+  const slug = str(ref.slug);
+  if (slug) {
+    const article = await db.article.findUnique({ where: { slug }, select });
+    return article ? { article } : { error: `Article not found: ${slug}` };
+  }
+
+  const title = str(ref.title);
+  if (!title) return { error: "Provide the article's id, slug, or exact title." };
+
+  // Exact title match only — no fuzzy contains. Fetch up to 2 to detect ambiguity.
+  const matches = await db.article.findMany({ where: { title }, select, take: 2 });
+  if (matches.length === 0) return { error: `Article not found: ${title}` };
+  if (matches.length > 1) {
+    return { error: `Multiple articles are titled "${title}". Please specify the article's id or slug to disambiguate.` };
+  }
+  return { article: matches[0] };
+}
+
 export const OPERATIONS: AiOperation[] = [
   {
     id: "article.create",
@@ -114,29 +154,27 @@ export const OPERATIONS: AiOperation[] = [
     kind: "write",
     minRole: "AGENT",
     description:
-      "Change a Knowledge Base article's status (DRAFT, REVIEW, PUBLISHED, RETIRED). Identify the article by title. " +
+      "Change a Knowledge Base article's status (DRAFT, REVIEW, PUBLISHED, RETIRED). Identify the article by its id or slug, " +
+      "or by its EXACT title; if the title is ambiguous the change is refused so you can disambiguate. " +
       "Setting PUBLISHED publishes it (and stamps its first publish time); other statuses unpublish it.",
     input: z.object({
-      title: z.string().describe("the article's title (a partial match is fine)"),
+      id: z.string().optional().describe("the article's id (most precise)"),
+      slug: z.string().optional().describe("the article's slug (unique)"),
+      title: z.string().optional().describe("the article's EXACT title (must match a single article)"),
       status: z.string().describe("DRAFT, REVIEW, PUBLISHED or RETIRED"),
     }),
-    label: (a) => `Set article “${str(a.title) ?? ""}” → ${String(a.status ?? "").toUpperCase()}`,
+    label: (a) => `Set article “${str(a.title) ?? str(a.slug) ?? str(a.id) ?? ""}” → ${String(a.status ?? "").toUpperCase()}`,
     run: async (a, ctx) => {
-      const title = str(a.title);
-      if (!title) return err("Article title is required.");
-
       const status = coerceEnum(a.status, ARTICLE_STATUSES);
       if (!status) return err(`Invalid status. Allowed: ${ARTICLE_STATUSES.join(", ")}.`);
 
-      const article = await db.article.findFirst({
-        where: { title: { contains: title } },
-        select: { id: true, title: true, status: true, published: true, publishedAt: true },
-      });
-      if (!article) return err(`Article not found: ${title}`);
+      const resolved = await resolveArticle({ id: str(a.id), slug: str(a.slug), title: str(a.title) });
+      if ("error" in resolved) return err(resolved.error);
+      const article = resolved.article;
 
       // Reuse the real non-redirecting action so published/publishedAt stay in sync + it audits.
       await changeArticleStatus(toFormData({ id: article.id, status }));
-      return ok(`Set article "${article.title}" status to ${status}`);
+      return ok(`Set article "${article.title}" (${article.id}) status to ${status}`);
     },
   },
   {
@@ -144,28 +182,29 @@ export const OPERATIONS: AiOperation[] = [
     group: "Knowledge",
     kind: "write",
     minRole: "AGENT",
-    description: "Delete a Knowledge Base article (and its revisions and attachments). Identify it by title.",
-    input: z.object({ title: z.string().describe("the article's title (a partial match is fine)") }),
-    label: (a) => `Delete article “${str(a.title) ?? ""}”`,
+    description:
+      "Delete a Knowledge Base article (and its revisions and attachments). Identify it by its id or slug, or by its " +
+      "EXACT title; if the title is ambiguous the deletion is refused so you can disambiguate.",
+    input: z.object({
+      id: z.string().optional().describe("the article's id (most precise)"),
+      slug: z.string().optional().describe("the article's slug (unique)"),
+      title: z.string().optional().describe("the article's EXACT title (must match a single article)"),
+    }),
+    label: (a) => `Delete article “${str(a.title) ?? str(a.slug) ?? str(a.id) ?? ""}”`,
     run: async (a, ctx) => {
-      const title = str(a.title);
-      if (!title) return err("Article title is required.");
-
-      const article = await db.article.findFirst({
-        where: { title: { contains: title } },
-        select: { id: true, title: true },
-      });
-      if (!article) return err(`Article not found: ${title}`);
+      const resolved = await resolveArticle({ id: str(a.id), slug: str(a.slug), title: str(a.title) });
+      if ("error" in resolved) return err(resolved.error);
+      const article = resolved.article;
 
       try {
         await db.article.delete({ where: { id: article.id } });
       } catch (e) {
-        if ((e as { code?: string })?.code === "P2025") return err(`Article not found: ${title}`);
+        if ((e as { code?: string })?.code === "P2025") return err(`Article not found: ${article.id}`);
         throw e;
       }
 
       await writeAudit({ userId: ctx.userId, action: "DELETE", entity: "Article", entityId: article.id, summary: `Deleted article "${article.title}" via Sable` });
-      return ok(`Deleted article "${article.title}"`);
+      return ok(`Deleted article "${article.title}" (${article.id})`);
     },
   },
 ];

@@ -23,9 +23,10 @@ export async function createApiToken(
   _prev: ActionState,
   formData: FormData,
 ): Promise<ActionState> {
-  // DB-truth: a demoted/deactivated user with a live JWT must not mint tokens.
+  // DB-truth: a demoted/deactivated user with a live JWT must not mint tokens,
+  // and API tokens (up to admin scope) are an ADMIN-only capability.
   const me = await getCurrentUser();
-  if (!me || !me.isActive) return { error: "Not authenticated" };
+  if (!me || !me.isActive || !hasRole(me.role as Role, "ADMIN")) return { error: "Not authorised" };
 
   const parsed = createSchema.safeParse({
     name: formData.get("name"),
@@ -67,17 +68,13 @@ export async function createApiToken(
 export async function revokeApiToken(formData: FormData) {
   // DB-truth role, not the stale JWT: a demoted ex-admin must not keep the
   // admin-wide revoke power, and a deactivated user must not revoke at all.
+  // Minting/revoking API tokens is an ADMIN-only capability.
   const me = await getCurrentUser();
-  if (!me || !me.isActive) return;
+  if (!me || !me.isActive || !hasRole(me.role as Role, "ADMIN")) return;
   const id = String(formData.get("id") ?? "");
   if (!id) return;
 
-  // Scope to the caller's own tokens (admins may revoke any). Prevents IDOR
-  // where any user could revoke another user's token by guessing its id.
-  const isAdmin = hasRole(me.role as Role, "ADMIN");
-  const token = await db.apiToken.findFirst({
-    where: isAdmin ? { id } : { id, userId: me.id },
-  });
+  const token = await db.apiToken.findFirst({ where: { id } });
   if (!token) return;
 
   await db.apiToken.update({

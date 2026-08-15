@@ -1,0 +1,60 @@
+/**
+ * Edge-safe per-route permission map for the agent console.
+ *
+ * This module is imported by the middleware (`proxy.ts`), which runs on the
+ * Edge runtime — so it MUST stay free of React / icon / Node imports. It only
+ * deals in route prefixes and role ranks.
+ *
+ * The minRole values mirror those declared on the nav items in `lib/nav.ts`.
+ * Anything not listed here is a plain console route that only requires AGENT.
+ * (The two maps are intentionally kept in sync by hand for now — see the note
+ * in proxy.ts / the follow-ups; a future refactor can derive one from the
+ * other.)
+ */
+
+export type ConsoleRole = "AGENT" | "MANAGER" | "ADMIN";
+
+const RANK = { USER: 0, AGENT: 1, MANAGER: 2, ADMIN: 3 } as const;
+
+export type RankRole = keyof typeof RANK;
+
+/** Rank of a role string (unknown roles fall back to the lowest rank). */
+export function roleRank(role: string): number {
+  return RANK[role as RankRole] ?? 0;
+}
+
+/** True when `role` is at least `min` in the ADMIN>MANAGER>AGENT>USER order. */
+export function roleAtLeast(role: string, min: RankRole): boolean {
+  return roleRank(role) >= RANK[min];
+}
+
+/**
+ * Prefix → minimum role for console routes that need more than plain AGENT.
+ * Longest prefix wins (see `requiredRoleFor`). Keep in sync with `lib/nav.ts`.
+ */
+export const ROUTE_MIN_ROLE: ReadonlyArray<{ prefix: string; minRole: ConsoleRole }> = [
+  { prefix: "/catalog", minRole: "MANAGER" },
+  { prefix: "/automations", minRole: "MANAGER" },
+  { prefix: "/syncs", minRole: "MANAGER" },
+  { prefix: "/settings", minRole: "MANAGER" },
+  { prefix: "/sla", minRole: "MANAGER" },
+];
+
+/**
+ * The minimum role required to open `path` in the console.
+ * Every authenticated console route requires at least AGENT; the map above
+ * escalates specific areas to MANAGER (or higher). Returns the strictest match
+ * when several prefixes apply.
+ */
+export function requiredRoleFor(path: string): ConsoleRole {
+  let required: ConsoleRole = "AGENT";
+  let bestLen = 0;
+  for (const { prefix, minRole } of ROUTE_MIN_ROLE) {
+    const matches = path === prefix || path.startsWith(`${prefix}/`);
+    if (matches && prefix.length > bestLen) {
+      required = minRole;
+      bestLen = prefix.length;
+    }
+  }
+  return required;
+}

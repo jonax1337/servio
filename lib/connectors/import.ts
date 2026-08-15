@@ -36,6 +36,9 @@ export async function importUsers(
   log: SyncLog,
 ): Promise<void> {
   const seen: string[] = [];
+  // In-code de-dup: a source returning the same externalId twice would otherwise
+  // race two upserts against the (syncSourceId, externalId) unique constraint.
+  const seenExternalIds = new Set<string>();
 
   for (const rec of records) {
     if ("error" in rec) {
@@ -43,6 +46,11 @@ export async function importUsers(
       log.line(`Skipped ${rec.ref ?? "record"}: ${rec.error}.`);
       continue;
     }
+    if (seenExternalIds.has(rec.externalId)) {
+      log.line(`Skipped ${rec.email}: duplicate externalId "${rec.externalId}" in this batch.`);
+      continue;
+    }
+    seenExternalIds.add(rec.externalId);
     seen.push(rec.externalId);
 
     const profile = {
@@ -53,15 +61,16 @@ export async function importUsers(
     };
 
     try {
-      const existing = await db.user.findFirst({
-        where: {
-          OR: [{ syncSourceId: source.id, externalId: rec.externalId }, { email: rec.email }],
-        },
+      // Prefer the identity this source already owns (unique key). Only fall back
+      // to email adoption for a record we have never seen before.
+      const owned = await db.user.findUnique({
+        where: { syncSourceId_externalId: { syncSourceId: source.id, externalId: rec.externalId } },
         select: { id: true },
       });
-      if (existing) {
+
+      if (owned) {
         await db.user.update({
-          where: { id: existing.id },
+          where: { id: owned.id },
           data: {
             ...profile,
             email: rec.email,
@@ -71,19 +80,59 @@ export async function importUsers(
           },
         });
         log.updated++;
-      } else {
-        await db.user.create({
+        continue;
+      }
+
+      // Adopt-by-email, but never take over a local or foreign-owned account.
+      const byEmail = await db.user.findFirst({
+        where: { email: rec.email },
+        select: { id: true, passwordHash: true, role: true, syncSourceId: true },
+      });
+
+      if (byEmail) {
+        if (
+          byEmail.passwordHash != null ||
+          byEmail.role !== "USER" ||
+          (byEmail.syncSourceId != null && byEmail.syncSourceId !== source.id)
+        ) {
+          log.failed++;
+          log.line(
+            `Skipped ${rec.email}: an existing ${
+              byEmail.passwordHash != null
+                ? "password-protected"
+                : byEmail.role !== "USER"
+                  ? `privileged (${byEmail.role})`
+                  : "foreign-synced"
+            } account already owns this email — not adopting.`,
+          );
+          continue;
+        }
+        // Local, USER-role, unsynced (or already ours): safe to adopt. Do NOT
+        // force isActive:true when adopting — respect the account's current state.
+        await db.user.update({
+          where: { id: byEmail.id },
           data: {
+            ...profile,
             email: rec.email,
-            role: "USER",
-            isActive: true,
             syncSourceId: source.id,
             externalId: rec.externalId,
-            ...profile,
           },
         });
-        log.created++;
+        log.updated++;
+        continue;
       }
+
+      await db.user.create({
+        data: {
+          email: rec.email,
+          role: "USER",
+          isActive: true,
+          syncSourceId: source.id,
+          externalId: rec.externalId,
+          ...profile,
+        },
+      });
+      log.created++;
     } catch (e) {
       log.failed++;
       log.line(`Failed ${rec.email}: ${errMessage(e)}`);
@@ -96,12 +145,39 @@ export async function importUsers(
         "Skipped deactivation: the source returned no users (guarding against mass-deactivation from a misconfiguration).",
       );
     } else {
+      // Only ever deactivate accounts THIS source owns (syncSourceId scopes the
+      // updateMany), and never the last remaining active admin.
+      const activeAdmins = await db.user.count({
+        where: { role: "ADMIN", isActive: true },
+      });
+      const staleAdmins = await db.user.findMany({
+        where: {
+          syncSourceId: source.id,
+          externalId: { notIn: seen },
+          isActive: true,
+          role: "ADMIN",
+        },
+        select: { id: true },
+      });
+      // If deactivating the stale synced admins would leave no active admin,
+      // keep them and log the guard instead.
+      const protectLastAdmin = staleAdmins.length > 0 && activeAdmins - staleAdmins.length < 1;
+
       const res = await db.user.updateMany({
-        where: { syncSourceId: source.id, externalId: { notIn: seen }, isActive: true },
+        where: {
+          syncSourceId: source.id,
+          externalId: { notIn: seen },
+          isActive: true,
+          ...(protectLastAdmin ? { id: { notIn: staleAdmins.map((u) => u.id) } } : {}),
+        },
         data: { isActive: false },
       });
       if (res.count)
         log.line(`Deactivated ${res.count} user(s) no longer present in the source.`);
+      if (protectLastAdmin)
+        log.line(
+          `Kept ${staleAdmins.length} admin account(s) active: deactivating them would remove the last active administrator.`,
+        );
     }
   }
 
@@ -141,6 +217,7 @@ export async function importAssets(
   log: SyncLog,
 ): Promise<void> {
   const seen: string[] = [];
+  const seenExternalIds = new Set<string>();
   const now = new Date();
 
   for (const rec of records) {
@@ -149,6 +226,11 @@ export async function importAssets(
       log.line(`Skipped ${rec.ref ?? "record"}: ${rec.error}.`);
       continue;
     }
+    if (seenExternalIds.has(rec.externalId)) {
+      log.line(`Skipped ${rec.name}: duplicate externalId "${rec.externalId}" in this batch.`);
+      continue;
+    }
+    seenExternalIds.add(rec.externalId);
     seen.push(rec.externalId);
 
     // Only enum columns get special-cased (never null); the rest pass through.
@@ -167,11 +249,14 @@ export async function importAssets(
     };
 
     try {
+      // The assetTag fallback must never let a source silently claim a
+      // manually-created (unsynced) asset — restrict it to assets THIS source
+      // already owns so it only reconciles a tag/externalId change of our own.
       const existing = await db.asset.findFirst({
         where: {
           OR: [
             { syncSourceId: source.id, externalId: rec.externalId },
-            ...(rec.assetTag ? [{ assetTag: rec.assetTag }] : []),
+            ...(rec.assetTag ? [{ syncSourceId: source.id, assetTag: rec.assetTag }] : []),
           ],
         },
         select: { id: true },

@@ -49,8 +49,8 @@ async function payload(formData: FormData, approverId: string | null) {
 async function validApprover(formData: FormData) {
   const raw = rel(formData.get("approverId"));
   if (!raw) return null;
-  const u = await db.user.findUnique({ where: { id: raw }, select: { role: true } });
-  return u && isAgent(u.role as Role) ? raw : null;
+  const u = await db.user.findUnique({ where: { id: raw }, select: { role: true, isActive: true } });
+  return u && u.isActive && isAgent(u.role as Role) ? raw : null;
 }
 
 export async function createCatalogItem(_prev: CatalogAdminState, formData: FormData): Promise<CatalogAdminState> {
@@ -58,8 +58,13 @@ export async function createCatalogItem(_prev: CatalogAdminState, formData: Form
   if (!me) return { error: "Not authorised" };
   const parsed = schema.safeParse(Object.fromEntries(formData));
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid" };
+  const approverId = await validApprover(formData);
+  const data = await payload(formData, approverId);
+  if (data.requiresApproval && !approverId) {
+    return { error: "Approval is required for this item, but no active agent approver was selected." };
+  }
   const count = await db.catalogItem.count();
-  const item = await db.catalogItem.create({ data: { ...(await payload(formData, await validApprover(formData))), order: count } });
+  const item = await db.catalogItem.create({ data: { ...data, order: count } });
   await writeAudit({ userId: me.id, action: "CREATE", entity: "CatalogItem", entityId: item.id, summary: `Created catalog item "${item.name}"` });
   revalidatePath("/catalog");
   return undefined;
@@ -72,7 +77,12 @@ export async function updateCatalogItem(_prev: CatalogAdminState, formData: Form
   if (!id) return { error: "Missing id" };
   const parsed = schema.safeParse(Object.fromEntries(formData));
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid" };
-  await db.catalogItem.update({ where: { id }, data: await payload(formData, await validApprover(formData)) });
+  const approverId = await validApprover(formData);
+  const data = await payload(formData, approverId);
+  if (data.requiresApproval && !approverId) {
+    return { error: "Approval is required for this item, but no active agent approver was selected." };
+  }
+  await db.catalogItem.update({ where: { id }, data });
   await writeAudit({ userId: me.id, action: "UPDATE", entity: "CatalogItem", entityId: id, summary: "Updated catalog item" });
   revalidatePath("/catalog");
   return undefined;

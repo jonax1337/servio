@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { guard, ok, apiError, preflight } from "@/lib/api";
+import { guard, ok, apiError, preflight, principalIsAgent } from "@/lib/api";
 import { writeAudit } from "@/lib/audit";
 import { serializeAsset } from "../../_serializers";
 import { ASSET_STATUSES, ASSET_TYPES } from "@/lib/constants";
@@ -15,6 +15,7 @@ export function OPTIONS() {
 export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const auth = await guard(req, "read");
   if ("response" in auth) return auth.response;
+  if (!principalIsAgent(auth.principal)) return apiError(403, "Assets are restricted to agent tokens.");
   const { id } = await ctx.params;
 
   const asset = await db.asset.findUnique({ where: { id }, include: { owner: true } });
@@ -35,6 +36,7 @@ const patchSchema = z.object({
 export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const auth = await guard(req, "write");
   if ("response" in auth) return auth.response;
+  if (!principalIsAgent(auth.principal)) return apiError(403, "Assets are restricted to agent tokens.");
   const { id } = await ctx.params;
 
   const existing = await db.asset.findUnique({ where: { id } });

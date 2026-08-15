@@ -153,7 +153,7 @@ pauses while `PENDING`/`ON_HOLD`), `firstResponseAt`, `resolvedAt`, `closedAt`. 
 | `Attachment` | Uploaded blob (driver-agnostic) | `storageKey` (`YYYY/MM/<id>-<name>`), `checksum` (sha256), `mime`, `size`; nullable FKs to `ticket`/`comment`/`article`, plus `uploadedBy`; `url` kept for legacy/external only |
 | `AuditLog` | Immutable activity record | `action`, `entity` + `entityId`, `summary`, `meta` (JSON as TEXT), `ip`, optional `userId` |
 | `Notification` | Per-user in-app notification | `type`, `title`, `body`, `entity`/`entityId`, `read`; indexed `(userId, read)` |
-| `EmailMessage` | Email record / queue (outbound + inbound) | `direction` (`OUTBOUND`/`INBOUND`), `toEmail`, `subject`, `body`, `template`, `status` (`QUEUED`/`SENT`/`FAILED`/`RECEIVED`), `error`, `entity`/`entityId`, `sentAt` |
+| `EmailMessage` | Email record / queue (outbound + inbound) | `direction` (`OUTBOUND`/`INBOUND`), `toEmail`, `subject`, `body`, `template`, `status` (`QUEUED`/`SENT`/`SIMULATED`/`FAILED`/`RECEIVED`), `error`, `entity`/`entityId`, `sentAt` |
 
 ### API tokens
 

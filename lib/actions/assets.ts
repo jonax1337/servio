@@ -74,7 +74,7 @@ const updateSchema = z.object({
 });
 
 export async function updateAssetField(formData: FormData) {
-  const me = await getSessionUser();
+  const me = await requireAgentA();
   if (!me) return;
   const parsed = updateSchema.safeParse(Object.fromEntries(formData));
   if (!parsed.success) return;
@@ -82,6 +82,18 @@ export async function updateAssetField(formData: FormData) {
 
   const isRelation = field.endsWith("Id");
   const v = isRelation && (value === "none" || value === "") ? null : value;
+
+  // Validate the status against the String-backed enum and verify FKs exist so
+  // a hand-crafted request can't set an invalid status or a dangling owner/group.
+  if (field === "status" && !ASSET_STATUSES.includes(v as (typeof ASSET_STATUSES)[number])) return;
+  if (field === "ownerId" && v !== null) {
+    const owner = await db.user.findUnique({ where: { id: v }, select: { id: true } });
+    if (!owner) return;
+  }
+  if (field === "groupId" && v !== null) {
+    const group = await db.group.findUnique({ where: { id: v }, select: { id: true } });
+    if (!group) return;
+  }
 
   await db.asset.update({ where: { id }, data: { [field]: v } });
   await writeAudit({
@@ -202,6 +214,12 @@ export async function addAssetRelation(formData: FormData) {
   // No self-links, and the type must be a known relation kind.
   if (!sourceId || !targetId || sourceId === targetId) return;
   if (!ASSET_RELATION_TYPES.includes(type as (typeof ASSET_RELATION_TYPES)[number])) return;
+  // Both endpoints must exist — never create an edge to a phantom asset.
+  const [source, target] = await Promise.all([
+    db.asset.findUnique({ where: { id: sourceId }, select: { id: true } }),
+    db.asset.findUnique({ where: { id: targetId }, select: { id: true } }),
+  ]);
+  if (!source || !target) return;
   await db.assetRelation.upsert({
     where: { sourceId_targetId_type: { sourceId, targetId, type } },
     create: { sourceId, targetId, type },

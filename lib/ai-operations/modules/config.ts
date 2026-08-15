@@ -23,14 +23,13 @@ import { ok, err, str, toFormData, coerceEnum } from "../helpers";
  * current value first and only call them when a change is actually needed.
  */
 
-// Non-secret keys an ADMIN may change through Sable. Anything else — and anything
-// that looks like a credential — is rejected outright.
+// Non-secret keys an ADMIN may change through Sable. Anything else — anything that
+// looks like a credential, or any privacy/provider key in SELF_LOCKED_SETTING_KEYS
+// below — is rejected outright.
 const ALLOWED_SETTING_KEYS = [
   "APP_NAME",
   "APP_URL",
-  "AI_PROVIDER",
   "AI_MODEL",
-  "AI_ALLOW_EXTERNAL",
   "AI_MAX_OUTPUT_TOKENS",
   "AI_TEASER",
   "OLLAMA_BASE_URL",
@@ -44,6 +43,12 @@ const ALLOWED_SETTING_KEYS = [
 ] as const;
 
 const SECRET_MARKERS = ["KEY", "PASS", "SECRET", "TOKEN"];
+
+// Privacy-critical keys Sable must never change about itself: flipping these could
+// steer an admin (via prompt-injection) into opening the off-box data path or
+// swapping the model provider. They stay editable in the real Settings UI, just not
+// through the AI operation layer. This deny-list takes precedence over the allow-list.
+const SELF_LOCKED_SETTING_KEYS = ["AI_ALLOW_EXTERNAL", "AI_PROVIDER"];
 
 export const OPERATIONS: AiOperation[] = [
   {
@@ -202,6 +207,9 @@ export const OPERATIONS: AiOperation[] = [
     run: async (a, ctx) => {
       const key = str(a.key)?.toUpperCase();
       if (!key) return err("Setting key is required.");
+      if (SELF_LOCKED_SETTING_KEYS.includes(key)) {
+        return err("That setting controls Sable's own privacy/provider and cannot be changed here — use the Settings UI.");
+      }
       const looksSecret = SECRET_MARKERS.some((m) => key.includes(m));
       const allowed = (ALLOWED_SETTING_KEYS as readonly string[]).includes(key);
       if (looksSecret || !allowed) {

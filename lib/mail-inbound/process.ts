@@ -43,7 +43,9 @@ export async function processInboundMail(mail: ParsedInboundMail): Promise<Inbou
     if (existing) return { action: "duplicate", ticketId: existing.ticketId ?? undefined };
   }
 
+  if (!isValidEmail(from)) return { action: "skipped", reason: "invalid sender address" };
   const sender = await resolveSender(from, mail.fromName);
+  if (!sender) return { action: "skipped", reason: "invalid sender address" };
   // Spoof guard: the inbound From is unauthenticated (no SPF/DKIM at this layer).
   // NEVER author a comment/ticket as a privileged (agent/admin) account — those
   // users act via the app, so an inbound mail from such an address is almost
@@ -52,7 +54,8 @@ export async function processInboundMail(mail: ParsedInboundMail): Promise<Inbou
   const bodyHtml = mail.html ? sanitizeCommentHtml(mail.html) : null;
   const body = mail.text?.trim() || (bodyHtml ? htmlToText(bodyHtml) : "");
 
-  const ticketId = await matchTicket(mail, from);
+  const match = await matchTicket(mail, from);
+  const ticketId = match?.ticketId ?? null;
 
   // ── No match → open a new ticket from the email ──
   if (ticketId == null) {
@@ -97,14 +100,20 @@ export async function processInboundMail(mail: ParsedInboundMail): Promise<Inbou
     return { action: "created", ticketId: ticket.id };
   }
 
-  // ── Match → append a public comment (the reply) to the existing ticket ──
+  // ── Match → append the reply to the existing ticket ──
   // A reply FROM an external party we forwarded to ("notified") is internal
   // vendor correspondence — it must NOT show as a public, customer-facing comment.
   const notified = await db.ticketNotifiedContact.findUnique({
     where: { ticketId_email: { ticketId, email: from } },
     select: { id: true },
   });
-  const isInternal = !!notified;
+  // A threading-header match alone does NOT prove the sender belongs on the ticket:
+  // Message-IDs travel in forwarded/quoted mail and can be replayed by a third
+  // party, so an uncorroborated threading match must not become a public,
+  // customer-facing comment nor auto-seat a portal participant. Land it as an
+  // internal note for agent triage instead. (Subject/plus matches are already
+  // corroborated inside matchTicket, so those arrive with corroborated=true.)
+  const isInternal = !!notified || !match!.corroborated;
 
   const comment = await db.ticketComment.create({
     data: {
@@ -172,9 +181,16 @@ export async function processInboundMail(mail: ParsedInboundMail): Promise<Inbou
 }
 
 // ── Matching ───────────────────────────────────────────────────────────────
-async function matchTicket(mail: ParsedInboundMail, from: string): Promise<number | null> {
-  // 1. Threading headers → our own outbound Message-ID → its ticket. TRUSTED:
-  //    Message-IDs are unguessable cuids, so no sender corroboration is needed.
+type TicketMatch = { ticketId: number; corroborated: boolean };
+
+async function matchTicket(mail: ParsedInboundMail, from: string): Promise<TicketMatch | null> {
+  // 1. Threading headers → our own outbound Message-ID → its ticket. A header
+  //    match links the mail to the right conversation, but it does NOT prove the
+  //    SENDER belongs there: In-Reply-To/References ride along in forwarded and
+  //    quoted mail, so a third party can carry (or replay) them. We still return
+  //    the match — the reply is genuinely about that ticket — but flag whether the
+  //    sender is corroborated (known on the ticket). Uncorroborated matches are
+  //    landed as internal triage notes by the caller (no public comment, no seat).
   const refs = [mail.inReplyTo, ...mail.references].filter(Boolean) as string[];
   if (refs.length) {
     const row = await db.emailMessage.findFirst({
@@ -182,7 +198,9 @@ async function matchTicket(mail: ParsedInboundMail, from: string): Promise<numbe
       orderBy: { createdAt: "desc" },
       select: { ticketId: true },
     });
-    if (row?.ticketId) return row.ticketId;
+    if (row?.ticketId) {
+      return { ticketId: row.ticketId, corroborated: await senderKnownToTicket(row.ticketId, from) };
+    }
   }
   // 2/3. Subject token ("Re: [INC-0042] …") and plus-addressing are GUESSABLE, so a
   //      match is only accepted when the sender is ALREADY known on that ticket —
@@ -197,7 +215,8 @@ async function matchTicket(mail: ParsedInboundMail, from: string): Promise<numbe
     if (ref) { const id = await verifyTicket(ref); if (id) candidates.push(id); }
   }
   for (const id of candidates) {
-    if (await senderKnownToTicket(id, from)) return id;
+    // These paths are only accepted when corroborated, so the match is always trusted.
+    if (await senderKnownToTicket(id, from)) return { ticketId: id, corroborated: true };
   }
   return null;
 }
@@ -243,12 +262,31 @@ async function verifyTicket(ref: { id: number; prefix: string }): Promise<number
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
-/** Find or create a lightweight USER contact by email (sender or CC party). */
+/**
+ * Conservative RFC-5322-ish address check. We only accept a syntactically valid
+ * single address (local@domain, a dot-bearing domain, no spaces/commas/angle
+ * brackets) before minting a contact — so spam/typo garbage in From/Cc never
+ * becomes a persisted user row.
+ */
+function isValidEmail(email: string): boolean {
+  if (!email || email.length > 254) return false;
+  return /^[^\s@,<>"]+@[^\s@,<>"]+\.[^\s@,<>"]+$/.test(email);
+}
+
+/**
+ * Find or create a lightweight USER contact by email (sender or CC party).
+ * Returns null for malformed addresses. NEW contacts are created INACTIVE:
+ * an unauthenticated inbound address is not a vetted portal account, so it must
+ * not get an ACTIVE seat until an agent (or sign-up flow) confirms it. It can
+ * still be a ticket requester/author/participant while inactive.
+ */
 async function resolveContact(email: string, name?: string | null) {
-  const existing = await db.user.findUnique({ where: { email } });
+  const normalized = email.trim().toLowerCase();
+  if (!isValidEmail(normalized)) return null;
+  const existing = await db.user.findUnique({ where: { email: normalized } });
   if (existing) return existing;
   return db.user.create({
-    data: { email, name: name || email.split("@")[0], role: "USER", isActive: true },
+    data: { email: normalized, name: name || normalized.split("@")[0], role: "USER", isActive: false },
   });
 }
 
@@ -273,14 +311,14 @@ async function addParticipantUser(ticketId: number, userId: string) {
  */
 async function addCcParticipants(ticketId: number, cc: string[], exclude: string) {
   for (const addr of cc) {
-    if (!addr || !addr.includes("@")) continue;
+    if (!isValidEmail(addr)) continue;
     const notified = await db.ticketNotifiedContact.findUnique({
       where: { ticketId_email: { ticketId, email: addr.toLowerCase() } },
       select: { id: true },
     });
     if (notified) continue;
     const user = await resolveContact(addr);
-    if (user.id === exclude) continue;
+    if (!user || user.id === exclude) continue;
     await addParticipantUser(ticketId, user.id);
   }
 }

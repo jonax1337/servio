@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { SyncSource } from "@prisma/client";
+import { safeFetch } from "@/lib/safe-fetch";
 import type { Connector, ConnectorTestResult, SyncResult } from "./types";
 import { SyncLog } from "./types";
 import {
@@ -113,9 +114,12 @@ function columnIndex(mapVal: string, headers: string[] | null): number {
 async function loadRows(cfg: CsvConfig): Promise<string[][]> {
   let text: string;
   if (cfg.mode === "url") {
-    const res = await fetch(cfg.url, { redirect: "follow" });
+    // safeFetch pins the connection to a validated public IP (no SSRF /
+    // DNS-rebinding), refuses redirects, and caps size + time. 25 MiB is a
+    // generous ceiling for a directory export CSV.
+    const res = await safeFetch(cfg.url, { timeoutMs: 30_000, maxBytes: 25 * 1024 * 1024 });
     if (!res.ok) throw new Error(`HTTP ${res.status} fetching CSV`);
-    text = await res.text();
+    text = res.text;
   } else {
     text = cfg.data;
   }

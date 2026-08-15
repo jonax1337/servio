@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { SyncSource } from "@prisma/client";
 import { decryptSecret } from "@/lib/crypto";
+import { safeFetch } from "@/lib/safe-fetch";
 import type { Connector, ConnectorTestResult, SyncResult } from "./types";
 import { SyncLog } from "./types";
 import {
@@ -78,8 +79,16 @@ function loadConfig(source: SyncSource): RestConfig {
 function buildHeaders(cfg: RestConfig): Record<string, string> {
   const headers: Record<string, string> = { accept: "application/json" };
   if (cfg.headers.trim()) {
-    const parsed = JSON.parse(cfg.headers) as Record<string, unknown>;
-    for (const [k, v] of Object.entries(parsed)) headers[k] = String(v);
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(cfg.headers);
+    } catch {
+      throw new Error("Extra headers must be valid JSON (an object of name/value pairs)");
+    }
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      throw new Error("Extra headers must be a JSON object of name/value pairs");
+    }
+    for (const [k, v] of Object.entries(parsed as Record<string, unknown>)) headers[k] = String(v);
   }
   if (cfg.authHeader) headers.authorization = cfg.authHeader;
   return headers;
@@ -91,9 +100,22 @@ async function fetchRecords(cfg: RestConfig): Promise<unknown[]> {
   let url = cfg.url;
   // Cap pages defensively so a bad nextPath can't loop forever.
   for (let page = 0; url && page < 1000; page++) {
-    const res = await fetch(url, { method: cfg.method, headers });
+    // safeFetch re-resolves and IP-pins on EVERY hop, so an attacker-controlled
+    // pagination `nextPath` cannot rebind to an internal host between pages. It
+    // also refuses redirects and caps size + time per page.
+    const res = await safeFetch(url, {
+      method: cfg.method,
+      headers,
+      timeoutMs: 30_000,
+      maxBytes: 25 * 1024 * 1024,
+    });
     if (!res.ok) throw new Error(`HTTP ${res.status} from endpoint`);
-    const json = await res.json();
+    let json: unknown;
+    try {
+      json = JSON.parse(res.text);
+    } catch {
+      throw new Error("Endpoint did not return valid JSON");
+    }
     const arr = getByPath(json, cfg.recordsPath);
     if (!Array.isArray(arr))
       throw new Error(

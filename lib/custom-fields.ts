@@ -153,6 +153,33 @@ export function validateValue(def: CustomFieldDef, raw: string | null | undefine
   }
 }
 
+/**
+ * Enforce that every REQUIRED, currently-VISIBLE custom field for an entity has a
+ * value. Pure + client-safe (no db): the caller loads the active defs for the
+ * entity type and passes the submitted values plus the entity's built-in field
+ * values (so a required field hidden by its visibility conditions isn't enforced).
+ *
+ * Returns `{ ok: true }` when satisfied, or `{ ok: false, error, missing }` naming
+ * the first missing field — mirroring {@link validateValue}'s message style so
+ * callers can surface it or abort.
+ */
+export function assertRequiredCustomFields(
+  defs: CustomFieldDef[],
+  values: Record<string, string | null | undefined>,
+  entityValues: Record<string, string | null> = {},
+): { ok: true } | { ok: false; error: string; missing: string[] } {
+  const missing: string[] = [];
+  for (const def of defs) {
+    // Checkboxes are never "required" in the presence sense (see validateValue).
+    if (!def.required || def.active === false || def.type === "checkbox") continue;
+    if (!isFieldVisible(def, entityValues)) continue;
+    const raw = values[def.key];
+    if (raw == null || String(raw).trim() === "") missing.push(def.label);
+  }
+  if (missing.length === 0) return { ok: true };
+  return { ok: false, error: `${missing.join(", ")} ${missing.length === 1 ? "is" : "are"} required`, missing };
+}
+
 /** Coerce a stored customFields JSON blob into a flat string->string record. */
 export function parseValues(s: string | null | undefined): Record<string, string> {
   const obj = parseJson<Record<string, unknown>>(s ?? "{}", {});

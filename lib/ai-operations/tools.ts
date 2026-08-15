@@ -8,11 +8,16 @@ const NON_TOOL = /[^a-zA-Z0-9_]/g;
 const readName = (op: AiOperation) => op.id.replace(NON_TOOL, "_");
 const writeName = (op: AiOperation) => "propose_" + op.id.replace(NON_TOOL, "_");
 
-/** Operations the acting role may use on the given chat surface. */
+/**
+ * Operations the acting role may use on the given chat surface. `adminOnly` ops are
+ * defence-in-depth: they require BOTH the ADMIN role AND an ADMIN-scoped chat, so a
+ * prompt-injection in a normal (GENERAL) conversation can never reach system-wide
+ * config even if the acting user happens to be an admin.
+ */
 export function availableOperations(role: Role, scope: AiOpChatScope): AiOperation[] {
   return ALL_OPERATIONS.filter((op) => {
     if (!hasRole(role, op.minRole)) return false;
-    if (op.adminOnly && !hasRole(role, "ADMIN")) return false;
+    if (op.adminOnly && !(hasRole(role, "ADMIN") && scope === "ADMIN")) return false;
     return true;
   });
 }
@@ -84,7 +89,10 @@ export async function runOperation(input: {
   const op = findOperation(input.operationId);
   if (!op) return { ok: false, error: "Unknown operation." };
   if (!hasRole(input.ctx.role, op.minRole)) return { ok: false, error: "Not authorised." };
-  if (op.adminOnly && !hasRole(input.ctx.role, "ADMIN")) return { ok: false, error: "Not authorised." };
+  // adminOnly ops require BOTH the ADMIN role AND an ADMIN-scoped chat (defence in depth).
+  if (op.adminOnly && !(hasRole(input.ctx.role, "ADMIN") && input.scope === "ADMIN")) {
+    return { ok: false, error: "Not authorised." };
+  }
   const parsed = op.input.safeParse(input.args);
   if (!parsed.success) {
     return { ok: false, error: parsed.error.issues.map((i) => i.message).join("; ") };

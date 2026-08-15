@@ -72,7 +72,7 @@ export async function createChange(
   const data = parsed.data;
 
   const change = await db.change.create({
-    data: { ...data, status: "DRAFT" },
+    data: { ...data, status: "DRAFT", createdById: me.id },
   });
 
   await writeAudit({
@@ -116,8 +116,13 @@ export async function updateChangeField(formData: FormData) {
   if (field === "status") {
     const current = await db.change.findUnique({ where: { id }, select: { status: true, actualStart: true } });
     if (!current) return;
-    // Guard the lifecycle: no jumping straight to APPROVED/SCHEDULED/etc.
-    // Freigabe happens only through the CAB approval flow (decideApproval).
+    // CAB seating never happens through a manual status edit: SUBMITTED/APPROVAL
+    // seat the board via submitChangeForApproval, and APPROVED is set only when
+    // decideApproval records unanimous approval. Allowing any of these here would
+    // let a change reach the approval phase (or be marked approved) with an EMPTY
+    // board — bypassing separation-of-duties entirely. Block them, even if an
+    // admin workflow override would otherwise permit the transition.
+    if (value !== current.status && (value === "SUBMITTED" || value === "APPROVAL" || value === "APPROVED")) return;
     // Governed lifecycle (built-in map + admin overrides + role gate). Fails
     // closed on an unknown status (never accept an arbitrary corrupt jump).
     if (!(await canTransitionConfigured("CHANGE", current.status, value, me.role as Role))) return;
@@ -170,9 +175,9 @@ export async function decideApproval(formData: FormData) {
   const existing = await db.changeApproval.findUnique({ where: { id: approvalId } });
   if (!existing || existing.status !== "PENDING") return;
   if (existing.approverId !== me.id && me.role !== "ADMIN") return;
-  // Never decide on a change you own, even as ADMIN.
-  const ownerChange = await db.change.findUnique({ where: { id: existing.changeId }, select: { assigneeId: true } });
-  if (ownerChange?.assigneeId === me.id) return;
+  // SoD: never decide on a change you own OR created, even as ADMIN.
+  const ownerChange = await db.change.findUnique({ where: { id: existing.changeId }, select: { assigneeId: true, createdById: true } });
+  if (ownerChange?.assigneeId === me.id || ownerChange?.createdById === me.id) return;
 
   const approval = await db.changeApproval.update({
     where: { id: approvalId },
@@ -225,7 +230,7 @@ export async function submitChangeForApproval(formData: FormData) {
 
   const current = await db.change.findUnique({
     where: { id },
-    select: { id: true, type: true, risk: true, status: true, assigneeId: true, title: true },
+    select: { id: true, type: true, risk: true, status: true, assigneeId: true, createdById: true, title: true },
   });
   if (!current) return;
   // Only from DRAFT — this also makes a double-click idempotent (2nd submit is in APPROVAL).
@@ -268,12 +273,13 @@ export async function addChangeApprover(formData: FormData) {
   if (!parsed.success) return;
   const { changeId, approverId } = parsed.data;
 
-  const change = await db.change.findUnique({ where: { id: changeId }, select: { assigneeId: true, status: true, risk: true, title: true } });
+  const change = await db.change.findUnique({ where: { id: changeId }, select: { assigneeId: true, createdById: true, status: true, risk: true, title: true } });
   if (!change) return;
   // Manager+ only — the change owner must NOT curate their own approval board (SoD).
   if (!hasRole(me.role as Role, "MANAGER")) return;
   if (change.status !== "APPROVAL") return;
-  if (approverId === change.assigneeId) return; // SoD — never seat the owner
+  // SoD — never seat the owner (assignee) or the creator.
+  if (approverId === change.assigneeId || approverId === change.createdById) return;
   if (!(await isEligibleApprover(approverId, change.risk))) return;
 
   // Idempotent (honors @@unique([changeId, approverId]) without a P2002 throw).

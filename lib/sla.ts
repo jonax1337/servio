@@ -82,6 +82,29 @@ export function firstResponseData(ticket: { responseDueAt: Date | null }, now: D
   };
 }
 
+/**
+ * Whether the first-response SLA is currently breached: a response deadline
+ * exists, no first response has been recorded, the clock isn't paused, and the
+ * deadline has passed. Used by the escalation sweep to detect response breaches
+ * (the resolve-focused `slaSnapshot` only looks at the resolve deadline).
+ *
+ * NB: like the rest of this module, this runs on wall-clock time — business-hours
+ * calendars are a later refinement and are not applied here.
+ */
+export function firstResponseBreached(
+  ticket: {
+    status: string;
+    responseDueAt: Date | null;
+    firstResponseAt: Date | null;
+    pendingSince: Date | null;
+  },
+  now: Date = new Date(),
+): boolean {
+  if (!ticket.responseDueAt || ticket.firstResponseAt) return false;
+  if (ticket.pendingSince || ["PENDING", "ON_HOLD"].includes(ticket.status)) return false;
+  return now > ticket.responseDueAt;
+}
+
 /** Whether the resolve SLA was breached, given the resolution time. */
 export function resolveBreachData(ticket: { resolveDueAt: Date | null }, resolvedAt: Date) {
   return { resolveBreached: ticket.resolveDueAt ? resolvedAt > ticket.resolveDueAt : false };
@@ -156,6 +179,7 @@ export function slaSnapshot(
   if (ticket.pendingSince || ["PENDING", "ON_HOLD"].includes(ticket.status)) {
     return { state: "PAUSED", dueAt };
   }
+  // Wall-clock comparison — business-hours calendars are a later refinement.
   if (now > dueAt) return { state: "BREACHED", dueAt };
 
   // Exclude already-banked paused time from the window so "at risk" reflects the
