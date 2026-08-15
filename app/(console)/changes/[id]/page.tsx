@@ -13,6 +13,8 @@ import { getSessionUser, isAgent, hasRole, type Role } from "@/lib/session";
 import { LinkButton } from "@/components/link-button";
 import { StatusBadge } from "@/components/status-badge";
 import { ChangeProperties } from "@/components/changes/change-properties";
+import { EntityCustomFields } from "@/components/custom-fields/entity-custom-fields";
+import { isFieldVisible, parseValues, entityFieldValues, type CustomFieldDef } from "@/lib/custom-fields";
 import { SubmitForApproval } from "@/components/changes/submit-for-approval";
 import { ApprovalPanel, type ApprovalRow } from "@/components/changes/approval-panel";
 import { EntityApprovals } from "@/components/approvals/entity-approvals";
@@ -53,7 +55,7 @@ export default async function ChangeDetailPage({
   const changeId = Number(id);
   if (!Number.isFinite(changeId)) notFound();
 
-  const [change, options, audits, linkableTickets, adHocApprovals] = await Promise.all([
+  const [change, options, audits, linkableTickets, adHocApprovals, customFieldDefs] = await Promise.all([
     db.change.findUnique({
       where: { id: changeId },
       include: {
@@ -78,8 +80,14 @@ export default async function ChangeDetailPage({
       take: 100,
     }),
     getEntityApprovals("CHANGE", changeId),
+    db.customFieldDef.findMany({ where: { entityType: "CHANGE", active: true }, orderBy: { order: "asc" } }),
   ]);
   if (!change) notFound();
+
+  const cfValues = parseValues(change.customFields);
+  const visibleCustomFields = (customFieldDefs as CustomFieldDef[]).filter((def) =>
+    isFieldVisible(def, entityFieldValues(change)),
+  );
 
   const ticketOpts = linkableTickets.map((t) => ({ value: String(t.id), label: `${ticketRef(t.id, t.prefix)} · ${t.title}` }));
 
@@ -322,6 +330,15 @@ export default async function ChangeDetailPage({
             <ChangeProperties change={change} options={options} allowedStatuses={allowedStatuses} />
           </CardContent>
         </Card>
+
+        <EntityCustomFields
+          className="mt-4"
+          entityType="CHANGE"
+          entityId={change.id}
+          defs={visibleCustomFields}
+          values={cfValues}
+          editable={isAgentUser}
+        />
 
         <Card className="mt-4">
           <CardHeader><CardTitle className="text-sm">Planned window</CardTitle></CardHeader>

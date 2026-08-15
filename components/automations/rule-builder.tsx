@@ -55,7 +55,17 @@ function actionValueOptions(type: string, o: AutomationOptions): ComboOption[] |
     case "notify": return toCombo(o.agents);
     case "set_group": return toCombo(o.groups);
     case "internal_note": return "text";
-    default: return "none"; // escalate, major_incident
+    case "webhook": return "text";
+    default: return "none"; // escalate, major_incident, notify_group
+  }
+}
+
+/** Placeholder for the free-text value input, per action type. */
+function actionValuePlaceholder(type: string): string {
+  switch (type) {
+    case "webhook": return "https://example.com/hook";
+    case "internal_note": return "note text";
+    default: return "value";
   }
 }
 
@@ -188,7 +198,7 @@ export function RuleBuilder({
                 <div key={i} className="grid grid-cols-[1fr_1fr_auto] items-center gap-2">
                   <Combobox options={ACTION_TYPES.map((t) => ({ value: t.value, label: t.label }))} value={a.type} size="sm"
                     onChange={(v) => setActions((arr) => arr.map((x, idx) => (idx === i ? { ...x, type: v, value: "" } : x)))} />
-                  <ValuePicker kind={vk} value={a.value ?? ""} onChange={(v) => setActions((arr) => arr.map((x, idx) => (idx === i ? { ...x, value: v } : x)))} placeholder="note text" />
+                  <ValuePicker kind={vk} value={a.value ?? ""} onChange={(v) => setActions((arr) => arr.map((x, idx) => (idx === i ? { ...x, value: v } : x)))} placeholder={actionValuePlaceholder(a.type)} />
                   <Button type="button" variant="ghost" size="icon-sm" onClick={() => setActions((arr) => arr.filter((_, idx) => idx !== i))}>
                     <Trash2 className="size-4 text-muted-foreground" />
                   </Button>

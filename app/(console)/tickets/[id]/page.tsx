@@ -13,6 +13,8 @@ import { getSessionUser, isAgent, hasRole, type Role } from "@/lib/session";
 import { LinkButton } from "@/components/link-button";
 import { StatusBadge, VipBadge, ToneBadge } from "@/components/status-badge";
 import { TicketProperties } from "@/components/tickets/ticket-properties";
+import { EntityCustomFields } from "@/components/custom-fields/entity-custom-fields";
+import { isFieldVisible, parseValues, entityFieldValues, type CustomFieldDef } from "@/lib/custom-fields";
 import { CommentThread } from "@/components/comments/comment-thread";
 import { EntityApprovals } from "@/components/approvals/entity-approvals";
 import { aiConfigured, aiTeaserEnabled } from "@/lib/ai";
@@ -58,7 +60,7 @@ export default async function TicketDetailPage({
   if (!Number.isFinite(ticketId)) notFound();
 
   const me = await getSessionUser();
-  const [ticket, options, audits, candidates, problemChoices, changeChoices, assetChoices, adHocApprovals] = await Promise.all([
+  const [ticket, options, audits, candidates, problemChoices, changeChoices, assetChoices, adHocApprovals, customFieldDefs] = await Promise.all([
     db.ticket.findUnique({
       where: { id: ticketId },
       include: {
@@ -110,8 +112,15 @@ export default async function TicketDetailPage({
       take: 200,
     }),
     getEntityApprovals("TICKET", ticketId),
+    db.customFieldDef.findMany({ where: { entityType: "TICKET", active: true }, orderBy: { order: "asc" } }),
   ]);
   if (!ticket) notFound();
+
+  // Custom fields: keep only defs whose visibility matches this ticket's built-in fields.
+  const cfValues = parseValues(ticket.customFields);
+  const visibleCustomFields = (customFieldDefs as CustomFieldDef[]).filter((def) =>
+    isFieldVisible(def, entityFieldValues(ticket)),
+  );
 
   const aiEnabled = await aiConfigured();
   const aiTeaser = !aiEnabled && (await aiTeaserEnabled()); // show buttons as a preview when disabled
@@ -409,6 +418,15 @@ export default async function TicketDetailPage({
             <TicketProperties ticket={ticket} options={options} aiEnabled={aiVisible} aiTeaser={aiTeaser} triageEnabled={triageEnabled} allowedStatuses={allowedStatuses} />
           </CardContent>
         </Card>
+
+        <EntityCustomFields
+          className="mt-4"
+          entityType="TICKET"
+          entityId={ticket.id}
+          defs={visibleCustomFields}
+          values={cfValues}
+          editable={isAgentUser}
+        />
 
         {/* Requester — a clickable user card that opens their profile (their open
             tickets + assigned assets). Watchers are surfaced via the Watch button. */}

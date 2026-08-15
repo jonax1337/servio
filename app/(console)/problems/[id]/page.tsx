@@ -12,6 +12,8 @@ import { getSessionUser, isAgent, hasRole, type Role } from "@/lib/session";
 import { LinkButton } from "@/components/link-button";
 import { StatusBadge } from "@/components/status-badge";
 import { ProblemProperties } from "@/components/problems/problem-properties";
+import { EntityCustomFields } from "@/components/custom-fields/entity-custom-fields";
+import { isFieldVisible, parseValues, entityFieldValues, type CustomFieldDef } from "@/lib/custom-fields";
 import { EntityApprovals } from "@/components/approvals/entity-approvals";
 import { CommentThread } from "@/components/comments/comment-thread";
 import { EditEntityDialog } from "@/components/edit-entity-dialog";
@@ -49,7 +51,7 @@ export default async function ProblemDetailPage({
   if (!Number.isFinite(problemId)) notFound();
 
   const me = await getSessionUser();
-  const [problem, options, audits, linkableTickets, approvals] = await Promise.all([
+  const [problem, options, audits, linkableTickets, approvals, customFieldDefs] = await Promise.all([
     db.problem.findUnique({
       where: { id: problemId },
       include: {
@@ -74,8 +76,14 @@ export default async function ProblemDetailPage({
       take: 100,
     }),
     getEntityApprovals("PROBLEM", problemId),
+    db.customFieldDef.findMany({ where: { entityType: "PROBLEM", active: true }, orderBy: { order: "asc" } }),
   ]);
   if (!problem) notFound();
+
+  const cfValues = parseValues(problem.customFields);
+  const visibleCustomFields = (customFieldDefs as CustomFieldDef[]).filter((def) =>
+    isFieldVisible(def, entityFieldValues(problem)),
+  );
 
   const isAgentUser = !!me && isAgent(me.role as Role);
   const canManage = !!me && hasRole(me.role as Role, "MANAGER");
@@ -266,6 +274,15 @@ export default async function ProblemDetailPage({
             <ProblemProperties problem={problem} options={options} allowedStatuses={allowedStatuses} />
           </CardContent>
         </Card>
+
+        <EntityCustomFields
+          className="mt-4"
+          entityType="PROBLEM"
+          entityId={problem.id}
+          defs={visibleCustomFields}
+          values={cfValues}
+          editable={isAgentUser}
+        />
 
         <Card className="mt-4">
           <CardHeader><CardTitle className="text-sm">Assignment</CardTitle></CardHeader>

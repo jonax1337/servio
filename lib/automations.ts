@@ -2,15 +2,22 @@ import { db } from "@/lib/db";
 import { writeAudit, notify } from "@/lib/audit";
 import { getAutomationUserId } from "@/lib/system-user";
 import { statusChangeData } from "@/lib/sla";
-import { TICKET_STATUSES } from "@/lib/constants";
+import { TICKET_STATUSES, ticketRef } from "@/lib/constants";
 import { parseJson, type Condition, type AutomationAction } from "@/lib/automation-defs";
 
 const PRIORITY_ORDER = ["LOW", "MEDIUM", "HIGH", "CRITICAL"] as const;
 
-type Trigger = "TICKET_CREATED" | "TICKET_UPDATED";
+type Trigger =
+  | "TICKET_CREATED"
+  | "TICKET_UPDATED"
+  | "TICKET_SLA_AT_RISK"
+  | "TICKET_SLA_BREACHED";
 
 async function loadTicket(id: number) {
-  return db.ticket.findUnique({ where: { id }, include: { requester: true } });
+  return db.ticket.findUnique({
+    where: { id },
+    include: { requester: true, group: true, assignee: true },
+  });
 }
 type TicketRow = NonNullable<Awaited<ReturnType<typeof loadTicket>>>;
 
@@ -88,6 +95,46 @@ export async function runAutomations(trigger: Trigger, ticketId: number) {
         case "notify":
           if (a.value) await notify(a.value, { type: "AUTOMATION", title: `Automation: ${rule.name}`, body: t.title, entity: "Ticket", entityId: String(ticketId) });
           break;
+        case "notify_group": {
+          // Notify every active agent in the ticket's assigned group.
+          if (t.groupId) {
+            const members = await db.groupMember.findMany({
+              where: { groupId: t.groupId, user: { isActive: true } },
+              select: { userId: true },
+            });
+            for (const m of members) {
+              await notify(m.userId, { type: "AUTOMATION", title: `Automation: ${rule.name}`, body: t.title, entity: "Ticket", entityId: String(ticketId) });
+            }
+          }
+          break;
+        }
+        case "webhook": {
+          // Best-effort outbound POST. Never let a bad URL / slow endpoint break
+          // the rule run — swallow every error and cap the wait with a timeout.
+          if (a.value) {
+            try {
+              const ctrl = new AbortController();
+              const to = setTimeout(() => ctrl.abort(), 5000);
+              await fetch(a.value, {
+                method: "POST",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify({
+                  ticketId: t.id,
+                  ref: ticketRef(t.id, t.prefix || t.type),
+                  title: t.title,
+                  status: t.status,
+                  priority: t.priority,
+                  group: t.group?.name ?? null,
+                  assignee: t.assignee?.name ?? null,
+                }),
+                signal: ctrl.signal,
+              }).finally(() => clearTimeout(to));
+            } catch {
+              /* best-effort — ignore network/timeout errors */
+            }
+          }
+          break;
+        }
         case "internal_note": {
           const authorId = await getAutomationUserId();
           await db.ticketComment.create({ data: { ticketId, authorId, isInternal: true, body: a.value || `Automation "${rule.name}" ran.` } });

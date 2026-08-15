@@ -482,6 +482,7 @@ model Ticket {
 
   formData       String?   // JSON answers when submitted from a catalog form
   formSchema     String?   // snapshot of the catalog form schema at submit time (survives item deletion)
+  customFields   String   @default("{}") // JSON object of custom-field key -> value (CustomFieldDef, entityType=TICKET)
   approvalState  String?   // null | PENDING | APPROVED | REJECTED
   dueDate        DateTime? // manual due date set by an agent (distinct from the SLA clock)
   // ---- SLA clock (resolved from SLA/service/priority at create) ----
@@ -492,6 +493,7 @@ model Ticket {
   resolveBreached  Boolean @default(false)
   pendingSince   DateTime? // set while PENDING/ON_HOLD so the clock can pause
   pausedMs       Int       @default(0) // accumulated paused time
+  escalatedAt    DateTime? // set when SLA-breach escalation has fired (marker so it fires once)
   firstResponseAt DateTime?
   resolvedAt     DateTime?
   closedAt       DateTime?
@@ -667,6 +669,7 @@ model Problem {
   impact      String   @default("MEDIUM")
   rootCause   String?
   workaround  String?
+  customFields String  @default("{}") // JSON object of custom-field key -> value (CustomFieldDef, entityType=PROBLEM)
   assigneeId  String?
   groupId     String?
   categoryId  String?
@@ -717,6 +720,7 @@ model Change {
   reason             String?
   implementationPlan String?
   rollbackPlan       String?
+  customFields String  @default("{}") // JSON object of custom-field key -> value (CustomFieldDef, entityType=CHANGE)
   assigneeId  String?
   groupId     String?
   categoryId  String?
@@ -769,6 +773,33 @@ model ChangeApproval {
   approver User   @relation(fields: [approverId], references: [id])
 
   @@unique([changeId, approverId])
+}
+
+// ---------------------------------------------------------------------------
+// Custom fields — admin-defined extra fields on tickets/problems/changes.
+// Values live in each entity's `customFields` JSON (fieldKey -> value).
+// `visibility` reuses the automation condition shape ({field,op,value}).
+// ---------------------------------------------------------------------------
+
+model CustomFieldDef {
+  id          String   @id @default(cuid())
+  entityType  String   // TICKET | PROBLEM | CHANGE
+  key         String   // stable key used inside the entity's customFields JSON
+  label       String
+  type        String   // text | textarea | select | number | date | checkbox
+  options     String   @default("[]") // JSON array of choice strings (for select)
+  required    Boolean  @default(false)
+  placeholder String?
+  help        String?
+  matchType   String   @default("ALL") // ALL | ANY — how visibility conditions combine
+  visibility  String   @default("[]") // JSON array of {field,op,value} conditions (automation shape)
+  order       Int      @default(0)
+  active       Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([entityType, key])
+  @@index([entityType])
 }
 
 /// An admin override on the built-in status lifecycle. A row exists ONLY to
