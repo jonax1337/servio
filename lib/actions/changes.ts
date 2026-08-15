@@ -8,6 +8,7 @@ import { getSessionUser, isAgent, hasRole, type Role } from "@/lib/session";
 import { writeAudit, notify } from "@/lib/audit";
 import { canTransition, CHANGE_TRANSITIONS } from "@/lib/transitions";
 import { canTransitionConfigured } from "@/lib/workflow";
+import { isGroupMember } from "@/lib/assignment";
 import { selectApprovers, isEligibleApprover } from "@/lib/cab";
 import { readRichBody, readRichField } from "@/lib/markdown";
 import {
@@ -125,6 +126,15 @@ export async function updateChangeField(formData: FormData) {
     if (value === "DRAFT") await db.changeApproval.deleteMany({ where: { changeId: id } });
     if (value === "IN_PROGRESS" && !current.actualStart) patch.actualStart = new Date();
     if (value === "CLOSED" || value === "FAILED") patch.actualEnd = new Date();
+  }
+  // The assignee must belong to the change's group (anyone when there's none).
+  if (field === "assigneeId" && v) {
+    const cur = await db.change.findUnique({ where: { id }, select: { groupId: true } });
+    if (cur?.groupId && !(await isGroupMember(cur.groupId, v))) return;
+  }
+  if (field === "groupId" && v) {
+    const cur = await db.change.findUnique({ where: { id }, select: { assigneeId: true } });
+    if (cur?.assigneeId && !(await isGroupMember(v, cur.assigneeId))) patch.assigneeId = null;
   }
 
   await db.change.update({ where: { id }, data: patch });

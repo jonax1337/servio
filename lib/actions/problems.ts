@@ -8,6 +8,7 @@ import { getSessionUser, isAgent, type Role } from "@/lib/session";
 import { writeAudit, notify } from "@/lib/audit";
 import { readRichBody, readRichField } from "@/lib/markdown";
 import { canTransitionConfigured } from "@/lib/workflow";
+import { isGroupMember } from "@/lib/assignment";
 import {
   PROBLEM_STATUSES,
   PRIORITIES,
@@ -80,6 +81,15 @@ export async function updateProblemField(formData: FormData) {
     if (!(await canTransitionConfigured("PROBLEM", current.status, value, me.role as Role))) return;
     if (value === "RESOLVED" || value === "CLOSED") patch.resolvedAt = new Date();
     if (value === "NEW" || value === "INVESTIGATING" || value === "KNOWN_ERROR") patch.resolvedAt = null;
+  }
+  // The assignee must belong to the problem's group (anyone when there's none).
+  if (field === "assigneeId" && v) {
+    const cur = await db.problem.findUnique({ where: { id }, select: { groupId: true } });
+    if (cur?.groupId && !(await isGroupMember(cur.groupId, v))) return;
+  }
+  if (field === "groupId" && v) {
+    const cur = await db.problem.findUnique({ where: { id }, select: { assigneeId: true } });
+    if (cur?.assigneeId && !(await isGroupMember(v, cur.assigneeId))) patch.assigneeId = null;
   }
 
   await db.problem.update({ where: { id }, data: patch });

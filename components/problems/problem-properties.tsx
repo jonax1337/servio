@@ -85,9 +85,13 @@ export function ProblemProperties({
     value: l, label: LEVEL_META[l].label, tone: LEVEL_META[l].tone,
   }));
   const none = (label: string): ComboOption => ({ value: "none", label });
+  // Assignee must be a member of the problem's group (any agent if none).
+  const memberIds = problem.groupId ? new Set(options.groupMembers[problem.groupId] ?? []) : null;
   const agentOpts: ComboOption[] = [
     none("Unassigned"),
-    ...options.agents.map((a) => ({ value: a.id, label: a.name ?? a.email, avatar: initials(a.name ?? a.email), hint: a.email })),
+    ...options.agents
+      .filter((a) => !memberIds || memberIds.has(a.id) || a.id === problem.assigneeId)
+      .map((a) => ({ value: a.id, label: a.name ?? a.email, avatar: initials(a.name ?? a.email), hint: a.email })),
   ];
   const groupOpts: ComboOption[] = [none("No group"), ...options.groups.map((g) => ({ value: g.id, label: g.name }))];
   const catOpts: ComboOption[] = [none("No category"), ...options.categories.map((c) => ({ value: c.id, label: c.name }))];

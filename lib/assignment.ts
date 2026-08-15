@@ -3,6 +3,16 @@ import { notify } from "@/lib/audit";
 import { isAgent, type Role } from "@/lib/session";
 import { OPEN_TICKET_STATUSES } from "@/lib/constants";
 
+/** True when `userId` is a member of `groupId`. Used to keep assignees within
+ *  the group a ticket/problem/change is routed to. */
+export async function isGroupMember(groupId: string, userId: string): Promise<boolean> {
+  const m = await db.groupMember.findUnique({
+    where: { groupId_userId: { groupId, userId } },
+    select: { userId: true },
+  });
+  return !!m;
+}
+
 /**
  * Auto-assign a ticket to an agent in its group according to the group's
  * strategy. No-op when the ticket already has an assignee, has no group, the

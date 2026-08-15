@@ -21,7 +21,7 @@ import {
 import { sanitizeCommentHtml, htmlToText, parseMentionIds } from "@/lib/markdown";
 import { format } from "date-fns";
 import { runAutomations } from "@/lib/automations";
-import { autoAssignTicket } from "@/lib/assignment";
+import { autoAssignTicket, isGroupMember } from "@/lib/assignment";
 import {
   slaCreateData, pauseData, resumeData, firstResponseData, statusChangeData,
 } from "@/lib/sla";
@@ -166,6 +166,17 @@ export async function updateTicketField(formData: FormData) {
     if (!(await canTransitionConfigured("TICKET", current.status, value, me.role as Role))) return;
     // Shared with the automation engine so both keep the SLA clock consistent.
     Object.assign(patch, statusChangeData(current, value));
+  }
+  // The assignee must belong to the ticket's group (anyone when there's no group).
+  if (field === "assigneeId" && v) {
+    const current = await db.ticket.findUnique({ where: { id }, select: { groupId: true } });
+    if (current?.groupId && !(await isGroupMember(current.groupId, v))) return;
+  }
+  // Re-routing to a group the current assignee isn't in clears the assignee
+  // (auto-assign below then picks an eligible member).
+  if (field === "groupId" && v) {
+    const current = await db.ticket.findUnique({ where: { id }, select: { assigneeId: true } });
+    if (current?.assigneeId && !(await isGroupMember(v, current.assigneeId))) patch.assigneeId = null;
   }
 
   const ticket = await db.ticket.update({
